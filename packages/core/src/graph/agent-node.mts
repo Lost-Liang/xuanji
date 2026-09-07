@@ -8,7 +8,7 @@
 // 3. 通过 conversationStore 实时保存对话事件（替代 V3 的 execution_events SQLite 批量写入）
 // 4. 通过 Prisma 操作数据库（替代 V3 的 pgClient 原始 SQL）
 // 5. 支持 worktree 隔离（子图节点）、archive 节点、交互模式（interactive/autonomous）
-// 6. handleInboxAsk 占位 —— Task 11 实现完整的 interrupt/resume 人机交互
+// 6. handleInboxAsk 实现 —— 通过 session-control-v2 的 waitForHumanAnswer 阻塞等待人类回答
 //
 // 与 worker-graph.mts 的关系：
 // - worker-graph.mts：调度图的工作节点，负责任务队列的租约/心跳/429 重试
@@ -19,6 +19,7 @@ import { interrupt } from '@langchain/langgraph';
 import { runLocal, type AdapterEvent } from '@xuanji/runner';
 import { conversationStore } from '../storage/conversation-store.mjs';
 import { ensureTaskWorktree } from './worktree.mjs';
+import { waitForHumanAnswer } from './session-control-v2.mjs';
 import { db } from '../db.mjs';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -368,7 +369,8 @@ export function makeAgentNode(opts: {
     }
 
     // ── interactive 模式：session 完成后 interrupt 等待用户回复 ──────────────
-    // TODO: Task 11 实现完整的 interactive 多轮对话
+    // sessionInterrupt / resumeGraph 已就位于 session-control-v2.mts
+    // TODO: 此处接入 interactive 模式：调用 sessionInterrupt 挂起图，等人类确认后 resumeGraph 继续
     // 当前简化：autonomous 模式直接返回，interactive 模式也直接返回（不 interrupt）
 
     // ── 返回 state 更新 ──────────────────────────────────────────────────────
@@ -382,30 +384,46 @@ export function makeAgentNode(opts: {
   };
 }
 
-// ─── handleInboxAsk 占位 ──────────────────────────────────────────────────────
+// ─── handleInboxAsk 实现 ─────────────────────────────────────────────────────
 
 /**
- * 处理 Agent 的 inbox_ask 请求
+ * 处理 Agent 的 inbox_ask 请求（人机交互核心流程）
  *
- * 当前为占位实现：
- * 1. 保存问题到 inbox_questions 表
- * 2. 抛出错误终止执行
+ * 完整流程：
+ * 1. Agent 调用 inbox_ask MCP 工具（在 CLI 进程内）
+ * 2. MCP Server → runLocal 的 onInboxAsk 回调（本函数）
+ * 3. 写入 inbox_questions 表（status='pending'），Dashboard 可通过 /api/inbox/pending 查询
+ * 4. 调用 waitForHumanAnswer(questionId) —— 阻塞 onInboxAsk 回调
+ *    （CLI 进程在等待期间空闲，不消耗 token，进程不退出但定时器已 unref）
+ * 5. 人类在 Dashboard 看到问题，提交回答
+ * 6. Dashboard API（POST /api/inbox/:id/answer）更新 DB 并调用 notifyHumanAnswered
+ * 7. notifyHumanAnswered 解除 waitForHumanAnswer 的阻塞
+ * 8. 本函数返回答案给 MCP Server → Agent 继续执行（同一会话，无需 --resume）
  *
- * TODO: Task 11 实现完整的 interrupt/resume 机制：
- * - 保存问题后调用 interrupt() 挂起执行
- * - Dashboard 通过 API 回答问题
- * - LangGraph Command(resume=answer) 恢复执行
- * - 将答案返回给 Agent 继续对话
+ * 超时处理：
+ * - 默认 24 小时（DEFAULT_TIMEOUT_MS in session-control-v2.mts）
+ * - 超时后 Promise reject，本函数抛出 Error，runLocal 失败
+ * - 对应 task_execution 状态变为 failed，phase_instance 状态变为 failed
+ *
+ * @param executionId - 当前 task_execution 的 ID（用于 DB 关联）
+ * @param sessionId - 当前 CLI 会话 ID（用于 DB 关联，可为 null）
+ * @param question - MCP inbox_ask 工具传入的问题对象
+ * @returns 人类的回答内容（string），传回 MCP Server 给 Agent
+ * @throws Error 等待超时
  */
 async function handleInboxAsk(
   executionId: string | undefined,
   sessionId: string | null,
   question: { id: string; body: string; choices?: string[] },
 ): Promise<string> {
-  // 保存问题到数据库
+  // 生成 DB 主键（与 Prisma schema 中 id String @id 对应）
+  const questionId = randomUUID();
+
+  // 保存问题到 inbox_questions 表
+  // Dashboard 通过 GET /api/inbox/pending 查询 status='pending' 的记录
   await db.inboxQuestion.create({
     data: {
-      id: randomUUID(),
+      id: questionId,
       executionId: executionId ?? null,
       sessionId: sessionId ?? null,
       body: question.body,
@@ -414,11 +432,12 @@ async function handleInboxAsk(
     },
   });
 
-  // TODO: Task 11 实现完整的 interrupt/resume
-  // 当前抛出错误终止执行，等待 Dashboard 交互实现后替换为：
-  // const answer = interrupt({ type: 'inbox_ask', question_id: question.id, body: question.body });
-  // return answer;
-  throw new Error('inbox_ask 等待机制待 Task 11 实现');
+  // 阻塞等待人类回答
+  // waitForHumanAnswer 内部维护 Promise + 全局 Map
+  // notifyHumanAnswered（由 inbox 路由调用）触发 resolve 解除阻塞
+  const answer = await waitForHumanAnswer(questionId);
+
+  return answer;
 }
 
 // ─── 辅助函数 ──────────────────────────────────────────────────────────────────
