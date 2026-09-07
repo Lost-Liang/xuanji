@@ -1,19 +1,41 @@
 # 璇玑 V4 启动指南
 
+> **重要：** 这是 V4 系统，使用 AgentOS Runner 本地模式，直接调用 Claude Code CLI。
+> 如果你看到 Omnigent 相关的日志，说明运行的是 V3，请检查端口占用。
+
 ## 快速启动
 
 ```bash
 # 一键启动所有服务
 ./scripts/start.sh
 
-# 或者使用 pnpm
-pnpm dev  # 需要在 package.json 中配置
+# 或者手动启动
+pnpm --filter @xuanji/core start &      # Core API (端口 3000)
+pnpm --filter @xuanji/dashboard dev &   # Dashboard (端口 5173)
 ```
 
 启动后访问：
 - **Dashboard**: http://localhost:5173
 - **人机交互 Inbox**: http://localhost:5173/inbox
 - **API Health**: http://localhost:3000/api/health
+
+**验证 V4 运行：**
+```bash
+curl http://localhost:3000/api/health
+# 期望返回: {"status":"ok","version":"0.1.0"}
+```
+
+## 架构说明
+
+**V4 vs V3：**
+- **V4（当前）**: 直接调用 Claude Code CLI（AgentOS 本地模式），不使用 Omnigent
+- **V3（已废弃）**: 使用 Omnigent 服务，代码在 `long-running-agnet-v2/` 目录
+
+**V4 特点：**
+- 直接 spawn Claude Code CLI 进程
+- MCP Server 集成，支持 `inbox_ask` 人机交互工具
+- LangGraph 调度，CAS 租约机制
+- PostgreSQL + Prisma 持久化
 
 ## 前置条件
 
@@ -372,10 +394,59 @@ pnpm lint
 ## 下一步
 
 1. **创建需求**: 访问 Dashboard，创建第一个需求
-2. **查看任务**: 系统会自动拆分需求为任务
-3. **执行任务**: 任务会被调度器拾取并执行
-4. **人机交互**: Agent 遇到问题时，会在 Inbox 提问
-5. **查看对话**: 在 Conversations 页面查看完整对话历史
+2. **执行需求**: 
+   ```bash
+   # 通过 API 触发执行
+   curl -X POST http://localhost:3000/api/requirements/<req-id>/execute
+   
+   # 或通过 Dashboard UI
+   ```
+3. **查看任务**: 系统会自动拆分需求为任务
+4. **执行任务**: 任务会被调度器拾取并执行
+5. **人机交互**: Agent 遇到问题时，会在 Inbox 提问
+6. **查看对话**: 在 Conversations 页面查看完整对话历史
+
+## API 端点
+
+### 需求管理
+- `GET /api/requirements` - 需求列表
+- `GET /api/requirements/:id` - 需求详情
+- `POST /api/requirements` - 创建需求
+- `POST /api/requirements/:id/execute` - **触发需求执行**
+
+### 执行管理
+- `GET /api/executions` - 执行列表
+- `GET /api/executions/:id` - 执行详情
+
+### 人机交互
+- `GET /api/inbox/pending` - 待回答问题列表
+- `POST /api/inbox/:id/answer` - 提交回答
+
+### 对话历史
+- `GET /api/conversations/:sessionId/events` - 对话事件流
+- `POST /api/conversations/session/:sessionId/followup` - 追问（--resume 会话）
+
+## MCP Server 集成
+
+V4 集成了 MCP Server，Agent 可以通过 `inbox_ask` 工具向人类提问：
+
+**通信链路：**
+```
+Agent (Claude CLI) 
+  → inbox_ask MCP 工具 
+  → mcp-bridge.js (子进程)
+  → POST /api/internal/inbox-ask
+  → 写入 inbox_questions 表
+  → waitForHumanAnswer (阻塞)
+  → Dashboard 显示问题
+  → 人类回答
+  → 返回 Agent
+```
+
+**配置：**
+- local-runner.ts 自动生成 MCP 配置文件
+- 通过 `--mcp-config` 参数传递给 Claude CLI
+- 环境变量：`XUANJI_API_URL`、`XUANJI_EXECUTION_ID`
 
 ## 参考文档
 
