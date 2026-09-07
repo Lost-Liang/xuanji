@@ -189,6 +189,8 @@ export function makeAgentNode(opts: {
         prompt: promptText,
         workDir,
         model: undefined, // 使用 CLI 默认模型
+        // 执行实例 ID —— 用于 MCP 配置（inbox_ask 工具）
+        executionId: execId,
         // 如果有 sessionId，尝试恢复会话
         resume: existingSessionId
           ? { providerConversationId: existingSessionId, input: promptText }

@@ -7,6 +7,10 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createInboxMcpServer, setInboxCallback, removeInboxCallback } from './mcp-server.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +46,13 @@ export interface LocalRunOptions {
   onInboxAsk?: (question: InboxQuestion) => Promise<string>;
   /** 中止信号 —— 用于外部取消执行（如进程管理中的取消请求） */
   abortSignal?: AbortSignal;
+  /**
+   * 执行实例 ID —— 用于 MCP 配置
+   *
+   * 提供此字段 + onInboxAsk 时，runLocal 将生成 MCP 配置文件并传给 Claude CLI，
+   * 使 Agent 能通过 inbox_ask MCP 工具向人类提问。
+   */
+  executionId?: string;
 }
 
 /** 本地运行结果 */
@@ -206,12 +217,73 @@ function parseClaudeEvent(
  * 运行 Claude Code CLI
  */
 async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
-  const { prompt, workDir, resume, onEvent, abortSignal } = options;
+  const { prompt, workDir, resume, onEvent, onInboxAsk, abortSignal, executionId } = options;
 
-  const args = buildClaudeArgs(options);
+  let args = buildClaudeArgs(options);
   const promptText = resume ? resume.input : prompt;
 
+  // ── MCP Server 集成 ──────────────────────────────────────────────────────────
+  //
+  // 如果同时提供了 onInboxAsk 和 executionId，生成 MCP 配置文件：
+  // 1. 配置文件指向 mcp-bridge.js（与 local-runner.js 同目录）
+  // 2. 通过环境变量传递 API URL 和执行实例 ID
+  // 3. 将 --mcp-config <path> 传给 Claude CLI
+  // 4. Claude CLI 启动 mcp-bridge.js 子进程，Agent 可调用 inbox_ask 工具
+  //
+  // 通信链：
+  // Agent → inbox_ask MCP 工具 → mcp-bridge.js → POST /api/internal/inbox-ask
+  //   → 编排器写入 inbox_questions 表 → waitForHumanAnswer → 人类回答 → 返回 Agent
+  let mcpConfigPath: string | undefined;
+
+  if (onInboxAsk && executionId) {
+    // mcp-bridge.js 与 local-runner.js 编译后在同一目录（dist/）
+    // 使用 import.meta.dirname（Node.js 20.11+ 支持）定位当前模块目录
+    const bridgePath = resolve(import.meta.dirname, 'mcp-bridge.js');
+    const apiUrl = process.env.XUANJI_API_URL || 'http://localhost:3000';
+
+    const mcpConfig = {
+      mcpServers: {
+        'xuanji-inbox': {
+          command: 'node',
+          args: [bridgePath],
+          env: {
+            XUANJI_API_URL: apiUrl,
+            XUANJI_EXECUTION_ID: executionId,
+          },
+        },
+      },
+    };
+
+    // 写入临时配置文件（每执行实例独立，避免并发冲突）
+    mcpConfigPath = join(tmpdir(), `xuanji-mcp-${executionId}.json`);
+    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+
+    // 添加 --mcp-config 参数，Claude CLI 将据此启动 MCP Server 子进程
+    args.push('--mcp-config', mcpConfigPath);
+
+    console.log(`[runner] MCP 配置已生成: ${mcpConfigPath} (bridge: ${bridgePath})`);
+  } else if (onInboxAsk && !executionId) {
+    // 有回调但无 executionId —— 记录警告，无法配置 MCP
+    console.warn(
+      '[runner] onInboxAsk 已提供但缺少 executionId，无法生成 MCP 配置。' +
+      'Agent 将无法调用 inbox_ask 工具。请在 runLocal 调用中传入 executionId。'
+    );
+  }
+
   return new Promise((resolve) => {
+    // 清理函数：删除临时 MCP 配置文件
+    const cleanupMcpConfig = () => {
+      if (mcpConfigPath) {
+        try {
+          unlinkSync(mcpConfigPath);
+          console.log(`[runner] MCP 临时配置已清理: ${mcpConfigPath}`);
+        } catch (cleanupErr) {
+          // 清理失败不阻塞主流程
+          console.warn(`[runner] MCP 临时配置清理失败: ${mcpConfigPath}`, cleanupErr);
+        }
+      }
+    };
+
     // spawn claude 进程
     const child: ChildProcess = spawn('claude', args, {
       cwd: workDir,
@@ -281,6 +353,9 @@ async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
 
     // 处理进程退出
     child.on('close', (code) => {
+      // 清理 MCP 临时配置文件
+      cleanupMcpConfig();
+
       // 处理缓冲区中剩余的数据
       if (buffer.trim()) {
         try {
@@ -322,6 +397,7 @@ async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
 
     // 处理进程错误
     child.on('error', (err) => {
+      cleanupMcpConfig();
       resolve({
         success: false,
         error: `Claude CLI 启动失败: ${err.message}`,

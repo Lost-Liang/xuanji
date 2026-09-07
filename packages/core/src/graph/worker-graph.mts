@@ -107,14 +107,18 @@ export async function workerNode(
 ): Promise<Partial<SchedulerStateType>> {
   const { executionId, taskId } = state;
 
+  console.log('[worker-graph] 开始执行', { executionId, taskId });
+
   // 参数校验
   if (!executionId) {
+    console.error('[worker-graph] 缺少 executionId，终止执行');
     return { status: 'failed', error: '缺少 executionId' };
   }
 
   // 获取执行实例信息
   const execution = await executionStore.get(executionId);
   if (!execution) {
+    console.error(`[worker-graph] 执行实例不存在: ${executionId}`);
     return { status: 'failed', error: `执行实例不存在: ${executionId}` };
   }
 
@@ -192,11 +196,14 @@ export async function workerNode(
     const prompt = await buildPrompt(taskId);
 
     // 调用 Runner 执行 Agent
+    console.log(`[worker-graph] 调用 runLocal: provider=${execution.provider || 'claude'}, workDir=${execution.targetRepoPath}`);
     const result = await runLocal({
       provider: (execution.provider as 'claude' | 'codex') || 'claude',
       prompt,
       workDir: execution.targetRepoPath,
       model: undefined, // 使用 CLI 默认模型
+      // 执行实例 ID —— 用于 MCP 配置（inbox_ask 工具）
+      executionId,
       // AbortSignal 用于进程管理取消 —— 心跳循环检测到 cancel_requested 时触发
       abortSignal: abortController.signal,
       // 如果有 sessionId，尝试恢复会话（用于 429 重试后继续）
@@ -244,6 +251,7 @@ export async function workerNode(
     }
 
     // 根据执行结果更新状态
+    console.log(`[worker-graph] runLocal 返回: success=${result.success}, hasOutput=${!!result.finalOutput}`);
     if (result.success && result.finalOutput) {
       await executionStore.complete(executionId, result.finalOutput);
       if (taskId) {
