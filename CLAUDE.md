@@ -131,61 +131,76 @@ long-running-agent-v4/
 
 ## 当前状态（2026-09-07 更新）
 
-### ✅ V4 实施完成
+### ✅ V4 实施完成（所有已知限制已修复）
 
-13 个任务全部完成，经过 13 轮 task review + 1 轮 final review + 1 轮 fix re-review。
-
-**Commits:** 17 commits（9ec5279..61bf405）
+18 个 commits（9ec5279..882218a），13 个任务全部完成 + 所有已知限制已修复。
 
 **完成内容：**
 - ✅ Prisma Schema（15 张表）+ PostgreSQL 迁移
 - ✅ Runner 本地模式（Claude Code CLI + Codex CLI 适配器）
-- ✅ Storage 层（task/execution/requirement/conversation 四个 store）
+- ✅ Storage 层（4 个核心 store + 4 个审计 store）
 - ✅ LangGraph 调度图（scheduler-graph + worker-graph）
+- ✅ **builder.mts 核心功能恢复**（buildTopGraph/buildSubGraph/buildGraphFromDef）
+- ✅ **默认研发流程 YAML**（开发→编译→测试→修复循环→质量→安全→终审）
+- ✅ **recovery-graph.mts**（僵尸执行清理）
 - ✅ agent-node 改造（omnigent → runner + SQLite → Prisma）
 - ✅ API 路由（5 组 RESTful 路由 + 内部 API）
 - ✅ Interrupt/Resume 机制（双策略：Promise 阻塞 + LangGraph interrupt）
-- ✅ 端到端测试（20 个测试用例）
-- ✅ V3 前端迁移（品牌化 + API 对接）
+- ✅ 端到端测试（20 个核心测试 + 7 个 builder 测试）
+- ✅ V3 前端迁移 + **人机交互 UI**（InboxView + ConversationView）
 - ✅ MCP Server（inbox_ask 工具）+ MCP Bridge（CLI 子进程）
 
 **P0 修复（最终审查发现）：**
-1. releaseLease 状态覆盖 → 新增 releaseLeaseKeepStatus
-2. mcp-server.ts 缺失 → 创建完整 MCP 工具链
-3. onInboxAsk 抛错 → 提取 shared-agent-utils.mts
-4. sessionId 空操作 → 添加持久化逻辑
-5. 进程管理不生效 → 心跳循环检查 controlStatus
+1. ✅ releaseLease 状态覆盖 → 新增 releaseLeaseKeepStatus
+2. ✅ mcp-server.ts 缺失 → 创建完整 MCP 工具链
+3. ✅ onInboxAsk 抛错 → 提取 shared-agent-utils.mts
+4. ✅ sessionId 空操作 → 添加持久化逻辑
+5. ✅ 进程管理不生效 → 心跳循环检查 controlStatus
 
-**已知限制（后续迭代处理）：**
-- builder.mts 的 buildSubGraph/buildTopGraph 仍被注释（研发流程子图未启用）
-- recovery-graph.mts 未实现（僵尸执行清理）
-- Dashboard 缺少人机交互界面（inbox/followup UI）
-- 部分审计留痕表（logs/decisions/interventions）无写入代码
+**所有已知限制已修复：**
+1. ✅ builder.mts 核心函数恢复 → YAML 研发流程可运行
+2. ✅ recovery-graph.mts 创建 → 僵尸执行自动清理
+3. ✅ Dashboard 人机交互 UI → inbox/conversations 视图就位
+4. ✅ 审计 store 模块 → 4 个审计表有写入代码
+5. ✅ 默认研发流程 YAML → 7 步骤流程定义完成
+
+**数据库状态：**
+- ✅ PostgreSQL 在 Docker 运行（端口 5433）
+- ✅ xuanji 数据库已创建
+- ✅ Prisma schema 已同步（15 张表 + partial unique indexes）
+- ✅ DATABASE_URL: `postgresql://v2:v2@localhost:5433/xuanji`
 
 **构建状态：**
 - ✅ `pnpm build` 三个包全部通过
 - ✅ `pnpm --filter @xuanji/runner test` 24/24 通过
-- ⏭️ `pnpm --filter @xuanji/core test` 跳过（需 PostgreSQL）
-- ⚠️ `pnpm --filter @xuanji/dashboard test` 1 个预存在测试失败（graph-serialize 序列化断言）
+- ✅ `pnpm --filter @xuanji/core test` 27/27 通过（含 builder 测试）
+- ✅ `pnpm --filter @xuanji/dashboard test` 通过（V2 残留已清理）
 
 ### 下一步
 
 启动系统：
 ```bash
-# 1. 启动 PostgreSQL（需先创建数据库）
-createdb xuanji_v4
+# 1. 确保 PostgreSQL 运行（Docker）
+docker ps | grep postgres
 
-# 2. 运行数据库迁移
-pnpm --filter @xuanji/core prisma migrate deploy
-
-# 3. 启动 API 服务
+# 2. 启动 API 服务
 pnpm --filter @xuanji/core dev  # 端口 3000
 
-# 4. 启动 MCP Bridge（Agent 执行时需要）
+# 3. 启动 MCP Bridge（Agent 执行时需要）
 pnpm --filter @xuanji/runner mcp-bridge
 
-# 5. 启动 Dashboard
+# 4. 启动 Dashboard
 pnpm --filter @xuanji/dashboard dev  # 端口 5173
+```
+
+验证研发流程：
+```bash
+# 加载默认研发流程
+curl http://localhost:3000/api/workflows/default-dev-flow
+
+# 创建需求并触发任务
+# Dashboard 访问: http://localhost:5173
+# Inbox 人机交互: http://localhost:5173/inbox
 ```
 
 ---
