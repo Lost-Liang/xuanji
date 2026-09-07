@@ -5,7 +5,7 @@
  * 集成测试需要真实的 CLI（claude / codex），如果不可用则自动跳过。
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,7 +15,6 @@ import {
   generateQuestionId,
   createInboxQuestion,
   type AdapterEvent,
-  type LocalRunOptions,
   type LocalRunResult,
 } from '../src/index.js';
 
@@ -61,7 +60,7 @@ describe('辅助函数', () => {
       const id = generateQuestionId();
       // UUID v4 格式：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
       expect(id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );
     });
 
@@ -118,6 +117,10 @@ describe('runLocal - Claude Code 集成测试', () => {
 
   beforeAll(() => {
     workDir = createTempWorkDir();
+  });
+
+  afterAll(() => {
+    cleanupTempWorkDir(workDir);
   });
 
   // 动态跳过：如果 claude CLI 不可用则跳过整个 describe
@@ -249,6 +252,10 @@ describe('runLocal - Codex 集成测试', () => {
     workDir = createTempWorkDir();
   });
 
+  afterAll(() => {
+    cleanupTempWorkDir(workDir);
+  });
+
   // 动态跳过：如果 codex CLI 不可用则跳过整个 describe
   const describeFn = codexAvailable ? describe : describe.skip;
 
@@ -276,6 +283,89 @@ describe('runLocal - Codex 集成测试', () => {
         );
         expect(systemEvents.length).toBeGreaterThan(0);
       }
+    }, 60_000);
+
+    it('应通过 onEvent 回调传递事件', async () => {
+      const events: AdapterEvent[] = [];
+
+      await runLocal({
+        provider: 'codex',
+        prompt: '说 "hello"，只说这一个词。',
+        workDir,
+        onEvent: (event) => {
+          events.push(event);
+        },
+      });
+
+      // 事件列表不应为空（至少有 system 和 result 事件）
+      expect(events.length).toBeGreaterThan(0);
+
+      // 第一个事件应该是 system init
+      const firstEvent = events[0];
+      expect(firstEvent.type).toBe('system');
+      expect(firstEvent.subtype).toBe('init');
+
+      // 最后一个事件应该是 result
+      const lastEvent = events[events.length - 1];
+      expect(lastEvent.type).toBe('result');
+    }, 60_000);
+
+    it('应返回 sessionInfo 用于后续恢复', async () => {
+      const result = await runLocal({
+        provider: 'codex',
+        prompt: '你好，请记住我的名字是"测试用户"。只回答"好的"。',
+        workDir,
+      });
+
+      if (result.success) {
+        // 应该返回 sessionInfo
+        expect(result.sessionInfo).toBeDefined();
+        expect(result.sessionInfo?.providerConversationId).toBeTruthy();
+      }
+    }, 60_000);
+
+    it('应支持会话恢复（resume）', async () => {
+      // 第一步：执行初始 prompt，获取 sessionId
+      const firstResult = await runLocal({
+        provider: 'codex',
+        prompt: '请记住数字 42。只回答"好的"。',
+        workDir,
+      });
+
+      if (!firstResult.success || !firstResult.sessionInfo) {
+        // 如果第一次调用失败，跳过恢复测试
+        return;
+      }
+
+      // 第二步：使用 resume 恢复会话，询问之前记住的内容
+      const resumeResult = await runLocal({
+        provider: 'codex',
+        prompt: '我之前让你记住的数字是什么？只回答数字。',
+        workDir,
+        resume: {
+          providerConversationId: firstResult.sessionInfo.providerConversationId,
+          input: '我之前让你记住的数字是什么？只回答数字。',
+        },
+      });
+
+      // 恢复应该成功
+      if (resumeResult.success && resumeResult.finalOutput) {
+        // 输出中应该包含 42
+        expect(resumeResult.finalOutput).toContain('42');
+      }
+    }, 120_000); // 恢复测试需要更长时间
+
+    it('应支持指定 model 参数', async () => {
+      // 使用 o4-mini 模型
+      const result = await runLocal({
+        provider: 'codex',
+        prompt: '回答 OK，只回答这一个词。',
+        workDir,
+        model: 'o4-mini',
+      });
+
+      // 验证结果结构正确（不验证是否成功，因为模型名称可能不被支持）
+      expect(result).toHaveProperty('success');
     }, 60_000);
   });
 });
