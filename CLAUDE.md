@@ -129,9 +129,64 @@ long-running-agent-v4/
 
 ---
 
-## 当前状态
+## 当前状态（2026-09-07 更新）
 
-V4 设计与实施计划已完成，共 13 个任务，预估约 2 天工作量。下一步：执行实施计划。
+### ✅ V4 实施完成
+
+13 个任务全部完成，经过 13 轮 task review + 1 轮 final review + 1 轮 fix re-review。
+
+**Commits:** 17 commits（9ec5279..61bf405）
+
+**完成内容：**
+- ✅ Prisma Schema（15 张表）+ PostgreSQL 迁移
+- ✅ Runner 本地模式（Claude Code CLI + Codex CLI 适配器）
+- ✅ Storage 层（task/execution/requirement/conversation 四个 store）
+- ✅ LangGraph 调度图（scheduler-graph + worker-graph）
+- ✅ agent-node 改造（omnigent → runner + SQLite → Prisma）
+- ✅ API 路由（5 组 RESTful 路由 + 内部 API）
+- ✅ Interrupt/Resume 机制（双策略：Promise 阻塞 + LangGraph interrupt）
+- ✅ 端到端测试（20 个测试用例）
+- ✅ V3 前端迁移（品牌化 + API 对接）
+- ✅ MCP Server（inbox_ask 工具）+ MCP Bridge（CLI 子进程）
+
+**P0 修复（最终审查发现）：**
+1. releaseLease 状态覆盖 → 新增 releaseLeaseKeepStatus
+2. mcp-server.ts 缺失 → 创建完整 MCP 工具链
+3. onInboxAsk 抛错 → 提取 shared-agent-utils.mts
+4. sessionId 空操作 → 添加持久化逻辑
+5. 进程管理不生效 → 心跳循环检查 controlStatus
+
+**已知限制（后续迭代处理）：**
+- builder.mts 的 buildSubGraph/buildTopGraph 仍被注释（研发流程子图未启用）
+- recovery-graph.mts 未实现（僵尸执行清理）
+- Dashboard 缺少人机交互界面（inbox/followup UI）
+- 部分审计留痕表（logs/decisions/interventions）无写入代码
+
+**构建状态：**
+- ✅ `pnpm build` 三个包全部通过
+- ✅ `pnpm --filter @xuanji/runner test` 24/24 通过
+- ⏭️ `pnpm --filter @xuanji/core test` 跳过（需 PostgreSQL）
+- ⚠️ `pnpm --filter @xuanji/dashboard test` 1 个预存在测试失败（graph-serialize 序列化断言）
+
+### 下一步
+
+启动系统：
+```bash
+# 1. 启动 PostgreSQL（需先创建数据库）
+createdb xuanji_v4
+
+# 2. 运行数据库迁移
+pnpm --filter @xuanji/core prisma migrate deploy
+
+# 3. 启动 API 服务
+pnpm --filter @xuanji/core dev  # 端口 3000
+
+# 4. 启动 MCP Bridge（Agent 执行时需要）
+pnpm --filter @xuanji/runner mcp-bridge
+
+# 5. 启动 Dashboard
+pnpm --filter @xuanji/dashboard dev  # 端口 5173
+```
 
 ---
 
