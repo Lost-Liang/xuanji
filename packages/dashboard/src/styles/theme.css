@@ -1,0 +1,302 @@
+/* =========================================================================
+   璇玑 Console · 深色终端设计系统令牌表（单一真源）
+   风格：Minimalism & Swiss Style × 深色终端 · 强对比 · 科技
+   状态色对齐 spec §9.3：done绿 / running青·动画 / pending灰 / failed红 / paused黄
+   ========================================================================= */
+
+:root {
+  /* ---- 基础底色 ---- */
+  --bg:          #0B0F1A;   /* 页面底 */
+  --panel:       #11161F;   /* 侧栏 / 卡片底 */
+  --surface:     #161C28;   /* 次级面 / hover */
+  --surface-2:   #1C2433;   /* 激活态 */
+  --border:      #1E293B;   /* 主边框 */
+  --border-soft: #16202F;   /* 弱分割线 */
+
+  /* ---- 文字 ---- */
+  --text:  #F8FAFC;
+  --muted: #94A3B8;
+  --faint: #64748B;
+
+  /* ---- 品牌强调色 ---- */
+  --accent:    #22D3EE;     /* 青：主操作 / running */
+  --accent-dim:#0E7490;     /* 青：hover 描边 / 暗态 */
+  --ai:        #7C3AED;     /* 紫：AI / agent 语义 */
+  --ai-dim:    #4C1D95;
+
+  /* ---- 节点 / 任务执行状态色 ---- */
+  --st-done:    #22C55E;
+  --st-running: #22D3EE;
+  --st-pending: #64748B;
+  --st-failed:  #EF4444;
+  --st-paused:  #F59E0B;
+
+  /* ---- 字体 ---- */
+  --font-ui:   'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body:  ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ---- 间距 / 圆角 ---- */
+  --radius:    9px;
+  --radius-sm: 6px;
+}
+
+/* =========================================================================
+   Element Plus 变量覆盖（深色底 + 品牌色 + 状态语义）
+   用 :root.dark 提升特异性（0,2,0）压过 EP dark/css-vars.css 的 html.dark（0,1,1），
+   确保我们的调色板生效。语义沿用现有业务页：
+     primary=运行 success=完成 warning=暂停/限流 danger=失败 info=取消
+   ========================================================================= */
+:root.dark {
+  --el-color-primary:        var(--accent);
+  --el-color-primary-light-3: #1AA7BE;
+  --el-color-primary-light-5: #2EB8CC;
+  --el-color-primary-light-7: #4FCBDB;
+  --el-color-primary-light-8: #6DD4E3;
+  --el-color-primary-light-9: #0C2A33;
+  --el-color-primary-dark-2:  #06B6D4;
+
+  --el-color-success:        var(--st-done);
+  --el-color-success-light-3:#1F7A3A;
+  --el-color-success-light-5:#2A8C45;
+  --el-color-success-light-7:#3FA960;
+  --el-color-success-light-8:#5DBE7A;
+  --el-color-success-light-9:#0E2A18;
+  --el-color-success-dark-2:#16A34A;
+
+  --el-color-warning:        var(--st-paused);
+  --el-color-warning-light-3:#9C6713;
+  --el-color-warning-light-5:#AE7519;
+  --el-color-warning-light-7:#C98823;
+  --el-color-warning-light-8:#DAA03C;
+  --el-color-warning-light-9:#2E2008;
+  --el-color-warning-dark-2: #D97706;
+
+  --el-color-danger:         var(--st-failed);
+  --el-color-danger-light-3: #9B2A2A;
+  --el-color-danger-light-5: #AE3535;
+  --el-color-danger-light-7: #C94848;
+  --el-color-danger-light-8: #DD6060;
+  --el-color-danger-light-9: #2A0E0E;
+  --el-color-danger-dark-2:  #DC2626;
+
+  --el-color-info:           var(--st-pending);
+  --el-color-info-light-3:  #3A4554;
+  --el-color-info-light-5:  #4A5563;
+  --el-color-info-light-7:  #64748B;
+  --el-color-info-light-8:  #7E8BA0;
+  --el-color-info-light-9:  #1A1F28;
+  --el-color-info-dark-2:   #475569;
+
+  /* ---- 面色 / 文字 / 边框（覆盖 EP dark 默认，统一为我们的深色调色板）---- */
+  --el-bg-color:          var(--bg);
+  --el-bg-color-page:     var(--bg);
+  --el-bg-color-overlay: var(--panel);
+  --el-fill-color:        var(--surface);
+  --el-fill-color-light:  var(--surface);
+  --el-fill-color-lighter:var(--surface);
+  --el-fill-color-extra-light: var(--surface-2);
+  --el-fill-color-blank:  var(--panel);
+  --el-fill-color-dark:   var(--surface-2);
+
+  --el-text-color-primary:     var(--text);
+  --el-text-color-regular:     var(--text);
+  --el-text-color-secondary:   var(--muted);
+  --el-text-color-placeholder: var(--faint);
+  --el-text-color-disabled:    #475569;
+
+  --el-border-color:        var(--border);
+  --el-border-color-light:  var(--border);
+  --el-border-color-lighter:var(--border-soft);
+  --el-border-color-extra-light: var(--border-soft);
+  --el-border-color-dark:    var(--border);
+  --el-border-color-darker:  var(--border);
+  --el-border-color-hover:   var(--accent-dim);
+
+  --el-mask-color:         rgba(11, 15, 26, 0.7);
+  --el-disabled-bg-color:  var(--surface);
+  --el-disabled-text-color:#475569;
+  --el-disabled-border-color: var(--border);
+
+  --el-box-shadow:        0 4px 16px rgba(0,0,0,.4);
+  --el-box-shadow-light:  0 2px 8px rgba(0,0,0,.3);
+
+  --el-font-size-base: 14px;
+}
+
+/* =========================================================================
+   全局基础
+   ========================================================================= */
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+::selection { background: var(--accent); color: #001016; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #2A3A52; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* =========================================================================
+   通用工具类（业务页 + 画布族共用，确保跨页一致）
+   ========================================================================= */
+.mono { font-family: var(--font-mono); }
+
+/* 状态 pill：业务页状态徽章统一 */
+.st-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: var(--radius-sm); border: 1px solid;
+  letter-spacing: .01em; white-space: nowrap;
+}
+.st-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.st-pill.running { color: var(--st-running); border-color: rgba(34,211,238,.3); background: rgba(34,211,238,.08); }
+.st-pill.running .dot { background: var(--st-running); box-shadow: 0 0 6px var(--st-running); }
+.st-pill.done { color: var(--st-done); border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.08); }
+.st-pill.done .dot { background: var(--st-done); }
+.st-pill.paused { color: var(--st-paused); border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); }
+.st-pill.paused .dot { background: var(--st-paused); }
+.st-pill.failed { color: var(--st-failed); border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.08); }
+.st-pill.failed .dot { background: var(--st-failed); }
+.st-pill.pending { color: var(--muted); border-color: var(--border); background: var(--surface); }
+.st-pill.pending .dot { background: var(--faint); }
+
+@keyframes v2-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes v2-noderun { 0%,100% { box-shadow: 0 0 0 1px var(--st-running), 0 0 18px rgba(34,211,238,.22); } 50% { box-shadow: 0 0 0 1px var(--st-running), 0 0 30px rgba(34,211,238,.42); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* =========================================================================
+   Vue Flow 画布（深色终端）
+   ========================================================================= */
+.vue-flow {
+  background: var(--panel);
+  position: relative;
+  overflow: hidden;
+}
+/* 画布背景：极淡点阵 */
+.vue-flow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(148, 163, 184, 0.05) 0.75px, transparent 0.75px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: 0;
+}
+.vue-flow__viewport { z-index: 1; }
+.vue-flow__handle { width: 7px; height: 7px; background: var(--border); border: none; border-radius: 50%; }
+.vue-flow__handle:hover { background: var(--accent); }
+.vue-flow__edge-path { stroke: var(--border); stroke-width: 1.4; }
+.vue-flow__controls { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.vue-flow__controls-button { background: var(--panel); border-bottom: 1px solid var(--border); color: var(--muted); }
+.vue-flow__controls-button:hover { background: var(--surface); color: var(--text); }
+.vue-flow__controls-button svg { fill: currentColor; }
+
+/* =========================================================================
+   Vue Flow 节点卡片（agent/gate/command/subgraph 共用，单一来源）
+   状态色对齐 spec §9.3：done绿 / running青·动画 / pending灰 / failed红 / paused黄
+   ========================================================================= */
+.vf-node {
+  position: relative;
+  width: 148px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+/* 节点类型背景色 */
+.vf-node.t-agent { background: rgba(124, 58, 237, 0.1); border-color: rgba(124, 58, 237, 0.2); }
+.vf-node.t-gate { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.2); }
+.vf-node.t-command { background: rgba(148, 163, 184, 0.1); border-color: rgba(148, 163, 184, 0.2); }
+.vf-node.t-subgraph { background: rgba(124, 58, 237, 0.12); border-color: rgba(124, 58, 237, 0.25); }
+.vf-node .vn-kind { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.vf-node .vn-kind .vn-ic { font-family: var(--font-mono); font-size: 11px; line-height: 1; }
+.vf-node .vn-lbl { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.25; margin-bottom: 6px; word-break: break-all; }
+.vf-node .vn-sub { font-family: var(--font-mono); font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vf-node .vn-badge { position: absolute; top: -9px; right: -9px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); line-height: 1.3; }
+.vf-node:hover { border-color: var(--accent-dim); }
+.vf-node.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(34,211,238,.25); }
+/* 节点类型图标色 */
+.vf-node.t-agent .vn-ic { color: var(--ai); }
+.vf-node.t-gate .vn-ic { color: var(--st-paused); }
+.vf-node.t-command .vn-ic { color: var(--accent); }
+.vf-node.t-subgraph .vn-ic { color: #A78BFA; }
+/* 运行态染色 */
+.vf-node.st-done { border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.08); }
+.vf-node.st-done .vn-kind { color: var(--st-done); }
+.vf-node.st-running { border-color: var(--st-running); background: rgba(34,211,238,.1); box-shadow: 0 0 0 1px var(--st-running), 0 0 16px rgba(34,211,238,.2); }
+.vf-node.st-running .vn-kind { color: var(--st-running); }
+.vf-node.st-pending { opacity: .6; }
+.vf-node.st-failed { border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.1); }
+.vf-node.st-failed .vn-kind { color: var(--st-failed); }
+.vf-node.st-paused { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); }
+.vf-node.st-paused .vn-kind { color: var(--st-paused); }
+
+/* =========================================================================
+   画布侧栏面板（NodePanel / PropertyPanel / 运行态信息面板共用）
+   ========================================================================= */
+.canvas-aside {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 12px 10px;
+  overflow-y: auto;
+  font-family: var(--font-ui);
+}
+.canvas-aside.right { border-right: none; border-left: 1px solid var(--border); }
+.canvas-aside .aside-title { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+.canvas-aside .aside-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.canvas-aside .aside-field > .lab { font-size: 10.5px; letter-spacing: .04em; color: var(--muted); font-family: var(--font-mono); }
+.canvas-aside .aside-field input {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 12.5px; padding: 6px 8px; font-family: var(--font-mono); outline: none;
+  transition: border-color .16s;
+}
+.canvas-aside .aside-field input:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 3px rgba(34,211,238,.08); }
+.canvas-aside .aside-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; margin-bottom: 5px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: 12.5px; cursor: pointer; transition: border-color .16s, background .16s;
+}
+.canvas-aside .aside-item:hover { border-color: var(--accent-dim); background: var(--surface-2); }
+.canvas-aside .aside-item .ic { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.canvas-aside .aside-empty { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
+
+/* =========================================================================
+   简化动画效果
+   ========================================================================= */
+
+/* 运行节点简单高亮 */
+.vf-node.st-running {
+  border-color: var(--st-running);
+  box-shadow: 0 0 0 1px var(--st-running), 0 0 12px rgba(34, 211, 238, 0.2);
+}
+
+/* 选中节点样式 */
+.vf-node.sel {
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3);
+}
+
+/* 边动画 */
+.vue-flow__edge.animated .vue-flow__edge-path {
+  stroke: var(--st-running);
+  stroke-width: 1.5;
+}
+
+/* hover 效果 */
+.vf-node:hover {
+  border-color: var(--accent-dim);
+}
