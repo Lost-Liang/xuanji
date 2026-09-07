@@ -1,0 +1,35 @@
+{
+  "name": "@xuanji/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
+    "@prisma/client": "^5.19.0",
+    "@xuanji/runner": "workspace:*",
+    "express": "^4.19.0",
+    "pg": "^8.12.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.0",
+    "prisma": "^5.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
