@@ -62,6 +62,7 @@ import { executionsRouter } from './routes/executions.mjs';
 import { inboxRouter } from './routes/inbox.mjs';
 import { conversationsRouter } from './routes/conversations.mjs';
 import { internalRouter } from './routes/internal.mjs';
+import { workflowsRouter } from './routes/workflows.mjs';
 
 /**
  * 创建 Express 应用并注册所有路由
@@ -77,6 +78,7 @@ export function createApp(): express.Express {
   app.use('/api/executions', executionsRouter);
   app.use('/api/inbox', inboxRouter);
   app.use('/api/conversations', conversationsRouter);
+  app.use('/api/workflows', workflowsRouter);
 
   // 内部 API（MCP Bridge 专用）
   app.use('/api/internal', internalRouter);
