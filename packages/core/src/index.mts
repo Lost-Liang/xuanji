@@ -34,3 +34,11 @@ export { makeGateNode } from './graph/nodes/gate-node.mjs';
 export { makeCommandNode } from './graph/nodes/command-node.mjs';
 // Worktree 管理
 export { ensureTargetClone, ensureReqBranch, ensureTaskWorktree, removeTaskWorktree } from './graph/worktree.mjs';
+
+// 调度图（Task 8: LangGraph 调度）
+export { buildSchedulerGraph, SchedulerState } from './graph/scheduler-graph.mjs';
+export type { SchedulerStateType } from './graph/scheduler-graph.mjs';
+export { workerNode } from './graph/worker-graph.mjs';
+
+// 时序常量
+export { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff, SCHEDULER_IDLE_WAIT_MS, LEASE_DURATION_MS, ZOMBIE_TIMEOUT_MINUTES } from './timing-constants.mjs';
