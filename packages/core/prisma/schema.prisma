@@ -173,6 +173,9 @@ model TaskExecution {
   interventions     Intervention[]
   executionEvents   ExecutionEvent[]
 
+  @@index([status])
+  @@index([subjectType, subjectId])
+  @@index([leaseExpiresAt])
   @@map("task_executions")
 }
 
@@ -203,6 +206,8 @@ model PhaseInstance {
   outputs             PhaseOutput[]
   decisions           Decision[]
 
+  @@index([executionId])
+  @@index([taskId])
   @@map("phase_instances")
 }
 
