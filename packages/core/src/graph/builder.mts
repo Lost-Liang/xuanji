@@ -7,7 +7,8 @@ import type { GraphDef, WorkflowDef, WorkflowEdge, EdgeCondition } from './types
 // import type { GraphNode } from './types.mjs'  // TODO: Task 9 修复 — nodeAction 恢复后启用
 // TODO: Task 9 修复 — TopState/SubState 在 buildTopGraph/buildSubGraph 恢复后启用
 // import { TopState, SubState } from './state-schema.mjs'
-// TODO: Task 8 修复 — agent-node.mts 需改造为 AgentOS Runner 适配器
+// ✅ Task 9 已完成 — agent-node.mts 已改造为 AgentOS Runner 适配器
+// 注：nodeAction 仍注释，因其依赖的 makeGateNode/makeCommandNode/pgClient 尚未就位（Task 10+）
 // import { makeAgentNode } from './agent-node.mjs'
 // TODO: Task 9 修复 — makeGateNode/makeCommandNode 在 nodeAction 恢复后启用
 // import { makeGateNode } from './nodes/gate-node.mjs'
@@ -144,7 +145,7 @@ export function collectRoutes(def: WorkflowDef, graph: GraphDef): RouteMeta[] {
   return routes
 }
 
-// TODO: Task 8 修复 — nodeAction 依赖 makeAgentNode（agent-node.mts），需改造为 AgentOS Runner 适配器
+// TODO: Task 10+ 修复 — nodeAction 依赖 makeAgentNode（✅ Task 9 已就绪）+ makeGateNode + makeCommandNode + pgClient，需全部就位后恢复
 // 节点 type → action 工厂
 // function nodeAction(node: GraphNode, isSubgraph = false) {
 //   const interactionMode = node.interaction_mode ?? (isSubgraph ? 'autonomous' : 'interactive')
