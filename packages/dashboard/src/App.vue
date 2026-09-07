@@ -74,7 +74,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Odometer, Document, List, Monitor, Setting, Collection, Operation } from '@element-plus/icons-vue'
+import { Odometer, Document, List, Monitor, Setting, Collection, Operation, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import LoginDialog from './components/LoginDialog.vue'
 import { currentUser, isLoggedIn, logout, checkAuth } from './stores/user'
@@ -86,6 +86,7 @@ const menus: { path: string; match: string; label: string; icon: any; count?: nu
   { path: '/requirements', match: '/requirements', label: '需求管理', icon: Document },
   { path: '/tasks', match: '/tasks', label: '任务列表', icon: List },
   { path: '/executions', match: '/executions', label: '执行概览', icon: Monitor },
+  { path: '/inbox', match: '/inbox', label: '人机交互', icon: ChatDotRound },
   { path: '/agents', match: '/agents', label: 'Agent配置', icon: Setting },
   { path: '/skills', match: '/skills', label: 'Skill配置', icon: Collection },
   { path: '/workflows', match: '/workflows', label: '工作流列表', icon: Operation },
@@ -94,6 +95,7 @@ const menus: { path: string; match: string; label: string; icon: any; count?: nu
 const activeMenu = computed(() => {
   if (route.path.startsWith('/tasks')) return '/tasks'
   if (route.path.startsWith('/requirements')) return '/requirements'
+  if (route.path.startsWith('/conversations/')) return '/inbox'
   return route.path
 })
 
@@ -102,6 +104,7 @@ const titleMap: Record<string, string> = {
   '/requirements': '需求管理',
   '/tasks': '任务列表',
   '/executions': '执行概览',
+  '/inbox': '人机交互',
   '/agents': 'Agent配置',
   '/skills': 'Skill配置',
   '/workflows': '工作流列表',
@@ -109,6 +112,7 @@ const titleMap: Record<string, string> = {
 const currentTitle = computed(() => {
   if (route.path.startsWith('/tasks')) return '任务列表'
   if (route.path.startsWith('/requirements')) return '需求管理'
+  if (route.path.startsWith('/conversations/')) return '对话历史'
   return titleMap[route.path] ?? ''
 })
 

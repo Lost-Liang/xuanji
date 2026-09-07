@@ -10,6 +10,8 @@ import AgentDetail from './views/AgentDetail.vue'
 import SkillConfig from './views/SkillConfig.vue'
 import SkillDetail from './views/SkillDetail.vue'
 import WorkflowList from './views/WorkflowList.vue'
+import InboxView from './views/InboxView.vue'
+import ConversationView from './views/ConversationView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -27,5 +29,9 @@ export const router = createRouter({
     { path: '/skills/new', component: SkillDetail },
     { path: '/skills/:id', component: SkillDetail },
     { path: '/workflows', component: WorkflowList },
+    // 人机交互：待回答问题列表
+    { path: '/inbox', component: InboxView },
+    // 对话历史查看（根据 sessionId 渲染对话事件流 + 人类追问）
+    { path: '/conversations/:sessionId', component: ConversationView, props: true },
   ],
 })

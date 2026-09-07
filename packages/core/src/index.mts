@@ -7,6 +7,11 @@ export { executionStore } from './storage/execution-store.mjs';
 export type { LeaseInfo } from './storage/execution-store.mjs';
 export { requirementStore } from './storage/requirement-store.mjs';
 export { conversationStore } from './storage/conversation-store.mjs';
+// 审计 store（V4 新增：decision/intervention/log/event 留痕）
+export { logStore } from './storage/log-store.mjs';
+export { decisionStore } from './storage/decision-store.mjs';
+export { interventionStore } from './storage/intervention-store.mjs';
+export { eventStore } from './storage/event-store.mjs';
 
 // Graph 层（V3 迁移）
 // 类型
@@ -19,6 +24,8 @@ export { TopState, SubState } from './graph/state-schema.mjs';
 // 工具函数
 export { gatePath, findEntryNodes, routeFromSource, withLoopCounter, collectRoutes } from './graph/builder.mjs';
 export type { RouteMeta } from './graph/builder.mjs';
+// 图构建核心函数（V4 修复：从注释恢复）
+export { buildTopGraph, buildSubGraph, buildGraphFromDef } from './graph/builder.mjs';
 // YAML 加载器
 export { assertWorkflowValid, loadWorkflowFromYaml, mapYamlToGraphDef, loadWorkflowFromFile, loadWorkflowsFromDir } from './graph/yaml-loader.mjs';
 // 条件函数注册表
@@ -39,6 +46,10 @@ export { ensureTargetClone, ensureReqBranch, ensureTaskWorktree, removeTaskWorkt
 export { buildSchedulerGraph, SchedulerState } from './graph/scheduler-graph.mjs';
 export type { SchedulerStateType } from './graph/scheduler-graph.mjs';
 export { workerNode } from './graph/worker-graph.mjs';
+
+// 恢复图（僵尸执行检测与清理）
+export { buildRecoveryGraph, findZombies, RecoveryState } from './graph/recovery-graph.mjs';
+export type { RecoveryStateType } from './graph/recovery-graph.mjs';
 
 // 时序常量
 export { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff, SCHEDULER_IDLE_WAIT_MS, LEASE_DURATION_MS, ZOMBIE_TIMEOUT_MINUTES } from './timing-constants.mjs';

@@ -1,0 +1,148 @@
+# 璇玑 V4 默认研发流程
+#
+# 流程：开发 → 编译验证 → 测试验证 → Bug 修复(条件循环,最多 3 次)
+#       → 质量审查 → 安全审查 → 最终审查
+#
+# 设计原则：
+# - 每个 check 节点通过条件函数判断通过/失败
+# - 失败时进入 fix 节点修复，最多循环 3 次（loop_max: 3）
+# - fix 节点执行后自增对应 check 节点的 loop_counter
+# - 条件函数在 default-conditions.mts 注册（compile_pass/test_pass/quality_pass/security_pass）
+#
+# 节点通道：
+# - command 节点（compile_check/test_check）写入 node_outputs（V4 通道）+ results（V3 兼容）
+# - agent 节点（develop/*/review）通过 buildReturn 写入 results
+# - 条件函数通过 sourceText(state, nodeId) 读取 node_outputs
+
+version: "1"
+id: default-dev-flow
+name: 默认研发流程
+description: 开发 → 编译验证 → 测试验证 → Bug修复(最多3次) → 质量审查 → 安全审查 → 最终审查
+
+nodes:
+  # ─── 1. 开发阶段 ─────────────────────────────────────────────────────────────
+  - id: develop
+    type: agent
+    agent_binding_ids: [developer]
+    write_key: results
+
+  # ─── 2. 编译验证 ─────────────────────────────────────────────────────────────
+  - id: compile_check
+    type: command
+    command: npm run build
+
+  # ─── 3. 测试验证 ─────────────────────────────────────────────────────────────
+  - id: test_check
+    type: command
+    command: npm test
+
+  # ─── 4. Bug 修复（编译/测试失败时进入，最多循环 3 次） ─────────────────────────
+  - id: bug_fix
+    type: agent
+    agent_binding_ids: [developer]
+    write_key: results
+
+  # ─── 5. 质量审查 ─────────────────────────────────────────────────────────────
+  - id: quality_review
+    type: agent
+    agent_binding_ids: [reviewer]
+    write_key: results
+
+  # ─── 5.1 质量问题修复（质量审查发现问题时循环，最多 3 次） ────────────────────
+  - id: quality_issue_fix
+    type: agent
+    agent_binding_ids: [developer]
+    write_key: results
+
+  # ─── 6. 安全审查 ─────────────────────────────────────────────────────────────
+  - id: security_review
+    type: agent
+    agent_binding_ids: [security-reviewer]
+    write_key: results
+
+  # ─── 6.1 安全问题修复（安全审查发现问题时循环，最多 3 次） ────────────────────
+  - id: security_issue_fix
+    type: agent
+    agent_binding_ids: [developer]
+    write_key: results
+
+  # ─── 7. 最终审查（人审 gate，approve 后流程结束） ─────────────────────────────
+  - id: final_review
+    type: gate
+
+edges:
+  # develop → compile_check
+  - from: develop
+    to: compile_check
+
+  # compile_check 条件边：pass → test_check, fail → bug_fix (loop_max 3)
+  # 注意：条件边顺序 —— 有条件边在前，无条件边（如果有）在后
+  - from: compile_check
+    to: test_check
+    condition:
+      type: function
+      config:
+        name: compile_pass
+
+  - from: compile_check
+    to: bug_fix
+    condition:
+      type: function
+      config:
+        name: compile_fail
+    loop_max: 3   # 最多循环修复 3 次
+
+  # bug_fix → compile_check（修复后重新编译验证）
+  - from: bug_fix
+    to: compile_check
+
+  # test_check → quality_review（测试通过或未阻塞时进入质量审查）
+  - from: test_check
+    to: quality_review
+
+  # quality_review 条件边：pass → security_review, issues → quality_issue_fix
+  - from: quality_review
+    to: security_review
+    condition:
+      type: function
+      config:
+        name: quality_pass
+
+  - from: quality_review
+    to: quality_issue_fix
+    condition:
+      type: function
+      config:
+        name: quality_issues
+    loop_max: 3
+
+  # quality_issue_fix → quality_review（修复后重新审查）
+  - from: quality_issue_fix
+    to: quality_review
+
+  # security_review 条件边：pass → final_review, issues → security_issue_fix
+  - from: security_review
+    to: final_review
+    condition:
+      type: function
+      config:
+        name: security_pass
+
+  - from: security_review
+    to: security_issue_fix
+    condition:
+      type: function
+      config:
+        name: security_issues
+    loop_max: 3
+
+  # security_issue_fix → security_review（修复后重新审查）
+  - from: security_issue_fix
+    to: security_review
+
+  # final_review → __end__（人审通过后流程结束）
+  - from: final_review
+    to: __end__
+
+start:
+  - develop

@@ -244,4 +244,31 @@ export const executionStore = {
       },
     });
   },
+
+  /**
+   * 强制释放僵尸租约 —— 由 recovery-worker 调用
+   *
+   * 与 releaseLease 的区别：
+   * - 无需 workerId/leaseToken 校验（僵尸进程的 Worker 已失联）
+   * - 同时清理 leaseExpiresAt/heartbeatAt，避免残留脏租约
+   * - 将 status 重置为 'pending'，让调度器重新拾取
+   *
+   * 条件 WHERE 仍限定 status='running'，避免误覆盖其他 Worker 已完成的执行
+   */
+  async forceReleaseZombie(executionId: string): Promise<boolean> {
+    const result = await db.taskExecution.updateMany({
+      where: {
+        executionId,
+        status: 'running',
+      },
+      data: {
+        status: 'pending',
+        workerId: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
+      },
+    });
+    return result.count > 0;
+  },
 };
