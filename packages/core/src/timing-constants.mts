@@ -55,3 +55,11 @@ export const LEASE_DURATION_MS = 5 * 60 * 1000;
  * 心跳超过此时间视为僵尸进程
  */
 export const ZOMBIE_TIMEOUT_MINUTES = 10;
+
+/**
+ * 心跳续期间隔（毫秒）
+ *
+ * Worker 在执行任务期间，每隔此时间调用一次 renewHeartbeat()
+ * 防止长时间任务（> 5 分钟）因租约过期被僵尸检测误判
+ */
+export const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000; // 2 分钟

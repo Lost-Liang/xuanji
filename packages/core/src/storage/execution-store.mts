@@ -142,6 +142,9 @@ export const executionStore = {
 
   /**
    * 标记执行完成
+   *
+   * 同时清理租约字段（workerId/leaseToken/leaseExpiresAt），
+   * 避免数据库中残留脏租约信息。
    */
   async complete(executionId: string, finalOutput: string): Promise<void> {
     await db.taskExecution.update({
@@ -150,12 +153,18 @@ export const executionStore = {
         status: 'completed',
         finalOutput,
         completedAt: new Date(),
+        workerId: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
       },
     });
   },
 
   /**
    * 标记执行失败
+   *
+   * 同时清理租约字段（workerId/leaseToken/leaseExpiresAt），
+   * 避免数据库中残留脏租约信息。
    */
   async fail(executionId: string, errorMessage: string): Promise<void> {
     await db.taskExecution.update({
@@ -164,6 +173,9 @@ export const executionStore = {
         status: 'failed',
         errorMessage,
         completedAt: new Date(),
+        workerId: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
       },
     });
   },

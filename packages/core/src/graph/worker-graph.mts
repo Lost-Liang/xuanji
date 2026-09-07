@@ -14,7 +14,7 @@ import { taskStore } from '../storage/task-store.mjs';
 import { conversationStore } from '../storage/conversation-store.mjs';
 import { runLocal, type AdapterEvent } from '@xuanji/runner';
 import type { Prisma } from '@prisma/client';
-import { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff } from '../timing-constants.mjs';
+import { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff, HEARTBEAT_INTERVAL_MS } from '../timing-constants.mjs';
 import type { SchedulerStateType } from './scheduler-graph.mjs';
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
@@ -174,6 +174,17 @@ export async function workerNode(
   // 记录 sessionId（从 system 事件中提取）
   let currentSessionId: string | null = null;
 
+  // 心跳续期定时器 —— 防止长时间任务租约过期被僵尸检测误判
+  const heartbeatTimer = setInterval(() => {
+    executionStore.renewHeartbeat(executionId, lease).then((ok) => {
+      if (!ok) {
+        console.warn(`[worker] 心跳续期失败，租约可能已失效: ${executionId}`);
+      }
+    }).catch((err) => {
+      console.error(`[worker] 心跳续期异常:`, err);
+    });
+  }, HEARTBEAT_INTERVAL_MS);
+
   try {
     // 更新任务状态为 running
     if (taskId) {
@@ -304,6 +315,9 @@ export async function workerNode(
       await taskStore.updateStatus(taskId, 'failed');
     }
     return { status: 'failed', error: errorMessage };
+  } finally {
+    // 无论成功、失败还是异常，都清除心跳续期定时器
+    clearInterval(heartbeatTimer);
   }
 }
 
