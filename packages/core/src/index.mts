@@ -50,6 +50,7 @@ import { requirementsRouter } from './routes/requirements.mjs';
 import { executionsRouter } from './routes/executions.mjs';
 import { inboxRouter } from './routes/inbox.mjs';
 import { conversationsRouter } from './routes/conversations.mjs';
+import { internalRouter } from './routes/internal.mjs';
 
 /**
  * 创建 Express 应用并注册所有路由
@@ -65,6 +66,9 @@ export function createApp(): express.Express {
   app.use('/api/executions', executionsRouter);
   app.use('/api/inbox', inboxRouter);
   app.use('/api/conversations', conversationsRouter);
+
+  // 内部 API（MCP Bridge 专用）
+  app.use('/api/internal', internalRouter);
 
   // 健康检查端点
   app.get('/api/health', (_req, res) => {

@@ -52,7 +52,7 @@ export const executionStore = {
    * 获取租约 —— 原子性 CAS 操作
    *
    * 通过 updateMany + 条件 WHERE 实现：
-   * - 仅当 status='pending' 且 workerId=null 时才能获取
+   * - 仅当 status='pending' 或 'rate_limited'（retryAt 已到期）且 workerId=null 时才能获取
    * - 保证只有一个 Worker 能成功获取租约
    * - 失败时返回 null（已被其他 Worker 获取或状态不符）
    */
@@ -63,11 +63,12 @@ export const executionStore = {
     const leaseToken = randomUUID();
     const leaseExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 分钟有效期
 
-    // 原子更新：仅当执行实例处于 pending 且无 Worker 占用时生效
+    // 原子更新：仅当执行实例处于 pending/rate_limited 且无 Worker 占用时生效
+    // rate_limited 状态由 releaseLeaseKeepStatus 保留，调度器在 retryAt 到期后重新获取
     const result = await db.taskExecution.updateMany({
       where: {
         executionId,
-        status: 'pending',
+        status: { in: ['pending', 'rate_limited'] },
         workerId: null,
       },
       data: {
@@ -136,6 +137,32 @@ export const executionStore = {
         workerId: null,
         leaseToken: null,
         status: 'pending',
+      },
+    });
+  },
+
+  /**
+   * 释放租约但保留当前状态 —— 用于 429 限流场景
+   *
+   * 与 releaseLease 的区别：不重置 status 字段。
+   * 调用方（setRateLimited）已将 status 设为 'rate_limited'，
+   * 此处仅清理租约字段（workerId/leaseToken），让调度器在 retryAt 到期后重新获取。
+   *
+   * 如果同时重置 status='pending'，调度器会在 retryAt 到期前就拾取该任务，
+   * 导致限流退避策略完全失效。
+   */
+  async releaseLeaseKeepStatus(executionId: string, lease: LeaseInfo): Promise<void> {
+    await db.taskExecution.updateMany({
+      where: {
+        executionId,
+        workerId: lease.workerId,
+        leaseToken: lease.leaseToken,
+      },
+      data: {
+        workerId: null,
+        leaseToken: null,
+        // 不重置 status —— 保持 'rate_limited' 状态
+        // 调度器查询 status='pending'，只有 retryAt 到期后才会被拾取
       },
     });
   },

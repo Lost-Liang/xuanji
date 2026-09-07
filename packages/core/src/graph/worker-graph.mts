@@ -8,6 +8,8 @@
 // 3. 实时保存对话事件到 conversation_events 表
 // 4. 处理 429 限流（退避重试策略）
 // 5. 更新任务和执行实例的最终状态
+// 6. 进程管理：心跳循环中检查 controlStatus，响应暂停/取消请求
+// 7. 人机交互：通过共享 handleInboxAsk 处理 inbox_ask 请求
 
 import { executionStore } from '../storage/execution-store.mjs';
 import { taskStore } from '../storage/task-store.mjs';
@@ -16,66 +18,13 @@ import { runLocal, type AdapterEvent } from '@xuanji/runner';
 import type { Prisma } from '@prisma/client';
 import { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff, HEARTBEAT_INTERVAL_MS } from '../timing-constants.mjs';
 import type { SchedulerStateType } from './scheduler-graph.mjs';
+import { mapAdapterEvent, handleInboxAsk } from './shared-agent-utils.mjs';
+import { db } from '../db.mjs';
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
 
 /** Worker 标识（单实例模式，后续可扩展为多 Worker） */
 const WORKER_ID = 'worker-1';
-
-// ─── 事件映射 ──────────────────────────────────────────────────────────────────
-
-/**
- * 将 AdapterEvent 映射为 conversationStore 的 eventType
- *
- * Adapter 事件类型 → 对话事件类型：
- * - system/init     → model_started（模型开始生成）
- * - assistant       → model_delta（模型增量输出）
- * - user            → tool_completed（工具执行完成）
- * - result/success  → final_output（最终输出）
- * - result/error    → error（错误事件）
- */
-function mapAdapterEvent(event: AdapterEvent): {
-  eventType: string;
-  role?: string;
-  payload: Prisma.InputJsonValue;
-} {
-  switch (event.type) {
-    case 'system':
-      return {
-        eventType: 'model_started',
-        payload: { sessionId: event.sessionId } as Prisma.InputJsonValue,
-      };
-    case 'assistant':
-      return {
-        eventType: 'model_delta',
-        role: 'assistant',
-        payload: {
-          message: event.message,
-          toolUse: event.toolUse,
-        } as Prisma.InputJsonValue,
-      };
-    case 'user':
-      return {
-        eventType: 'tool_completed',
-        role: 'user',
-        payload: {
-          message: event.message,
-          toolResult: event.toolResult,
-        } as Prisma.InputJsonValue,
-      };
-    case 'result':
-      if (event.subtype === 'error') {
-        return {
-          eventType: 'error',
-          payload: { error: event.error } as Prisma.InputJsonValue,
-        };
-      }
-      return {
-        eventType: 'final_output',
-        payload: { output: event.output } as Prisma.InputJsonValue,
-      };
-  }
-}
 
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
 
@@ -139,13 +88,19 @@ async function buildPrompt(taskId: string | null): Promise<string> {
  * 5. 构建 prompt
  * 6. 调用 runLocal() 执行 Agent
  * 7. 通过 onEvent 回调实时保存对话事件
- * 8. 根据执行结果更新状态（completed / failed / rate_limited）
+ * 8. 心跳循环中检查 controlStatus 响应暂停/取消请求
+ * 9. 根据执行结果更新状态（completed / failed / rate_limited）
  *
  * 429 限流处理：
  * - 检测错误消息中的 429 / rate_limit 关键字
  * - 检查重试次数是否超过 MAX_RATE_LIMIT_RETRIES
- * - 未超限：设置 rate_limited 状态 + retryAt 时间
+ * - 未超限：设置 rate_limited 状态 + retryAt 时间，使用 releaseLeaseKeepStatus 保留状态
  * - 已超限：标记为失败
+ *
+ * 进程管理：
+ * - 心跳循环中每 HEARTBEAT_INTERVAL_MS 检查 controlStatus
+ * - cancel_requested: 终止 CLI 进程，标记执行失败
+ * - pause_requested: 目前记录日志（完整暂停需要 CLI 进程信号支持）
  */
 export async function workerNode(
   state: SchedulerStateType,
@@ -174,15 +129,51 @@ export async function workerNode(
   // 记录 sessionId（从 system 事件中提取）
   let currentSessionId: string | null = null;
 
-  // 心跳续期定时器 —— 防止长时间任务租约过期被僵尸检测误判
-  const heartbeatTimer = setInterval(() => {
-    executionStore.renewHeartbeat(executionId, lease).then((ok) => {
+  // AbortController —— 用于进程管理中取消 CLI 执行
+  // 心跳循环检测到 cancel_requested 时调用 abort()，runLocal 监听信号终止 CLI 进程
+  const abortController = new AbortController();
+
+  // 取消标志 —— 心跳循环检测到 cancel_requested 时设为 true
+  let cancelled = false;
+
+  // 心跳续期 + 进程管理定时器
+  const heartbeatTimer = setInterval(async () => {
+    // 1. 续期心跳
+    try {
+      const ok = await executionStore.renewHeartbeat(executionId, lease);
       if (!ok) {
         console.warn(`[worker] 心跳续期失败，租约可能已失效: ${executionId}`);
       }
-    }).catch((err) => {
+    } catch (err) {
       console.error(`[worker] 心跳续期异常:`, err);
-    });
+    }
+
+    // 2. 检查 controlStatus（进程管理）
+    try {
+      const currentExec = await db.taskExecution.findUnique({
+        where: { executionId },
+        select: { controlStatus: true },
+      });
+
+      if (currentExec?.controlStatus === 'cancel_requested') {
+        console.log(`[worker] 检测到取消请求，终止执行: ${executionId}`);
+        cancelled = true;
+
+        // 通过 AbortSignal 通知 runLocal 终止 CLI 进程
+        abortController.abort();
+      } else if (currentExec?.controlStatus === 'pause_requested') {
+        // 暂停功能：记录日志，后续版本可实现完整的暂停/恢复机制
+        // 完整的暂停需要 CLI 进程支持 SIGSTOP 信号或 MCP 协议扩展
+        console.log(`[worker] 检测到暂停请求（当前版本仅记录，不暂停）: ${executionId}`);
+        // 重置 controlStatus 避免重复日志
+        await db.taskExecution.update({
+          where: { executionId },
+          data: { controlStatus: 'paused' },
+        });
+      }
+    } catch (err) {
+      console.error(`[worker] 检查 controlStatus 失败:`, err);
+    }
   }, HEARTBEAT_INTERVAL_MS);
 
   try {
@@ -190,6 +181,12 @@ export async function workerNode(
     if (taskId) {
       await taskStore.updateStatus(taskId, 'running');
     }
+
+    // 重置 controlStatus 为 idle（清除之前的暂停/取消请求）
+    await db.taskExecution.update({
+      where: { executionId },
+      data: { controlStatus: 'idle' },
+    });
 
     // 构建 prompt
     const prompt = await buildPrompt(taskId);
@@ -200,6 +197,8 @@ export async function workerNode(
       prompt,
       workDir: execution.targetRepoPath,
       model: undefined, // 使用 CLI 默认模型
+      // AbortSignal 用于进程管理取消 —— 心跳循环检测到 cancel_requested 时触发
+      abortSignal: abortController.signal,
       // 如果有 sessionId，尝试恢复会话（用于 429 重试后继续）
       resume: execution.sessionId
         ? { providerConversationId: execution.sessionId, input: prompt }
@@ -210,7 +209,7 @@ export async function workerNode(
           currentSessionId = event.sessionId;
         }
 
-        // 映射并保存对话事件
+        // 映射并保存对话事件（使用共享函数）
         const mapped = mapAdapterEvent(event);
         await conversationStore.saveEvent({
           executionId,
@@ -220,28 +219,28 @@ export async function workerNode(
           payload: mapped.payload,
         });
       },
+      // 人机交互回调 —— 使用共享的 handleInboxAsk 实现
+      // 完整流程：写入 inbox_questions 表 → waitForHumanAnswer → 人类回答 → 返回
       onInboxAsk: async (question) => {
-        // 保存问题到数据库
-        await conversationStore.saveEvent({
-          executionId,
-          sessionId: currentSessionId ?? undefined,
-          eventType: 'inbox_ask',
-          payload: {
-            questionId: question.id,
-            body: question.body,
-            choices: question.choices,
-          } as Prisma.InputJsonValue,
-        });
-
-        // TODO: Task 12 实现 Dashboard 人机交互
-        // 目前抛出错误终止执行，等待 Dashboard 交互实现后替换为等待人类回答
-        throw new Error('inbox_ask 尚未实现，请在 Dashboard 中回答');
+        return await handleInboxAsk(executionId, currentSessionId, question);
       },
     });
 
-    // 更新 sessionId 到执行实例（用于后续 --resume）
-    if (result.sessionInfo?.providerConversationId && currentSessionId !== result.sessionInfo.providerConversationId) {
-      // sessionId 已在 onEvent 中捕获，此处无需额外处理
+    // P0-4 修复：持久化 sessionId 到执行实例（用于后续 --resume 恢复会话）
+    if (currentSessionId && currentSessionId !== execution.sessionId) {
+      await db.taskExecution.update({
+        where: { executionId },
+        data: { sessionId: currentSessionId },
+      });
+    }
+
+    // 检查是否被取消
+    if (cancelled) {
+      await executionStore.fail(executionId, '执行已被用户取消');
+      if (taskId) {
+        await taskStore.updateStatus(taskId, 'failed');
+      }
+      return { status: 'failed', error: '执行已被用户取消' };
     }
 
     // 根据执行结果更新状态
@@ -294,14 +293,16 @@ export async function workerNode(
       const retryAt = new Date(Date.now() + backoffMs);
       const retryAtStr = retryAt.toLocaleString('zh-CN');
 
+      // 先设置限流状态（status='rate_limited' + retryAt）
       await executionStore.setRateLimited(
         executionId,
         retryAt,
         `429 限流，第 ${currentCount + 1} 次重试，将于 ${retryAtStr} 重试`,
       );
 
-      // 释放租约，让调度器在 retryAt 后重新获取
-      await executionStore.releaseLease(executionId, lease);
+      // P0-1 修复：使用 releaseLeaseKeepStatus 释放租约但不覆盖 rate_limited 状态
+      // 旧代码使用 releaseLease 会将 status 重置为 'pending'，导致限流退避策略失效
+      await executionStore.releaseLeaseKeepStatus(executionId, lease);
 
       return {
         status: 'rate_limited',

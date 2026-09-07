@@ -40,6 +40,8 @@ export interface LocalRunOptions {
   onEvent?: (event: AdapterEvent) => void | Promise<void>;
   /** 人机交互回调，Agent 调用 inbox_ask 时触发，等待人类回答 */
   onInboxAsk?: (question: InboxQuestion) => Promise<string>;
+  /** 中止信号 —— 用于外部取消执行（如进程管理中的取消请求） */
+  abortSignal?: AbortSignal;
 }
 
 /** 本地运行结果 */
@@ -204,7 +206,7 @@ function parseClaudeEvent(
  * 运行 Claude Code CLI
  */
 async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
-  const { prompt, workDir, resume, onEvent } = options;
+  const { prompt, workDir, resume, onEvent, abortSignal } = options;
 
   const args = buildClaudeArgs(options);
   const promptText = resume ? resume.input : prompt;
@@ -222,6 +224,21 @@ async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
     let hasError = false;
     let errorMessage: string | undefined;
     let buffer = '';
+    let killed = false;
+
+    // 处理中止信号 —— 用于进程管理中的取消请求
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        // 信号已被触发，立即终止
+        child.kill('SIGTERM');
+        killed = true;
+      } else {
+        abortSignal.addEventListener('abort', () => {
+          child.kill('SIGTERM');
+          killed = true;
+        }, { once: true });
+      }
+    }
 
     // 发送 prompt 到 stdin
     child.stdin?.write(promptText);
@@ -278,6 +295,16 @@ async function runClaude(options: LocalRunOptions): Promise<LocalRunResult> {
         } catch {
           // 忽略
         }
+      }
+
+      // 被中止信号终止
+      if (killed) {
+        resolve({
+          success: false,
+          error: '执行已被中止（进程管理取消）',
+          sessionInfo: sessionId ? { providerConversationId: sessionId } : undefined,
+        });
+        return;
       }
 
       if (code !== 0 && !hasError) {

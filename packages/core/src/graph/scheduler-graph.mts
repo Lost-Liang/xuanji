@@ -75,13 +75,23 @@ export type SchedulerStateType = typeof SchedulerState.State;
 async function scheduleNode(
   _state: SchedulerStateType,
 ): Promise<Partial<SchedulerStateType>> {
-  // 查找待执行的 execution（pending 且重试时间已到或无需重试）
+  // 查找待执行的 execution：
+  // 1. status='pending' 且 retryAt 为空或已过期（首次执行）
+  // 2. status='rate_limited' 且 retryAt 已过期（限流重试到期）
   const pending = await db.taskExecution.findFirst({
     where: {
-      status: 'pending',
       OR: [
-        { retryAt: null },
-        { retryAt: { lte: new Date() } },
+        {
+          status: 'pending',
+          OR: [
+            { retryAt: null },
+            { retryAt: { lte: new Date() } },
+          ],
+        },
+        {
+          status: 'rate_limited',
+          retryAt: { lte: new Date() },
+        },
       ],
     },
     orderBy: { createdAt: 'asc' },
