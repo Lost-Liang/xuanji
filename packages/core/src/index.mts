@@ -78,6 +78,7 @@ import { booksRouter } from './routes/books.mjs';
 import { buildSchedulerGraph } from './graph/scheduler-graph.mjs';
 import { buildRecoveryGraph } from './graph/recovery-graph.mjs';
 import { initDefaultConditions } from './graph/conditions/default-conditions.mjs';
+import { recoverOrphanedQuestions, startPeriodicCleanup } from './graph/orphan-detection.mjs';
 
 // 启动前注册所有默认条件函数（compile_pass / test_pass / quality_pass / security_pass 等）
 initDefaultConditions();
@@ -170,6 +171,14 @@ function startRecoveryLoop() {
 // 启动后台循环
 startSchedulerLoop().catch(err => console.error('[scheduler] 致命错误:', err));
 startRecoveryLoop();
+
+// 启动时运行孤儿检测
+recoverOrphanedQuestions().catch(err => {
+  console.error('[startup] 孤儿检测失败:', err);
+});
+
+// 启动定期清理
+startPeriodicCleanup();
 
 // 优雅关闭
 process.on('SIGTERM', () => {
