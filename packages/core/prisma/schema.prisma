@@ -294,9 +294,14 @@ model InboxQuestion {
   body            String
   choices         Json?
   answer          String?
-  status          String      @default("pending")  // 'pending' | 'answered'
+  status          String      @default("pending")  // 'pending' | 'answered' | 'timeout'
   createdAt       DateTime    @default(now()) @map("created_at")
   answeredAt      DateTime?   @map("answered_at")
+
+  // 人机交互状态持久化字段（V4 新增）
+  waitingSince    DateTime?   // 开始等待时间
+  processId       String?     // 等待进程 ID
+  timeoutMs       Int?        // 超时毫秒数
 
   // 关系
   execution       TaskExecution? @relation(fields: [executionId], references: [executionId])
