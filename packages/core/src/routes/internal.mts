@@ -16,12 +16,13 @@ import { pollForAnswer } from '../graph/session-control-v2.mjs';
 
 export const internalRouter: Router = Router();
 
-// ─── 长轮询等待注册表 ──────────────────────────────────────────────────────────
+// ─── 长轮询分片模式 ──────────────────────────────────────────────────────────
 //
 // 当 MCP Bridge 通过 HTTP 调用 inbox-ask 时，需要等待人类回答。
-// waitForHumanAnswer 使用进程内 Promise，与 session-control-v2 的机制一致。
+// pollForAnswer 使用数据库轮询，支持服务重启后继续等待。
+// 单次轮询最多 30 秒，MCP Bridge 循环调用直到收到回答。
 // Dashboard 通过 POST /api/inbox/:id/answer 回答时，
-// inbox 路由调用 notifyHumanAnswered，解除 waitForHumanAnswer 的阻塞。
+// inbox 路由更新数据库状态，pollForAnswer 在下次轮询时检测到回答。
 
 // ─── POST /api/internal/inbox-ask ──────────────────────────────────────────────
 
@@ -170,11 +171,11 @@ internalRouter.post('/inbox-ask', async (req, res) => {
       res.status(504).json({
         questionId: currentQuestionId,
         status: 'timeout',
-        error: '等待超时',
+        error: '等待人类回答超时',
       });
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: '处理失败', detail: errorMsg });
+    res.status(500).json({ error: '处理 inbox_ask 失败', detail: errorMsg });
   }
 });
