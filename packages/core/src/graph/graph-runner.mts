@@ -79,6 +79,18 @@ export async function loadFlow(flowId: string): Promise<{ yamlContent: string; g
   return null;
 }
 
+// ─── 状态检查辅助函数 ────────────────────────────────────────────────────────
+
+/**
+ * 检查执行是否有待回答的问题
+ */
+async function checkPendingQuestions(executionId: string): Promise<boolean> {
+  const count = await db.inboxQuestion.count({
+    where: { executionId, status: 'pending' },
+  });
+  return count > 0;
+}
+
 // ─── 执行引擎 ──────────────────────────────────────────────────────────────────
 
 /**
@@ -200,8 +212,17 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     // 根据流程类型执行完成回调
     await onFlowComplete(flowId, executionId, result, requirementId);
 
-    // 标记执行完成
-    await executionStore.complete(executionId, '流程执行完成');
+    // 在标记完成前检查是否有 pending 问题
+    if (await checkPendingQuestions(executionId)) {
+      // 有待回答的问题，不标记为 completed
+      await db.taskExecution.update({
+        where: { executionId },
+        data: { status: 'waiting' },
+      });
+      console.log(`[graph-runner] 执行 ${executionId} 有待回答问题，状态更新为 waiting`);
+    } else {
+      await executionStore.complete(executionId, '流程执行完成');
+    }
 
   } catch (err: any) {
     // 检查是否为 gate 中断
