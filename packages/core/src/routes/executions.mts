@@ -576,21 +576,12 @@ executionsRouter.post('/:id/dialog', async (req, res) => {
           },
         });
 
-        // 通知
+        // 通知 MCP bridge 解除 waitForHumanAnswer 阻塞
+        // inbox_answer 事件由 internal.mts 的 waitForHumanAnswer 返回后创建
+        // 这里不再重复创建，避免数据重复
         const { notifyHumanAnswered } = await import('../graph/session-control-v2.mjs');
         notifyHumanAnswered(existingQuestion.id, message);
       }
-
-      // 记录回答事件
-      await db.conversationEvent.create({
-        data: {
-          id: randomUUID(),
-          executionId: req.params.id,
-          eventType: 'inbox_answer',
-          role: 'human',
-          payload: { answer: message },
-        },
-      });
     }
 
     res.json({ ok: true });

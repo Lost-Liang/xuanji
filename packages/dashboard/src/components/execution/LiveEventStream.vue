@@ -164,7 +164,7 @@ function parseSchema(schema: any): Array<{ key: string; label: string; type: str
   }))
 }
 
-type Ev = { ts: string; node_id: string; type: 'token' | 'done' | 'inbox_ask' | 'inbox_answer'; text?: string }
+type Ev = { ts: string; node_id: string; type: 'token' | 'done' | 'inbox_ask' | 'inbox_answer'; text?: string; id?: string }
 const events = ref<Ev[]>([])
 const state = ref<'idle' | 'open' | 'error'>('idle')
 const bodyRef = ref<HTMLElement | null>(null)
@@ -297,11 +297,19 @@ function open(id: string) {
         if (d.type === 'done') {
           events.value = [{ ts: nowStr(), node_id: d.node_id, type: 'done', text: d.text || '' }, ...events.value.slice(0, 199)]
         } else if (d.type === 'inbox_ask') {
-          events.value = [{ ts: nowStr(), node_id: d.type, type: d.type, text: d.text || '' }, ...events.value.slice(0, 199)]
+          // 去重：检查是否已存在相同文本的 inbox_ask
+          const exists = events.value.some(e => e.type === 'inbox_ask' && e.text === d.text)
+          if (!exists) {
+            events.value = [{ ts: nowStr(), node_id: d.type, type: d.type, text: d.text || '' }, ...events.value.slice(0, 199)]
+          }
           // 收到提问时，获取问题详情（包含 choices）
           fetchElicitations()
         } else if (d.type === 'inbox_answer') {
-          events.value = [{ ts: nowStr(), node_id: d.type, type: d.type, text: d.text || '' }, ...events.value.slice(0, 199)]
+          // 去重：检查是否已存在相同文本的 inbox_answer
+          const exists = events.value.some(e => e.type === 'inbox_answer' && e.text === d.text)
+          if (!exists) {
+            events.value = [{ ts: nowStr(), node_id: d.type, type: d.type, text: d.text || '' }, ...events.value.slice(0, 199)]
+          }
         } else if (d.type === 'token') {
           const top = events.value[0]
           if (top && top.type === 'token' && top.node_id === d.node_id) {
