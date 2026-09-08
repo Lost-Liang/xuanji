@@ -22,6 +22,7 @@
 
 import { interrupt } from '@langchain/langgraph';
 import type { CompiledStateGraph } from '@langchain/langgraph';
+import { db } from '../db.mjs';
 
 // ─── Promise 阻塞策略 ──────────────────────────────────────────────────────────
 
@@ -36,6 +37,18 @@ interface PendingAnswer {
   reject: (err: Error) => void;
   /** 超时定时器，unref 后不阻止进程退出 */
   timer?: NodeJS.Timeout;
+}
+
+/**
+ * 轮询结果（数据库轮询方式）
+ */
+interface PollResult {
+  /** 状态：answered = 已回答, pending = 仍在等待, timeout = 超时 */
+  status: 'answered' | 'pending' | 'timeout';
+  /** 人类的回答内容（仅 status='answered' 时有值） */
+  answer?: string;
+  /** 是否继续轮询（用于 HTTP 长轮询场景，告知客户端继续） */
+  continue?: boolean;
 }
 
 /**
@@ -129,6 +142,75 @@ export function notifyHumanAnswered(questionId: string, answer: string): boolean
   // 解除 waitForHumanAnswer 的阻塞
   pending.resolve(answer);
   return true;
+}
+
+/**
+ * 辅助函数：睡眠指定毫秒数
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 数据库轮询：等待人类回答（替代进程内 Map）
+ *
+ * 与 waitForHumanAnswer 的区别：
+ * - waitForHumanAnswer：使用进程内 Map + Promise 阻塞，仅支持单进程
+ * - pollForAnswer：数据库轮询，支持多进程/多实例部署
+ *
+ * 使用场景：
+ * - HTTP API 长轮询：Dashboard 通过 HTTP 轮询检查问题是否已回答
+ * - 多实例部署：多个 Core 实例可共享同一数据库
+ *
+ * 实现逻辑：
+ * 1. 快速路径：先检查内存缓存（避免频繁 DB 查询）
+ * 2. 轮询循环：每 1 秒查询一次 DB，直到回答或超时
+ * 3. 更新缓存：回答后更新内存缓存，供后续查询使用
+ *
+ * @param questionId - inbox_questions 表主键
+ * @param timeoutMs - 超时毫秒数，默认 30 秒（适合 HTTP 长轮询）
+ * @returns PollResult 对象，包含状态和答案（如有）
+ */
+export async function pollForAnswer(
+  questionId: string,
+  timeoutMs: number = 30_000
+): Promise<PollResult> {
+  // 快速路径：先检查内存缓存
+  const cached = pendingAnswers.get(questionId);
+  if (cached && (cached as any).answer) {
+    return { status: 'answered', answer: (cached as any).answer };
+  }
+
+  const startTime = Date.now();
+  const pollInterval = 1000; // 1秒轮询间隔
+
+  while (Date.now() - startTime < timeoutMs) {
+    const question = await db.inboxQuestion.findUnique({
+      where: { id: questionId },
+      select: { status: true, answer: true },
+    });
+
+    if (!question) {
+      return { status: 'timeout' };
+    }
+
+    if (question.status === 'answered' && question.answer) {
+      // 更新内存缓存
+      const existing = pendingAnswers.get(questionId);
+      if (existing) {
+        (existing as any).answer = question.answer;
+      }
+      return { status: 'answered', answer: question.answer };
+    }
+
+    if (question.status === 'timeout') {
+      return { status: 'timeout' };
+    }
+
+    await sleep(pollInterval);
+  }
+
+  return { status: 'pending', continue: true };
 }
 
 /**
