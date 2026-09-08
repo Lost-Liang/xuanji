@@ -12,7 +12,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { db } from '../db.mjs';
-import { waitForHumanAnswer, notifyHumanAnswered } from '../graph/session-control-v2.mjs';
+import { pollForAnswer } from '../graph/session-control-v2.mjs';
 
 export const internalRouter: Router = Router();
 
@@ -26,102 +26,155 @@ export const internalRouter: Router = Router();
 // ─── POST /api/internal/inbox-ask ──────────────────────────────────────────────
 
 /**
- * 提交 inbox_ask 问题并阻塞等待人类回答（长轮询）
+ * 提交 inbox_ask 问题或轮询等待回答（长轮询分片模式）
+ *
+ * 支持两种模式：
+ *
+ * 1. 创建模式：
+ *    请求体: { create: true, executionId, question, choices? }
+ *    - 创建问题记录并返回 questionId
+ *    - 更新执行状态为 'waiting'
+ *    - 返回 questionId 供后续轮询使用
+ *
+ * 2. 轮询模式：
+ *    请求体: { questionId }
+ *    - 使用 pollForAnswer 进行数据库轮询（单次最多 30 秒）
+ *    - 返回状态：answered（已回答）, pending（继续轮询）, timeout（超时）
  *
  * 完整流程：
- * 1. MCP Bridge 子进程发送 POST 请求，携带 question 和 executionId
- * 2. 将问题写入 inbox_questions 表（status='pending'）
- * 3. 调用 waitForHumanAnswer(questionId) 阻塞等待
- * 4. 人类在 Dashboard 回答 → POST /api/inbox/:id/answer
- *    → inbox 路由更新 DB 并调用 notifyHumanAnswered
- *    → waitForHumanAnswer resolve
- * 5. 返回答案给 MCP Bridge → Agent 继续执行
- *
- * 超时处理：
- * - waitForHumanAnswer 默认超时 24 小时
- * - 超时后 Promise reject，返回 504 错误
- * - MCP Bridge 收到错误后返回给 Agent
- *
- * 请求体：
- * - executionId: string - 当前执行实例 ID
- * - question: string - 问题内容
- * - choices?: string[] - 可选的预设选项
+ * 1. MCP Bridge 第一次请求：create=true，创建问题并获取 questionId
+ * 2. MCP Bridge 后续轮询：questionId，检查问题是否已回答
+ * 3. 人类在 Dashboard 回答 → 问题状态变为 answered
+ * 4. 下次轮询返回答案，恢复执行状态为 'running'
  *
  * 响应：
- * - 200: { questionId, answer } - 人类的回答
- * - 504: 等待超时
+ * - 200: { questionId, status: 'answered', answer } - 已回答
+ * - 200: { questionId, status: 'pending', continue: true } - 继续轮询
+ * - 504: { questionId, status: 'timeout', error } - 超时
+ * - 400: 参数错误
  * - 500: 服务器错误
  */
 internalRouter.post('/inbox-ask', async (req, res) => {
   try {
-    const { executionId, question, choices } = req.body as {
-      executionId: string;
-      question: string;
+    const { create, executionId, question, choices, questionId } = req.body as {
+      create?: boolean;
+      executionId?: string;
+      question?: string;
       choices?: string[];
+      questionId?: string;
     };
 
-    if (!executionId || !question) {
-      res.status(400).json({ error: '缺少必要参数: executionId, question' });
+    let currentQuestionId = questionId;
+    let execId = executionId;
+
+    // ─── 创建模式 ──────────────────────────────────────────────────────────
+    if (create) {
+      if (!executionId || !question) {
+        res.status(400).json({ error: '创建模式需要 executionId 和 question' });
+        return;
+      }
+
+      currentQuestionId = randomUUID();
+      const now = new Date();
+
+      // 创建问题记录
+      await db.inboxQuestion.create({
+        data: {
+          id: currentQuestionId,
+          executionId,
+          sessionId: null,
+          body: question,
+          choices: choices ? choices : Prisma.JsonNull,
+          status: 'pending',
+          waitingSince: now,
+          processId: process.pid.toString(),
+          timeoutMs: 24 * 60 * 60 * 1000, // 24 小时
+        },
+      });
+
+      // 保存对话事件（用于 Dashboard 显示）
+      await db.conversationEvent.create({
+        data: {
+          id: randomUUID(),
+          executionId,
+          eventType: 'inbox_ask',
+          payload: {
+            questionId: currentQuestionId,
+            body: question,
+            choices: choices ?? null,
+            source: 'mcp-bridge',
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      // 更新执行状态为 waiting
+      await db.taskExecution.update({
+        where: { executionId },
+        data: { status: 'waiting' },
+      }).catch(() => {
+        // 执行记录可能不存在，忽略错误
+      });
+    }
+
+    // ─── 参数验证 ──────────────────────────────────────────────────────────
+    if (!currentQuestionId) {
+      res.status(400).json({ error: '缺少 questionId' });
       return;
     }
 
-    // 生成问题 ID 并写入 inbox_questions 表
-    const questionId = randomUUID();
+    // ─── 单次轮询（最多 30 秒）──────────────────────────────────────────────
+    const result = await pollForAnswer(currentQuestionId, 30_000);
 
-    await db.inboxQuestion.create({
-      data: {
-        id: questionId,
-        executionId,
-        sessionId: null,
-        body: question,
-        choices: choices ? choices : Prisma.JsonNull,
-        status: 'pending',
-      },
-    });
+    if (result.status === 'answered' && result.answer) {
+      // 获取 executionId（如果之前没有）
+      if (!execId) {
+        const q = await db.inboxQuestion.findUnique({
+          where: { id: currentQuestionId },
+          select: { executionId: true },
+        });
+        if (q?.executionId) {
+          execId = q.executionId;
+        }
+      }
 
-    // 保存对话事件（用于 Dashboard 显示）
-    await db.conversationEvent.create({
-      data: {
-        id: randomUUID(),
-        executionId,
-        eventType: 'inbox_ask',
-        payload: {
-          questionId,
-          body: question,
-          choices: choices ?? null,
-          source: 'mcp-bridge',
-        } as Prisma.InputJsonValue,
-      },
-    });
+      if (execId) {
+        // 记录回答事件
+        await db.conversationEvent.create({
+          data: {
+            id: randomUUID(),
+            executionId: execId,
+            eventType: 'inbox_answer',
+            payload: {
+              questionId: currentQuestionId,
+              answer: result.answer,
+              source: 'mcp-bridge',
+            } as Prisma.InputJsonValue,
+          },
+        });
 
-    // 阻塞等待人类回答（使用 session-control-v2 的 Promise 机制）
-    // 默认超时 24 小时
-    const answer = await waitForHumanAnswer(questionId);
+        // 恢复执行状态为 running
+        await db.taskExecution.update({
+          where: { executionId: execId },
+          data: { status: 'running' },
+        }).catch(() => {
+          // 执行记录可能不存在，忽略错误
+        });
+      }
 
-    // 记录对话事件（人类回答）
-    await db.conversationEvent.create({
-      data: {
-        id: randomUUID(),
-        executionId,
-        eventType: 'inbox_answer',
-        payload: {
-          questionId,
-          answer,
-          source: 'mcp-bridge',
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    res.json({ questionId, answer });
+      res.json({ questionId: currentQuestionId, status: 'answered', answer: result.answer });
+    } else if (result.status === 'pending') {
+      // 仍在等待，告知客户端继续轮询
+      res.json({ questionId: currentQuestionId, status: 'pending', continue: true });
+    } else {
+      // 超时或其他错误
+      res.status(504).json({
+        questionId: currentQuestionId,
+        status: 'timeout',
+        error: '等待超时',
+      });
+    }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-
-    // 超时错误
-    if (errorMsg.includes('超时')) {
-      res.status(504).json({ error: errorMsg });
-      return;
-    }
-
-    res.status(500).json({ error: '处理 inbox_ask 失败', detail: errorMsg });
+    res.status(500).json({ error: '处理失败', detail: errorMsg });
   }
 });
