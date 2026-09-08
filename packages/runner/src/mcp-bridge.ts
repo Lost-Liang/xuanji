@@ -33,9 +33,9 @@
 // 5. 人类在 Dashboard 回答 → 编排器返回答案
 // 6. 此脚本将答案通过 MCP 协议返回给 Agent
 //
-// 注意：编排器的内部端点使用长轮询（long-polling），
-// 请求会阻塞直到人类回答或超时（默认 24 小时）。
-// HTTP 客户端需设置较长的超时时间。
+// 注意：编排器的内部端点使用长轮询分片模式（long-polling chunking），
+// 每次请求最多等待 30 秒，MCP Bridge 循环调用直到收到回答。
+// 总超时：24 小时（2880 次轮询）。
 
 import {
   createBridgeMcpServer,
@@ -60,13 +60,12 @@ if (!EXECUTION_ID) {
 // ─── HTTP 桥接处理器 ───────────────────────────────────────────────────────────
 
 /**
- * 通过 HTTP 调用编排器内部端点处理 inbox_ask
+ * 通过 HTTP 长轮询分片等待人类回答
  *
- * 发送 POST 请求到编排器的 /api/internal/inbox-ask 端点。
- * 编排器会：
- * 1. 将问题写入 inbox_questions 表
- * 2. 阻塞等待人类回答（long-polling，最长 24 小时）
- * 3. 返回人类的回答
+ * 使用循环调用编排器 /api/internal/inbox-ask 端点：
+ * 1. 首次调用：创建问题并返回 questionId
+ * 2. 后续调用：轮询等待回答（每次最多 30 秒）
+ * 3. 收到 answered 状态后返回答案
  *
  * @param question - 问题内容
  * @param choices - 可选的预设选项
@@ -76,35 +75,64 @@ async function handleInboxAskViaHttp(
   question: string,
   choices?: string[],
 ): Promise<string> {
-  const url = `${API_URL}/api/internal/inbox-ask`;
+  let questionId: string | null = null;
+  let isFirst = true;
+  const maxAttempts = 24 * 60 * 2; // 24 小时 / 30 秒 = 2880 次
+  let attempts = 0;
 
-  // 长轮询：请求可能阻塞很长时间（直到人类回答）
-  // 使用 fetch + AbortController 设置合理的超时（25 小时，略大于服务端 24h 超时）
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25 * 60 * 60 * 1000);
+  // 循环调用直到收到回答
+  while (attempts < maxAttempts) {
+    attempts++;
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        executionId: EXECUTION_ID,
-        question,
-        choices,
-      }),
-      signal: controller.signal,
-    });
+    const body: Record<string, any> = isFirst
+      ? { create: true, executionId: EXECUTION_ID, question, choices }
+      : { questionId };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`编排器返回 ${response.status}: ${errorText}`);
+    try {
+      const response = await fetch(`${API_URL}/api/internal/inbox-ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        // 单次请求超时 35 秒（略大于服务端 30 秒）
+        signal: AbortSignal.timeout(35_000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`inbox-ask 请求失败: ${response.status} ${errorText}`);
+      }
+
+      const result = await response.json() as {
+        questionId: string;
+        status: 'answered' | 'pending' | 'timeout';
+        answer?: string;
+        continue?: boolean;
+        error?: string;
+      };
+
+      if (result.status === 'answered' && result.answer) {
+        return result.answer;
+      }
+
+      if (result.status === 'timeout') {
+        throw new Error(result.error || '等待人类回答超时');
+      }
+
+      // 继续轮询
+      questionId = result.questionId;
+      isFirst = false;
+
+    } catch (err) {
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        // 单次请求超时，继续重试
+        console.warn('[mcp-bridge] 单次轮询超时，继续重试...');
+        continue;
+      }
+      throw err;
     }
-
-    const data = await response.json() as { answer: string; questionId: string };
-    return data.answer;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new Error('等待人类回答超时（超过 24 小时）');
 }
 
 // ─── 启动 ──────────────────────────────────────────────────────────────────────
