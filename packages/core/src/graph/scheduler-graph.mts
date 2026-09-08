@@ -3,9 +3,9 @@
 // 替代 V3 的 task-scheduler.mjs + state-machine.mjs
 //
 // 职责：
-// 1. 轮询查找待执行的 execution（pending 且 retryAt 已过期或为空）
+// 1. 查找待执行的 execution（pending 且 retryAt 已过期或为空）
 // 2. 找到后分发给 worker 节点执行
-// 3. 未找到则等待后重新轮询
+// 3. 未找到则 END，由外层循环重新 invoke
 // 4. 根据状态路由到对应节点
 
 import {
@@ -15,7 +15,6 @@ import {
   START,
 } from '@langchain/langgraph';
 import { db } from '../db.mjs';
-import { SCHEDULER_IDLE_WAIT_MS } from '../timing-constants.mjs';
 import { workerNode } from './worker-graph.mjs';
 
 // ─── 状态定义 ──────────────────────────────────────────────────────────────────
@@ -98,7 +97,7 @@ async function scheduleNode(
   });
 
   if (!pending) {
-    // 无待执行任务，进入空闲等待
+    // 无待执行任务，结束本轮 invoke，由外层循环重新轮询
     return { status: 'idle' };
   }
 
@@ -110,61 +109,28 @@ async function scheduleNode(
   };
 }
 
-// ─── 等待节点 ──────────────────────────────────────────────────────────────────
-
 /**
- * 等待节点：空闲时暂停后重新调度
- *
- * 避免紧密轮询消耗数据库资源。
- * 等待 SCHEDULER_IDLE_WAIT_MS（默认 5 秒）后返回 schedule 节点重新检查。
+ * 调度节点注释：无待执行任务时 status='idle'，由 routeAfterSchedule 路由到 END。
+ * 外层 while(schedulerRunning) 循环负责等待后重新 invoke，避免内部循环触发递归限制。
  */
-async function waitNode(
-  _state: SchedulerStateType,
-): Promise<Partial<SchedulerStateType>> {
-  await new Promise(resolve => setTimeout(resolve, SCHEDULER_IDLE_WAIT_MS));
-  return { status: 'idle' };
-}
 
-// ─── 条件路由 ──────────────────────────────────────────────────────────────────
+// ── 条件路由 ──────────────────────────────────────────────────────────────────
 
 /**
  * 条件路由函数：根据调度状态决定下一步
  *
  * - dispatched → worker（执行任务）
- * - idle       → wait（等待后重试）
+ * - idle       → END（无任务，由外层循环重新轮询）
+ * - rate_limited → END（限流，由外层循环重新轮询）
  * - 其他终态   → END（结束调度循环）
  */
 function routeAfterSchedule(state: SchedulerStateType): string {
   switch (state.status) {
     case 'dispatched':
       return 'worker';
-    case 'idle':
-      return 'wait';
-    case 'rate_limited':
-      // 限流后回到调度循环，让调度器重新选择
-      return 'schedule';
     default:
-      // completed / failed → 结束本轮调度
+      // idle / rate_limited / 其他 → 结束本轮 invoke
       return END;
-  }
-}
-
-/**
- * worker 执行完成后的路由
- *
- * - completed → schedule（继续调度下一个）
- * - failed    → schedule（继续调度下一个，失败的不阻塞队列）
- * - rate_limited → wait（限流后等待一段时间再重试）
- */
-function routeAfterWorker(state: SchedulerStateType): string {
-  switch (state.status) {
-    case 'rate_limited':
-      return 'wait';
-    case 'completed':
-    case 'failed':
-    default:
-      // 无论成功还是失败，都回到调度循环
-      return 'schedule';
   }
 }
 
@@ -175,16 +141,16 @@ function routeAfterWorker(state: SchedulerStateType): string {
  *
  * 图结构：
  * ```
- * START → schedule ──dispatched──→ worker ──→ schedule (循环)
- *              │                       │
- *              │ idle                  │ rate_limited
- *              ▼                       │
- *             wait ←───────────────────┘
+ * START → schedule ──dispatched──→ worker → END
  *              │
- *              └──→ schedule (循环)
- *
- * schedule ──completed/failed──→ END
+ *              │ idle / rate_limited
+ *              ▼
+ *             END
  * ```
+ *
+ * 每次 invoke() 最多处理一个任务，然后返回 END。
+ * 外层 while(schedulerRunning) 循环（含 5s sleep）负责连续轮询。
+ * 这样彻底避免单次 invoke 内部循环触发 LangGraph 递归限制。
  *
  * 并发控制：通过 lease 机制在 worker 节点实现（见 worker-graph.mts）。
  * 调度器本身是单线程循环，每次只分发一个任务。
@@ -194,7 +160,6 @@ export function buildSchedulerGraph() {
 
     // 注册节点
     .addNode('schedule', scheduleNode)
-    .addNode('wait', waitNode)
     .addNode('worker', workerNode)
 
     // 入口：从 START 到 schedule
@@ -203,19 +168,11 @@ export function buildSchedulerGraph() {
     // schedule 后的条件路由
     .addConditionalEdges('schedule', routeAfterSchedule, {
       worker: 'worker',
-      wait: 'wait',
-      schedule: 'schedule',
       [END]: END,
     })
 
-    // worker 完成后回到 schedule 继续调度
-    .addConditionalEdges('worker', routeAfterWorker, {
-      schedule: 'schedule',
-      wait: 'wait',
-    })
-
-    // wait 后回到 schedule 重新检查
-    .addEdge('wait', 'schedule');
+    // worker 完成后结束本轮 invoke，外层循环重新拾取
+    .addEdge('worker', END);
 
   return graph.compile();
 }

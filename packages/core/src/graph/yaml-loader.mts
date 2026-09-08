@@ -238,6 +238,7 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
   return {
     id: def.id,
     name: def.name,
+    description: def.description,
     plugin_id: def.id, // 暂时使用 workflow id 作为 plugin_id
     nodes,
     edges,

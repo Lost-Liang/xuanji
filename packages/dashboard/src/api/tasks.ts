@@ -3,7 +3,9 @@ const base = '/api/tasks'
 
 export interface TaskListItem {
   id: string
+  title: string
   status: string
+  task_id: string | null
   thread_id: string
   parent_execution_id: string | null
   current_node_id: string | null
@@ -12,7 +14,6 @@ export interface TaskListItem {
   created_at: string | null
   rate_limited_count: number | null
   rate_limited_until: string | null
-  task_id: string | null
   breakdown_content: string | null
   session_ref_id: string | null
 }
@@ -117,6 +118,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
     })
+    return r.json()
+  },
+  async confirm(execId: string): Promise<any> {
+    const r = await fetch(`${base}/${execId}/confirm`, { method: 'POST' })
     return r.json()
   },
 }

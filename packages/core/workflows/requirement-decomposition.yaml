@@ -1,0 +1,49 @@
+# 璇玑 V4 需求理解与任务拆分流程
+#
+# 流程：接收需求 → Agent 分析需求 → 拆分为 Epic/Feature/UserStory/Task
+#       → 人工审核（可选）→ 输出结构化任务树
+#
+# 这个流程用于需求管理页面触发，将一句话需求拆解为可执行的任务树。
+
+version: "1"
+id: requirement-decomposition
+name: 需求理解与任务拆分
+description: 接收需求文本，Agent 分析并拆分为 Epic → Feature → UserStory → Task 结构化任务树
+
+nodes:
+  # ─── 1. 需求分析 ─────────────────────────────────────────────────────────────
+  - id: requirement_analysis
+    type: agent
+    agent_binding_ids: [requirement-analyst]
+    interaction_mode: interactive
+    write_key: spec
+
+  # ─── 2. 任务拆分 ─────────────────────────────────────────────────────────────
+  - id: task_breakdown
+    type: agent
+    agent_binding_ids: [task-planner]
+    interaction_mode: interactive
+    write_key: tasks
+
+  # ─── 3. 人工审核门控 ─────────────────────────────────────────────────────────
+  - id: review_gate
+    type: gate
+
+edges:
+  # requirement_analysis → task_breakdown
+  - from: requirement_analysis
+    to: task_breakdown
+
+  # task_breakdown → review_gate
+  - from: task_breakdown
+    to: review_gate
+
+  # review_gate → __end__（审核通过后结束）
+  - from: review_gate
+    to: __end__
+
+start:
+  - requirement_analysis
+
+# end 不声明，因为 review_gate 作为门控节点有出边到 __end__
+# 隐式通过边到 __end__ 标记流程终结

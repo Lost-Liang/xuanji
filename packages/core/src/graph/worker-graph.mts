@@ -2,14 +2,14 @@
 // 工作节点 —— 璇玑 V4 LangGraph 编排层
 // 替代 V3 的 task-worker.mjs + phase-runner.mjs
 //
+// M2.2 修改：任务执行通过 graphRunner 走 default-dev-flow 工作流
+//
 // 职责：
 // 1. 获取执行实例的租约（lease）—— 并发控制核心
-// 2. 调用 runLocal() 执行 Agent 任务
-// 3. 实时保存对话事件到 conversation_events 表
+// 2. 需求执行：如果已有 graphDefinitionId，跳过（已由 graphRunner 处理）
+// 3. 任务执行：调用 graphRunner.startExecution 走 default-dev-flow
 // 4. 处理 429 限流（退避重试策略）
 // 5. 更新任务和执行实例的最终状态
-// 6. 进程管理：心跳循环中检查 controlStatus，响应暂停/取消请求
-// 7. 人机交互：通过共享 handleInboxAsk 处理 inbox_ask 请求
 
 import { executionStore } from '../storage/execution-store.mjs';
 import { taskStore } from '../storage/task-store.mjs';
@@ -20,6 +20,7 @@ import { MAX_RATE_LIMIT_RETRIES, computeRateLimitBackoff, HEARTBEAT_INTERVAL_MS 
 import type { SchedulerStateType } from './scheduler-graph.mjs';
 import { mapAdapterEvent, handleInboxAsk } from './shared-agent-utils.mjs';
 import { db } from '../db.mjs';
+import { graphRunner } from './graph-runner.mjs';
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,37 @@ export async function workerNode(
     console.error(`[worker-graph] 执行实例不存在: ${executionId}`);
     return { status: 'failed', error: `执行实例不存在: ${executionId}` };
   }
+
+  // ── M2.2: 工作流检测 ─────────────────────────────────────────────────────────
+  // 如果执行已有 graphDefinitionId，说明正在由 graphRunner 处理，跳过
+  if (execution.graphDefinitionId) {
+    console.log(`[worker-graph] 执行已有工作流 ${execution.graphDefinitionId}，跳过调度`);
+    return { status: 'idle' };
+  }
+
+  // 任务执行：走 default-dev-flow 工作流
+  if (execution.subjectType === 'task' && taskId) {
+    console.log(`[worker-graph] 任务执行，委托给 graphRunner (default-dev-flow)`);
+
+    try {
+      // 委托给 graphRunner（它会自己获取租约和管理心跳）
+      await graphRunner.startExecution({
+        executionId,
+        flowId: 'default-dev-flow',
+        input: '', // 任务上下文由 agent-node 从 task 读取
+        task: await taskStore.getById(taskId),
+      });
+
+      return { status: 'completed' };
+    } catch (err) {
+      const errorMsg = (err as Error).message || '工作流执行失败';
+      console.error(`[worker-graph] graphRunner 执行失败:`, err);
+      await executionStore.fail(executionId, errorMsg);
+      return { status: 'failed', error: errorMsg };
+    }
+  }
+
+  // ── 旧的直接执行逻辑（需求执行兜底）──────────────────────────────────────────
 
   // 尝试获取租约 —— CAS 原子操作
   // 如果返回 null，说明已被其他 Worker 获取或状态已变更

@@ -16,7 +16,7 @@ const triggersText = ref('[]')
 const isNew = computed(() => route.params.id === 'new')
 
 // harness 选项
-const harnessOptions = ['claude-sdk', 'codex', 'codex-native']
+const harnessOptions = ['claude', 'codex']
 const effortOptions = ['minimal', 'low', 'medium', 'high']
 
 // skill 选项
@@ -27,7 +27,7 @@ async function loadAgent() {
     agent.value = {
       id: '',
       agent_id: '',
-      harness: 'claude-sdk',
+      harness: 'claude',
       triggers: [],
       reasoning_effort: 'medium',
       session_count: 0

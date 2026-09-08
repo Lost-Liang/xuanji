@@ -21,6 +21,7 @@ export interface LeaseInfo {
 export const executionStore = {
   /**
    * 创建执行实例
+   * @param status 默认 'draft'（需求拆分后不自动执行），设为 'pending' 则调度器会自动拾取
    */
   async create(data: {
     subjectType: 'task' | 'requirement';
@@ -29,12 +30,13 @@ export const executionStore = {
     requirementId?: string;
     targetProjectId: string;
     targetRepoPath: string;
+    status?: string;  // 默认 'draft'
   }): Promise<TaskExecution> {
     return db.taskExecution.create({
       data: {
         executionId: randomUUID(),
         ...data,
-        status: 'pending',
+        status: data.status ?? 'draft',
       },
     });
   },

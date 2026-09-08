@@ -6,16 +6,25 @@
 export interface GraphDef {
   id?: string
   name: string
+  description?: string
   plugin_id?: string
   nodes?: any[]
   edges?: any[]
   [key: string]: any
 }
 
+/** 图定义列表项 */
+export interface GraphDefListItem {
+  id: string
+  name: string
+  description?: string
+  type: 'preset' | 'user'
+}
+
 const base = '/api/graph-definitions'
 
 export const api = {
-  async list(): Promise<any[]> {
+  async list(): Promise<{ presets: GraphDefListItem[]; user: GraphDefListItem[] }> {
     const r = await fetch(base)
     return r.json()
   },

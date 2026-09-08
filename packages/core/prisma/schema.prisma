@@ -12,6 +12,39 @@ datasource db {
 }
 
 // =============================================================================
+// 配置层（V4 新增）
+// =============================================================================
+
+/// Agent 绑定配置（角色 Agent = prompt + model + harness + skill）
+model AgentBinding {
+  id               String    @id                      // 即角色 id（YAML agent_binding_ids 直指）
+  pluginId         String?   @map("plugin_id")
+  agentId          String    @map("agent_id")         // 角色名，如 backend-crud
+  harness          String    @default("claude")       // 'claude' | 'codex' → runner provider
+  skillId          String?   @map("skill_id")         // 指向 skills 树 id
+  promptContent    String    @default("") @map("prompt_content")  // 角色指令
+  triggers         Json?                              // { task_type?: string[], stack_type?: string[] }
+  model            String?                            // 传给 runLocal(--model)；空则 CLI 默认
+  reasoningEffort  String?   @map("reasoning_effort") // low | medium | high
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@map("agent_bindings")
+}
+
+/// 用户自建流程图（graph_definitions）
+model GraphDefinition {
+  id              String    @id
+  name            String
+  pluginId        String?   @map("plugin_id")
+  description     String?
+  definitionJson  Json      @map("definition_json")   // { name, plugin_id, nodes: GraphNode[], edges: GraphEdge[] }
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("graph_definitions")
+}
+
+// =============================================================================
 // 项目管理层
 // =============================================================================
 
@@ -21,6 +54,7 @@ model Requirement {
   title               String
   description         String?
   status              String   @default("draft")
+  workflowId          String?  @default("requirement-decomposition") @map("workflow_id")  // 选中的流程
   targetProjectId     String   @map("target_project_id")
   targetRepoPath      String   @map("target_repo_path")
   autoExecute         Boolean  @default(false) @map("auto_execute")
@@ -104,6 +138,8 @@ model Task {
   acceptanceCriteria  String?     @map("acceptance_criteria")
   techConstraints     Json?       @map("tech_constraints")
   storyContext        String?     @map("story_context")
+  taskType            String?     @map("task_type")        // CRUD / CRUD_PAGE / MODULE_ENHANCEMENT …
+  estimatedHours      Float?      @map("estimated_hours")  // 预估工时
   status              String      @default("pending")
   targetProjectId     String      @map("target_project_id")
   targetRepoPath      String      @map("target_repo_path")
@@ -134,44 +170,46 @@ model Task {
 
 /// 任务执行实例
 model TaskExecution {
-  executionId       String      @id @map("execution_id")
-  subjectType       String      @map("subject_type")        // 'task' | 'requirement'
-  subjectId         String      @map("subject_id")
-  taskId            String?     @map("task_id")
-  requirementId     String?     @map("requirement_id")
-  targetProjectId   String      @map("target_project_id")
-  targetRepoPath    String      @map("target_repo_path")
-  stage             String      @default("planning")
-  status            String      @default("pending")
-  controlStatus     String      @default("idle") @map("control_status")
-  provider          String?                                 // 'claude' | 'codex'
-  sessionId         String?     @map("session_id")          // providerConversationId，用于 --resume
-  finalOutput       String?     @map("final_output")
-  workerId          String?     @map("worker_id")
-  leaseToken        String?     @map("lease_token")
-  fencingToken      Int         @default(0) @map("fencing_token")
-  leaseExpiresAt    DateTime?   @map("lease_expires_at")
-  heartbeatAt       DateTime?   @map("heartbeat_at")
-  rateLimitCount    Int         @default(0) @map("rate_limit_count")
-  maxDurationMin    Int         @default(240) @map("max_duration_min")
-  stallTimeoutMin   Int         @default(10) @map("stall_timeout_min")
-  errorMessage      String?     @map("error_message")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  startedAt         DateTime?   @map("started_at")
-  pausedAt          DateTime?   @map("paused_at")
-  completedAt       DateTime?   @map("completed_at")
-  retryAt           DateTime?   @map("retry_at")
+  executionId         String      @id @map("execution_id")
+  subjectType         String      @map("subject_type")        // 'task' | 'requirement'
+  subjectId           String      @map("subject_id")
+  taskId              String?     @map("task_id")
+  requirementId       String?     @map("requirement_id")
+  graphDefinitionId   String?     @map("graph_definition_id") // 该执行跑的流程 id
+  threadId            String?     @map("thread_id")           // LangGraph checkpointer 线程 id
+  targetProjectId     String      @map("target_project_id")
+  targetRepoPath      String      @map("target_repo_path")
+  stage               String      @default("planning")
+  status              String      @default("pending")
+  controlStatus       String      @default("idle") @map("control_status")
+  provider            String?                                 // 'claude' | 'codex'
+  sessionId           String?     @map("session_id")          // providerConversationId，用于 --resume
+  finalOutput         String?     @map("final_output")
+  workerId            String?     @map("worker_id")
+  leaseToken          String?     @map("lease_token")
+  fencingToken        Int         @default(0) @map("fencing_token")
+  leaseExpiresAt      DateTime?   @map("lease_expires_at")
+  heartbeatAt         DateTime?   @map("heartbeat_at")
+  rateLimitCount      Int         @default(0) @map("rate_limit_count")
+  maxDurationMin      Int         @default(240) @map("max_duration_min")
+  stallTimeoutMin     Int         @default(10) @map("stall_timeout_min")
+  errorMessage        String?     @map("error_message")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  startedAt           DateTime?   @map("started_at")
+  pausedAt            DateTime?   @map("paused_at")
+  completedAt         DateTime?   @map("completed_at")
+  retryAt             DateTime?   @map("retry_at")
 
   // 关系
-  task              Task?       @relation(fields: [taskId], references: [id])
-  requirement       Requirement? @relation(fields: [requirementId], references: [id])
-  phaseInstances    PhaseInstance[]
-  conversationEvents ConversationEvent[]
-  inboxQuestions    InboxQuestion[]
-  taskLogs          TaskLog[]
-  decisions         Decision[]
-  interventions     Intervention[]
-  executionEvents   ExecutionEvent[]
+  task                Task?       @relation(fields: [taskId], references: [id])
+  requirement         Requirement? @relation(fields: [requirementId], references: [id])
+  phaseInstances      PhaseInstance[]
+  conversationEvents  ConversationEvent[]
+  inboxQuestions      InboxQuestion[]
+  taskLogs            TaskLog[]
+  decisions           Decision[]
+  interventions       Intervention[]
+  executionEvents     ExecutionEvent[]
 
   @@index([status])
   @@index([subjectType, subjectId])
@@ -352,4 +390,22 @@ model SchedulingEvent {
   createdAt           DateTime @default(now()) @map("created_at")
 
   @@map("scheduling_events")
+}
+
+// =============================================================================
+// 图书管理
+// =============================================================================
+
+/// 图书
+model Book {
+  id            String   @id
+  isbn          String   @unique
+  title         String
+  author        String
+  publisher     String
+  category      String
+  stockQuantity Int      @default(0) @map("stock_quantity")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("books")
 }

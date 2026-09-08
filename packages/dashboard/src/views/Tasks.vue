@@ -22,13 +22,13 @@ const searchText = ref('')
 const statusFilter = ref<string[]>([])
 
 // 状态优先级排序
-const statusPriority: string[] = ['running', 'rate_limited', 'paused', 'pending', 'failed', 'cancelled', 'completed']
-const filterableStatuses = ['pending', 'running', 'rate_limited', 'paused', 'completed', 'failed', 'cancelled'] as const
+const statusPriority: string[] = ['running', 'rate_limited', 'paused', 'draft', 'pending', 'failed', 'cancelled', 'completed']
+const filterableStatuses = ['draft', 'pending', 'running', 'rate_limited', 'paused', 'completed', 'failed', 'cancelled'] as const
 
 // 状态文本
 function statusText(status: string): string {
   const map: Record<string, string> = {
-    pending: '待执行', running: '执行中', completed: '已完成',
+    draft: '待确认', pending: '待执行', running: '执行中', completed: '已完成',
     failed: '失败', cancelled: '已取消', paused: '已暂停',
     rate_limited: '限流中',
   }
@@ -37,8 +37,10 @@ function statusText(status: string): string {
 
 // 标题提取
 function taskTitle(row: TaskListItem): string {
+  // 优先使用 title 字段（V4 Task 模型）
+  if (row.title) return row.title
+  // fallback: 从 breakdown_content 解析（V3 兼容）
   const c = row.breakdown_content || ''
-  // 尝试解析 JSON
   try {
     const obj = JSON.parse(c)
     if (obj && typeof obj === 'object' && obj.title) {
@@ -76,6 +78,7 @@ const groupedTasks = computed(() => {
     running: [],
     rate_limited: [],
     paused: [],
+    draft: [],
     pending: [],
     failed: [],
     completed: [],
@@ -94,16 +97,17 @@ const taskSummary = computed(() => {
   const total = tasks.value.length
   const running = tasks.value.filter(t => t.status === 'running').length
   const rateLimited = tasks.value.filter(t => t.status === 'rate_limited').length
+  const draft = tasks.value.filter(t => t.status === 'draft').length
   const pending = tasks.value.filter(t => t.status === 'pending').length
   const paused = tasks.value.filter(t => t.status === 'paused').length
   const completed = tasks.value.filter(t => t.status === 'completed').length
   const failed = tasks.value.filter(t => t.status === 'failed').length
   const cancelled = tasks.value.filter(t => t.status === 'cancelled').length
-  return { total, running, rateLimited, pending, paused, completed, failed, cancelled }
+  return { total, running, rateLimited, draft, pending, paused, completed, failed, cancelled }
 })
 
 // 重要的状态组（优先显示）
-const priorityGroups = ['running', 'rate_limited', 'paused', 'failed']
+const priorityGroups = ['running', 'rate_limited', 'paused', 'draft', 'failed']
 const normalGroups = ['pending', 'completed', 'cancelled']
 
 // 加载需求列表
@@ -177,6 +181,21 @@ async function retryTask(task: TaskListItem) {
   }
 }
 
+async function confirmTask(task: TaskListItem, event?: Event) {
+  event?.stopPropagation()
+  try {
+    const res = await api.confirm(task.id)
+    if (res.ok) {
+      ElMessage.success('已确认，任务将开始执行')
+      loadList()
+    } else {
+      ElMessage.error(res.error || '确认失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '确认失败')
+  }
+}
+
 // 删除任务
 async function deleteTask(task: TaskListItem, event?: Event) {
   event?.stopPropagation()
@@ -242,6 +261,10 @@ function duration(start: string | null, end: string | null): string {
       <div class="stat-card paused" v-if="taskSummary.paused">
         <span class="stat-value">{{ taskSummary.paused }}</span>
         <span class="stat-label">暂停</span>
+      </div>
+      <div class="stat-card draft" v-if="taskSummary.draft">
+        <span class="stat-value">{{ taskSummary.draft }}</span>
+        <span class="stat-label">待确认</span>
       </div>
       <div class="stat-card pending" v-if="taskSummary.pending">
         <span class="stat-value">{{ taskSummary.pending }}</span>
@@ -334,6 +357,7 @@ function duration(start: string | null, end: string | null): string {
                   <button class="action-btn warn" @click="pauseTask(task)">暂停</button>
                   <button class="action-btn danger" @click="cancelTask(task)">取消</button>
                 </template>
+                <button v-if="group === 'draft'" class="action-btn primary" @click="confirmTask(task, $event)">确认执行</button>
                 <button v-if="group === 'paused'" class="action-btn primary" @click="resumeTask(task)">继续</button>
                 <button v-if="group === 'failed'" class="action-btn primary" @click="retryTask(task)">重试</button>
                 <button
@@ -455,6 +479,12 @@ function duration(start: string | null, end: string | null): string {
   background: rgba(245, 158, 11, 0.08);
 }
 .stat-card.rate-limited .stat-value { color: var(--st-paused); }
+
+.stat-card.draft {
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.08);
+}
+.stat-card.draft .stat-value { color: #8b5cf6; }
 
 .stat-card.paused {
   border-color: rgba(245, 158, 11, 0.3);
@@ -581,6 +611,7 @@ function duration(start: string | null, end: string | null): string {
 .filter-chip.running .chip-dot { background: var(--st-running); }
 .filter-chip.rate_limited .chip-dot { background: var(--st-paused); }
 .filter-chip.paused .chip-dot { background: var(--st-paused); }
+.filter-chip.draft .chip-dot { background: #8b5cf6; }
 .filter-chip.failed .chip-dot { background: var(--st-failed); }
 .filter-chip.completed .chip-dot { background: var(--st-done); }
 
@@ -636,6 +667,7 @@ function duration(start: string | null, end: string | null): string {
 .group-header.running { border-left: 3px solid var(--st-running); }
 .group-header.rate_limited { border-left: 3px solid var(--st-paused); }
 .group-header.paused { border-left: 3px solid var(--st-paused); }
+.group-header.draft { border-left: 3px solid #8b5cf6; }
 .group-header.failed { border-left: 3px solid var(--st-failed); }
 .group-header.pending { border-left: 3px solid var(--faint); }
 .group-header.completed { border-left: 3px solid var(--st-done); }
@@ -650,6 +682,7 @@ function duration(start: string | null, end: string | null): string {
 .group-header.running .group-icon { background: var(--st-running); box-shadow: 0 0 8px var(--st-running); }
 .group-header.rate_limited .group-icon { background: var(--st-paused); }
 .group-header.paused .group-icon { background: var(--st-paused); }
+.group-header.draft .group-icon { background: #8b5cf6; }
 .group-header.failed .group-icon { background: var(--st-failed); }
 .group-header.pending .group-icon { background: var(--faint); }
 .group-header.completed .group-icon { background: var(--st-done); }

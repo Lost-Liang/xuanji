@@ -108,6 +108,7 @@ export interface LoopContainer { id: string; childGraph: GraphDef; exitCondition
 export interface GraphDef {
   id?: string
   name: string
+  description?: string
   plugin_id: string
   nodes: GraphNode[]
   edges: GraphEdge[]

@@ -1,0 +1,17 @@
+{
+  "name": "simple-http-server",
+  "version": "1.0.0",
+  "description": "一个使用 Node.js 内置 http 模块创建的简单 HTTP 服务器",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "http",
+    "server",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -18,7 +18,7 @@ const searchText = ref('')
 
 // 工作流选择
 const workflows = ref<{ id: string; name: string }[]>([])
-const selectedWorkflowId = ref('research-flow-v1')
+const selectedWorkflowId = ref('requirement-decomposition')
 
 // 详情抽屉
 const drawerVisible = ref(false)

@@ -23,7 +23,9 @@ nodes:
   # ─── 1. 开发阶段 ─────────────────────────────────────────────────────────────
   - id: develop
     type: agent
-    agent_binding_ids: [developer]
+    agent_binding_ids: [backend-crud, backend-module-enhancement, frontend-crud-page]
+    selector:
+      by: task_type   # 按 Task.task_type 选择对应 agent
     write_key: results
 
   # ─── 2. 编译验证 ─────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ nodes:
   # ─── 4. Bug 修复（编译/测试失败时进入，最多循环 3 次） ─────────────────────────
   - id: bug_fix
     type: agent
-    agent_binding_ids: [developer]
+    agent_binding_ids: [bug-fixer]
     write_key: results
 
   # ─── 5. 质量审查 ─────────────────────────────────────────────────────────────
@@ -51,19 +53,19 @@ nodes:
   # ─── 5.1 质量问题修复（质量审查发现问题时循环，最多 3 次） ────────────────────
   - id: quality_issue_fix
     type: agent
-    agent_binding_ids: [developer]
+    agent_binding_ids: [quality-fixer]
     write_key: results
 
   # ─── 6. 安全审查 ─────────────────────────────────────────────────────────────
   - id: security_review
     type: agent
-    agent_binding_ids: [security-reviewer]
+    agent_binding_ids: [reviewer]
     write_key: results
 
   # ─── 6.1 安全问题修复（安全审查发现问题时循环，最多 3 次） ────────────────────
   - id: security_issue_fix
     type: agent
-    agent_binding_ids: [developer]
+    agent_binding_ids: [security-fixer]
     write_key: results
 
   # ─── 7. 最终审查（人审 gate，approve 后流程结束） ─────────────────────────────

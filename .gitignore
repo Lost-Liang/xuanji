@@ -5,3 +5,6 @@ dist/
 .DS_Store
 .worktrees/
 .superpowers/
+
+# 工作区目录（参考项目）
+workspace/

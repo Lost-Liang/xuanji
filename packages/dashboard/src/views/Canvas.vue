@@ -186,12 +186,22 @@ function getNodeLabel(nodeId: string): string {
 
 // 图定义列表
 const graphDefs = ref<any[]>([])
-const selectedGraphId = ref<string>('research-flow-v1')
+const selectedGraphId = ref<string>('')
 
 // 加载图定义列表
 async function loadGraphDefs() {
-  const list = await api.list()
-  graphDefs.value = list
+  try {
+    const data = await api.list()
+    // data = { presets: [...], user: [...] }
+    graphDefs.value = [...(data.presets || []), ...(data.user || [])]
+    // 默认选中第一张
+    if (graphDefs.value.length > 0 && !selectedGraphId.value) {
+      selectedGraphId.value = graphDefs.value[0].id
+    }
+  } catch {
+    // graph-definitions 端点可能不存在（V4 使用 workflows），不影响运行态画布
+    graphDefs.value = []
+  }
 }
 
 // 加载选中的图定义到画布
@@ -238,13 +248,15 @@ function onModeChange(m: 'static' | 'runtime') {
 async function connectExecution() {
   if (connected.value) { disconnect(); return }
   if (!executionId.value) return
-  // 拉取 execution 行 → 图定义 → 构画布节点
+  // 拉取 execution 行 → 图定义或任务树 → 构画布节点
   try {
     const er = await fetch(`/api/executions/${encodeURIComponent(executionId.value)}`)
     if (!er.ok) { alert('execution 查询失败: ' + er.status); return }
     const erow = await er.json()
     rtMeta.value = { status: erow.status, token_in: erow.token_in ?? null, token_out: erow.token_out ?? null, current_node_id: erow.current_node_id, loop_counters: erow.loop_counters || {} }
     const defId = erow.graph_definition_id
+
+    // 情况 1：有 graph_definition_id（工作流驱动的执行）
     if (defId) {
       const drow = await api.get(defId)
       const def = drow?.definition_json
@@ -264,9 +276,19 @@ async function connectExecution() {
         edges.value = vf.edges
       }
     }
-    // 初始染色：回填已完成节点（phase_outputs）→ done；当前节点 → running/paused
+    // 情况 2：需求类型执行（无图定义，从任务树构建画布）
+    else if (erow.subject_type === 'requirement' && erow.subject_id) {
+      await buildCanvasFromRequirementTree(erow.subject_id)
+    }
+
+    // 初始染色：回填已完成节点（phase_nodes）→ done；当前节点 → running/paused
     runtimePhases.value = new Map()
-    for (const nid of erow.phase_nodes || []) runtimePhases.value.set(nid, 'done')
+    // phase_nodes 是 { phaseId: status } 对象，不是数组
+    if (erow.phase_nodes && typeof erow.phase_nodes === 'object') {
+      for (const [nid, status] of Object.entries(erow.phase_nodes)) {
+        runtimePhases.value.set(nid, status as string)
+      }
+    }
     if (rtMeta.value.current_node_id) {
       runtimePhases.value.set(rtMeta.value.current_node_id, rtMeta.value.status === 'paused' ? 'paused' : 'running')
     }
@@ -277,6 +299,101 @@ async function connectExecution() {
     connected.value = true
   } catch (e: any) {
     alert('连接失败: ' + (e?.message || e))
+  }
+}
+
+/**
+ * 从需求任务树构建画布
+ *
+ * 节点：epic → feature → userStory → task（四层）
+ * 边：按顺序连接（epic → feature → userStory → task）
+ * 状态：从子执行查询每个 task 的执行状态
+ */
+async function buildCanvasFromRequirementTree(requirementId: string) {
+  try {
+    const treeRes = await fetch(`/api/requirements/${encodeURIComponent(requirementId)}/tree`)
+    if (!treeRes.ok) { console.warn('[canvas] 需求树查询失败:', treeRes.status); return }
+    const tree = await treeRes.json()
+
+    // 查询所有子执行的执行状态
+    const taskStatusMap = new Map<string, string>() // taskId → execution status
+    const taskExecIdMap = new Map<string, string>() // taskId → executionId
+    try {
+      const execRes = await fetch(`/api/executions?requirement_id=${encodeURIComponent(requirementId)}`)
+      if (execRes.ok) {
+        const execs = await execRes.json()
+        for (const ex of execs) {
+          if (ex.subject_type === 'task' && ex.subject_id) {
+            taskStatusMap.set(ex.subject_id, ex.status)
+            taskExecIdMap.set(ex.subject_id, ex.id)
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    const buildNodes: any[] = []
+    const buildEdges: any[] = []
+    let x = 0
+    const Y_LEVELS = { epic: 0, feature: 1, story: 2, task: 3 }
+    const Y_STEP = 120
+    const X_STEP = 200
+
+    // 按史诗组织节点，每个史诗一列
+    for (const epic of tree.epics || []) {
+      const epicId = `epic-${epic.id}`
+      buildNodes.push({
+        id: epicId, type: 'agent',
+        position: { x: x * X_STEP, y: Y_LEVELS.epic * Y_STEP },
+        data: { label: epic.title, status: 'done', agent_binding_ids: [epicId] },
+      })
+
+      for (const feat of epic.features || []) {
+        const featId = `feat-${feat.id}`
+        buildNodes.push({
+          id: featId, type: 'agent',
+          position: { x: x * X_STEP, y: Y_LEVELS.feature * Y_STEP },
+          data: { label: feat.title, status: 'done', agent_binding_ids: [featId] },
+        })
+        buildEdges.push({ id: `${epicId}-${featId}`, source: epicId, target: featId, animated: false, markerEnd: 'arrowclosed' })
+
+        for (const story of feat.user_stories || []) {
+          const storyId = `story-${story.id}`
+          buildNodes.push({
+            id: storyId, type: 'agent',
+            position: { x: x * X_STEP, y: Y_LEVELS.story * Y_STEP },
+            data: { label: story.title, status: 'done', agent_binding_ids: [storyId] },
+          })
+          buildEdges.push({ id: `${featId}-${storyId}`, source: featId, target: storyId, animated: false, markerEnd: 'arrowclosed' })
+
+          for (const task of story.tasks || []) {
+            const taskId = `task-${task.id}`
+            const execStatus = taskStatusMap.get(task.id) || 'pending'
+            // 映射 task_execution 状态到画布状态
+            const canvasStatus = execStatus === 'completed' ? 'done'
+              : execStatus === 'running' ? 'running'
+              : execStatus === 'failed' ? 'failed'
+              : 'pending'
+            buildNodes.push({
+              id: taskId, type: 'agent',
+              position: { x: x * X_STEP, y: Y_LEVELS.task * Y_STEP },
+              data: { label: task.title, status: canvasStatus, agent_binding_ids: [taskId] },
+            })
+            buildEdges.push({ id: `${storyId}-${taskId}`, source: storyId, target: taskId, animated: false, markerEnd: 'arrowclosed' })
+          }
+        }
+      }
+      x++
+    }
+
+    nodes.value = buildNodes
+    edges.value = buildEdges
+    // 用节点状态填充 runtimePhases
+    runtimePhases.value = new Map()
+    for (const n of buildNodes) {
+      runtimePhases.value.set(n.id, n.data.status)
+    }
+  } catch (e: any) {
+    console.error('[canvas] 构建需求树画布失败:', e)
   }
 }
 
@@ -515,17 +632,27 @@ function ctxEditEdge() {
 onMounted(async () => {
   window.addEventListener('click', hideCtxMenu)
   window.addEventListener('scroll', hideCtxMenu, true)
-  // 加载预置图定义
-  await loadGraphDefs()
+
   // 如果有 execution_id 查询参数，自动进入运行态
   const execId = route.query.execution_id as string | undefined
+  const workflowId = route.query.workflow_id as string | undefined
+
   if (execId) {
     mode.value = 'runtime'
     executionId.value = execId
-    await loadSelectedGraph()
     await connectExecution()
-  } else {
+  } else if (workflowId) {
+    // 静态编辑态：加载指定的 workflow_id
+    selectedGraphId.value = workflowId
+    // 同时加载图列表供下拉选择
+    await loadGraphDefs()
     await loadSelectedGraph()
+  } else {
+    // 默认：加载图列表，选中第一张
+    await loadGraphDefs()
+    if (selectedGraphId.value) {
+      await loadSelectedGraph()
+    }
   }
 })
 onUnmounted(() => {
@@ -647,8 +774,15 @@ function debugLog() {
 
 async function save() {
   nodes.value = layoutDagre(nodes.value, edges.value)  // 保存前布局
-  const def = toGraphDef(nodes.value, edges.value, '新建图', 'ruoyi')
-  await api.save(def)
+  const name = selectedGraphId.value ? (graphDefs.value.find(g => g.id === selectedGraphId.value)?.name || '新建图') : '新建图'
+  const def = toGraphDef(nodes.value, edges.value, name, 'ruoyi')
+  const saved = await api.save(def)
+  // 更新 selectedGraphId 为新建图的 id
+  if (saved?.id && !selectedGraphId.value) {
+    selectedGraphId.value = saved.id
+  }
+  // 刷新列表
+  await loadGraphDefs()
 }
 </script>
 <style scoped>
