@@ -305,7 +305,11 @@ export function makeAgentNode(opts: {
 
     // ── 确定工作目录 ─────────────────────────────────────────────────────────
     let workDir = process.cwd();
-    if (opts.isSubgraph && task) {
+
+    // 优先使用 task.targetRepoPath（用户指定的目标项目目录）
+    if (task?.targetRepoPath) {
+      workDir = task.targetRepoPath;
+    } else if (opts.isSubgraph && task) {
       const wtPath = await ensureTaskWorktree(task.shortid, execShortid);
       workDir = wtPath;
     }
