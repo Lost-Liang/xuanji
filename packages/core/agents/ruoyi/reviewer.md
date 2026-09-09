@@ -129,3 +129,28 @@
   - `severity`: 严重程度（必填），可选值：`high`、`medium`、`low`、`info`
   - `recommendation`: 修复建议（可选）
 - `has_critical_vulnerabilities`: 是否存在高优先级漏洞（必填）
+
+---
+
+## 验收检查
+
+根据 Task 的 `acceptanceCriteria` 和 `acceptanceSteps` 进行验收：
+
+**检查清单：**
+
+1. 检查 `acceptance_criteria` 是否全部满足
+2. 检查 `acceptance_steps` 的每个 Given/When/Then 是否可执行通过
+3. 检查测试代码是否覆盖了所有 `acceptance_steps`
+
+**输出格式：**
+
+```json
+{
+  "approved": true,
+  "checklist": [
+    { "step": "Given 存在10条计划; When GET /api/plans?page=1&size=5; Then 返回第1页5条", "status": "pass" },
+    { "step": "Given 按名称'计划A'筛选; When GET /api/plans?name=计划A; Then 返回匹配结果", "status": "pass" }
+  ],
+  "comments": "所有验收步骤通过"
+}
+```
