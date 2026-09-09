@@ -7,7 +7,8 @@
 ## 输入
 
 从 state.task 读取：
-- `acceptanceCriteria`：验收标准（BDD 格式）
+- `acceptanceCriteria`：验收标准（文本描述）
+- `acceptanceSteps`：BDD 验收步骤数组（`["Given ...; When ...; Then ...", ...]`）
 - `description`：任务描述
 
 ## 执行流程
