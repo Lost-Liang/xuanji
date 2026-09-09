@@ -223,6 +223,96 @@ describeIf('createTaskTreeFromParsed 字段映射', () => {
     expect(epic).not.toBeNull();
     expect(epic!.title).toBe('Epic E5');
   });
+
+  it('should create Epic/Feature from flattened user_stories format (no epics array)', async () => {
+    const parsed = {
+      // 没有 epics 数组，只有 user_stories
+      user_stories: [{
+        id: 'US-001',
+        epic_id: 'E6',
+        feature_id: 'F6',
+        epic_name: '图书管理系统',
+        feature_name: '图书借阅',
+        title: '作为图书管理员，我想借阅图书',
+        as_a: '图书管理员',
+        i_want: '借阅图书',
+        so_that: '管理图书流通',
+        module: 'library',
+        tasks: [{
+          title: '创建 Book 实体类',
+          task_type: 'CRUD',
+        }],
+      }],
+    };
+
+    await createTaskTreeFromParsed(
+      { id: requirementId, title: '图书管理需求', targetProjectId: 'proj-test', targetRepoPath: '/tmp/test' },
+      parsed,
+    );
+
+    // 验证 Epic 创建
+    const epic = await db.epic.findFirst({
+      where: { requirementId, title: '图书管理系统' },
+    });
+    expect(epic).not.toBeNull();
+    expect(epic!.title).toBe('图书管理系统');
+    expect(epic!.module).toBe('library');
+
+    // 验证 Feature 创建
+    const feature = await db.feature.findFirst({
+      where: { epic: { requirementId }, title: '图书借阅' },
+    });
+    expect(feature).not.toBeNull();
+    expect(feature!.title).toBe('图书借阅');
+
+    // 验证 UserStory 创建
+    const us = await db.userStory.findFirst({
+      where: { title: '作为图书管理员，我想借阅图书' },
+    });
+    expect(us).not.toBeNull();
+    expect(us!.asA).toBe('图书管理员');
+    expect(us!.iWant).toBe('借阅图书');
+
+    // 验证 Task 创建
+    const task = await db.task.findFirst({
+      where: { title: '创建 Book 实体类' },
+    });
+    expect(task).not.toBeNull();
+    expect(task!.taskType).toBe('CRUD');
+  });
+
+  it('should fallback to requirement title when epic has no name', async () => {
+    const parsed = {
+      // 没有 epics 数组，user_stories 也没有 epic_name
+      user_stories: [{
+        id: 'US-002',
+        epic_id: 'E7',
+        feature_id: 'F7',
+        // 没有 epic_name, feature_name
+        title: '测试默认标题',
+        tasks: [{
+          title: '测试任务2',
+        }],
+      }],
+    };
+
+    await createTaskTreeFromParsed(
+      { id: requirementId, title: '默认标题测试需求', targetProjectId: 'proj-test', targetRepoPath: '/tmp/test' },
+      parsed,
+    );
+
+    // Epic 标题应该回退到需求标题
+    const epic = await db.epic.findFirst({
+      where: { requirementId, title: '默认标题测试需求' },
+    });
+    expect(epic).not.toBeNull();
+
+    // Feature 标题也应该回退到 Epic 标题（即需求标题）
+    const feature = await db.feature.findFirst({
+      where: { epic: { requirementId }, title: '默认标题测试需求' },
+    });
+    expect(feature).not.toBeNull();
+  });
 });
 
 // ============================================================================

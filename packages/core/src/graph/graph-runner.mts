@@ -496,10 +496,26 @@ export async function createTaskTreeFromParsed(
     }
   }
 
-  // 从 user_stories 提取 epics（补充）
+  // 从 user_stories 提取 epics（补充/主要来源）
   for (const us of user_stories) {
     if (us.epic_id && !epics.has(us.epic_id)) {
-      epics.set(us.epic_id, { id: us.epic_id, module: us.module });
+      // 支持多种命名风格: epic_name, epic_title, epicName, epicTitle
+      const epicTitle = us.epic_name || us.epic_title || us.epicName || us.epicTitle || requirement.title;
+      epics.set(us.epic_id, {
+        id: us.epic_id,
+        name: epicTitle,
+        title: epicTitle,
+        module: us.module,
+        description: us.epic_description || us.epicDescription,
+      });
+    } else if (us.epic_id && epics.has(us.epic_id)) {
+      // 如果 epic 已存在但没有标题，补充标题
+      const existing = epics.get(us.epic_id);
+      const epicTitle = us.epic_name || us.epic_title || us.epicName || us.epicTitle || requirement.title;
+      if (!existing.name && !existing.title) {
+        existing.name = epicTitle;
+        existing.title = epicTitle;
+      }
     }
   }
 
@@ -508,11 +524,14 @@ export async function createTaskTreeFromParsed(
     const epicId = randomUUID();
     epicMap.set(tempId, epicId);
 
+    // 标题优先级: epicData.name > epicData.title > 需求标题 > Epic ${tempId}
+    const epicTitle = epicData.name || epicData.title || requirement.title || `Epic ${tempId}`;
+
     await db.epic.create({
       data: {
         id: epicId,
         requirementId: requirement.id,
-        title: epicData.name || epicData.title || `Epic ${tempId}`,
+        title: epicTitle,
         description: epicData.description || null,
         module: epicData.module || null,
         priority: epicData.priority || null,
@@ -539,10 +558,35 @@ export async function createTaskTreeFromParsed(
     }
   }
 
-  // 从 user_stories 提取 features（补充）
+  // 从 user_stories 提取 features（补充/主要来源）
   for (const us of user_stories) {
+    // 获取关联的 epic 标题作为备选
+    let epicTitleForFallback: string | undefined;
+    if (us.epic_id && epics.has(us.epic_id)) {
+      const epicData = epics.get(us.epic_id);
+      epicTitleForFallback = epicData?.name || epicData?.title;
+    }
+
     if (us.feature_id && !features.has(us.feature_id)) {
-      features.set(us.feature_id, { id: us.feature_id, epic_id: us.epic_id });
+      // 支持多种命名风格: feature_name, feature_title, featureName, featureTitle
+      // 回退优先级: feature_name > epic 标题 > 需求标题
+      const featureTitle = us.feature_name || us.feature_title || us.featureName || us.featureTitle || epicTitleForFallback || requirement.title;
+      features.set(us.feature_id, {
+        id: us.feature_id,
+        epic_id: us.epic_id,
+        title: featureTitle,
+        name: featureTitle,
+        module: us.module,
+        description: us.feature_description || us.featureDescription,
+      });
+    } else if (us.feature_id && features.has(us.feature_id)) {
+      // 如果 feature 已存在但没有标题，补充标题
+      const existing = features.get(us.feature_id);
+      const featureTitle = us.feature_name || us.feature_title || us.featureName || us.featureTitle || epicTitleForFallback || requirement.title;
+      if (!existing.title && !existing.name) {
+        existing.title = featureTitle;
+        existing.name = featureTitle;
+      }
     }
   }
 
@@ -552,11 +596,25 @@ export async function createTaskTreeFromParsed(
 
     const epicRealId = epicMap.get(featureData.epic_id);
 
+    // 标题优先级: featureData.title > featureData.name > 关联 Epic 标题 > Feature ${tempId}
+    // 获取关联的 Epic 标题作为备选
+    let fallbackTitle = `Feature ${tempId}`;
+    if (featureData.epic_id && epics.has(featureData.epic_id)) {
+      const epicData = epics.get(featureData.epic_id);
+      if (epicData?.name || epicData?.title) {
+        fallbackTitle = epicData.name || epicData.title;
+      }
+    } else if (requirement.title) {
+      fallbackTitle = requirement.title;
+    }
+
+    const featureTitle = featureData.title || featureData.name || fallbackTitle;
+
     await db.feature.create({
       data: {
         id: featureId,
         epicId: epicRealId || null,
-        title: featureData.title || featureData.name || `Feature ${tempId}`,
+        title: featureTitle,
         description: featureData.description || null,
         module: featureData.module || null,
         acceptanceCriteria: featureData.acceptance_criteria || null,
