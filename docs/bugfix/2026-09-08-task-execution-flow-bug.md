@@ -5,9 +5,11 @@
 
 ## 问题现象
 
-任务 `eb895d4e-749c-4dc2-b164-e7033ffd0a61` 执行流程异常：
-- 预期：develop → compile_check → test_check → quality_review → security_review → final_review
-- 实际：develop → quality_review → security_review（跳过 compile_check、test_check、final_review）
+1. 任务 `eb895d4e-749c-4dc2-b164-e7033ffd0a61` 执行流程异常：
+   - 预期：develop → compile_check → test_check → quality_review → security_review → final_review
+   - 实际：develop → quality_review → security_review（跳过 compile_check、test_check、final_review）
+
+2. 点击"确认执行"后再点击"开始执行"报错"只能执行 pending 状态的任务"
 
 ## 根因分析
 
@@ -67,6 +69,19 @@ export const compileFail: ConditionFunction = (state: any) => {
 **文件**：`packages/dashboard/src/api/tasks.ts`
 
 TaskDetail 接口缺少 `title` 字段定义，导致 TypeScript 编译错误。
+
+### 根因 5：execute API 竞态条件
+
+**文件**：`packages/core/src/routes/tasks.mts:204-206`
+
+**问题**：confirm 后调度器立即拾取任务变为 running，但前端还没刷新，用户点击"开始执行"时报错。
+
+**流程**：
+1. 用户点击"确认执行" → confirm API 把 draft → pending
+2. 调度器立即拾取 pending 任务 → pending → running
+3. 前端还没刷新，仍显示"开始执行"按钮
+4. 用户点击"开始执行" → execute API 检查 status
+5. 此时 status 已是 running → 报错"只能执行 pending 状态的任务"
 
 ## 修复方案（已实施）
 
@@ -205,15 +220,32 @@ export interface TaskDetail {
 }
 ```
 
+### 修复 5：execute API 竞态条件处理 ✅
+
+```typescript
+// packages/core/src/routes/tasks.mts
+
+if (execution.status !== 'pending') {
+  // 任务已经在执行中，返回成功（避免竞态条件导致的报错）
+  if (execution.status === 'running' || execution.status === 'waiting') {
+    res.json({ ok: true, message: '任务已在执行中', status: execution.status });
+    return;
+  }
+  res.status(400).json({ error: '只能执行 pending 状态的任务', current_status: execution.status });
+  return;
+}
+```
+
 ## 涉及文件
 
 | 文件 | 修改 |
 |------|------|
-| `packages/core/src/routes/tasks.mts` | 传入完整 task 对象 |
+| `packages/core/src/routes/tasks.mts` | 传入完整 task 对象 + 竞态条件处理 |
 | `packages/core/src/graph/nodes/command-node.mts` | 创建 phase_instance 记录 |
 | `packages/core/src/graph/conditions/default-conditions.mts` | 空状态防御处理 |
 | `packages/core/src/graph/builder.mts` | 移除 command-node 的 db 参数 |
 | `packages/dashboard/src/api/tasks.ts` | 补全 title 字段类型 |
+| `packages/core/workflows/default-dev-flow.yaml` | test_check 条件边修复 |
 
 ## 参考
 
@@ -223,4 +255,6 @@ export interface TaskDetail {
 
 ## 提交
 
-Commit: `fix: 修复任务执行流程 - 传参错误 + command-node 不记录 + 条件函数空状态`
+- `86e8c80` fix: 修复任务执行流程 - 传参错误 + command-node 不记录 + 条件函数空状态
+- `6c104c9` fix: 修复 test_check 无条件边
+- `52b69bc` fix: execute API 处理任务已在运行的情况
