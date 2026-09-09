@@ -346,11 +346,55 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   }
 }
 
+/**
+ * 安全 JSON 解析辅助函数
+ * 解析失败返回 null，不抛出异常
+ */
+export function safeJsonParse(str: string): any {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 从 spec 字符串更新 Requirement 的 businessGoal 和 specDoc
+ *
+ * 设计说明：把 specDoc 写入逻辑放在 onFlowComplete 中，
+ * 而不是 createTaskTreeFromParsed 中，避免被 task-planner 的输出覆盖。
+ */
+export async function updateRequirementFromSpec(
+  requirementId: string,
+  spec: string | Record<string, any>,
+): Promise<void> {
+  if (!spec) return;
+
+  const specData = typeof spec === 'string' ? safeJsonParse(spec) : spec;
+  if (!specData || typeof specData !== 'object') {
+    console.warn(`[graph-runner] spec 解析失败或不是对象，跳过 Requirement 更新`);
+    return;
+  }
+
+  const specForDoc = { ...specData };
+  delete specForDoc.business_goal; // 去重，business_goal 单独存
+
+  await db.requirement.update({
+    where: { id: requirementId },
+    data: {
+      businessGoal: specData.business_goal || null,
+      specDoc: JSON.stringify(specForDoc, null, 2),
+    },
+  });
+
+  console.log(`[graph-runner] 已更新 Requirement.specDoc 和 businessGoal: ${requirementId}`);
+}
+
 // ─── 完成回调 ──────────────────────────────────────────────────────────────────
 
 /**
  * 流程完成后的回调
- * - requirement-decomposition: 创建任务树
+ * - requirement-decomposition: 创建任务树 + 更新 Requirement specDoc/businessGoal
  * - default-dev-flow: 不需要额外处理
  */
 async function onFlowComplete(
@@ -360,9 +404,13 @@ async function onFlowComplete(
   requirementId?: string,
 ): Promise<void> {
   if (flowId === 'requirement-decomposition' && requirementId) {
-    // 从 result 中提取任务树
     const spec = result.spec || '';
     const tasks = result.tasks || [];
+
+    // 如果 result.spec 存在，更新 Requirement 的 businessGoal 和 specDoc
+    if (spec) {
+      await updateRequirementFromSpec(requirementId, spec);
+    }
 
     if (tasks.length > 0) {
       console.log(`[graph-runner] 创建任务树，收到 ${tasks.length} 个解析结果`);

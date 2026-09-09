@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { db } from '../src/db.mjs';
-import { createTaskTreeFromParsed } from '../src/graph/graph-runner.mjs';
+import { createTaskTreeFromParsed, safeJsonParse, updateRequirementFromSpec } from '../src/graph/graph-runner.mjs';
 import { randomUUID } from 'node:crypto';
 
 // ============================================================================
@@ -222,5 +222,125 @@ describeIf('createTaskTreeFromParsed 字段映射', () => {
 
     expect(epic).not.toBeNull();
     expect(epic!.title).toBe('Epic E5');
+  });
+});
+
+// ============================================================================
+// safeJsonParse 单元测试
+// ============================================================================
+
+describe('safeJsonParse', () => {
+  it('should parse valid JSON string', () => {
+    const result = safeJsonParse('{"business_goal": "测试目标", "scope": {}}');
+    expect(result).toEqual({ business_goal: '测试目标', scope: {} });
+  });
+
+  it('should return null for invalid JSON', () => {
+    expect(safeJsonParse('not json')).toBeNull();
+    expect(safeJsonParse('{bad}')).toBeNull();
+    expect(safeJsonParse('')).toBeNull();
+  });
+
+  it('should parse JSON array', () => {
+    expect(safeJsonParse('[1,2,3]')).toEqual([1, 2, 3]);
+  });
+});
+
+// ============================================================================
+// updateRequirementFromSpec 集成测试
+// ============================================================================
+
+describeIf('updateRequirementFromSpec', () => {
+  let requirementId: string;
+
+  beforeAll(async () => {
+    requirementId = `req-spec-${randomUUID().slice(0, 8)}`;
+    await db.requirement.create({
+      data: {
+        id: requirementId,
+        title: 'Spec 测试需求',
+        description: '测试 specDoc 和 businessGoal',
+        targetProjectId: 'proj-test',
+        targetRepoPath: '/tmp/test',
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await db.requirement.delete({ where: { id: requirementId } });
+  });
+
+  it('should write Requirement.specDoc and businessGoal from JSON string', async () => {
+    const specString = JSON.stringify({
+      business_goal: '测试业务目标',
+      scope: { in_scope: ['功能1'], out_of_scope: [] },
+      data_models: [{ entity: 'Test', fields: [] }],
+      api_design: [],
+      ui_design: [],
+      risks: [],
+    });
+
+    await updateRequirementFromSpec(requirementId, specString);
+
+    const req = await db.requirement.findUnique({ where: { id: requirementId } });
+
+    expect(req).not.toBeNull();
+    expect(req!.businessGoal).toBe('测试业务目标');
+    expect(req!.specDoc).toContain('scope');
+    expect(req!.specDoc).toContain('data_models');
+    expect(req!.specDoc).not.toContain('business_goal'); // 已去重
+  });
+
+  it('should accept object input directly', async () => {
+    const specObj = {
+      business_goal: '对象业务目标',
+      scope: { in_scope: ['功能2'] },
+    };
+
+    await updateRequirementFromSpec(requirementId, specObj);
+
+    const req = await db.requirement.findUnique({ where: { id: requirementId } });
+    expect(req!.businessGoal).toBe('对象业务目标');
+    expect(req!.specDoc).toContain('功能2');
+  });
+
+  it('should skip update when spec is empty string', async () => {
+    // 先写入一个已知值
+    await updateRequirementFromSpec(requirementId, JSON.stringify({
+      business_goal: '保留目标',
+      scope: {},
+    }));
+
+    // 用空字符串调用，应该不改变已有值
+    await updateRequirementFromSpec(requirementId, '');
+
+    const req = await db.requirement.findUnique({ where: { id: requirementId } });
+    expect(req!.businessGoal).toBe('保留目标');
+  });
+
+  it('should skip update when spec is invalid JSON', async () => {
+    await updateRequirementFromSpec(requirementId, JSON.stringify({
+      business_goal: '保留目标2',
+      scope: {},
+    }));
+
+    // 无效 JSON 应该不改变已有值
+    await updateRequirementFromSpec(requirementId, 'invalid json{{{');
+
+    const req = await db.requirement.findUnique({ where: { id: requirementId } });
+    expect(req!.businessGoal).toBe('保留目标2');
+  });
+
+  it('should set businessGoal to null when business_goal field is absent', async () => {
+    const specString = JSON.stringify({
+      scope: { in_scope: ['无目标功能'] },
+      data_models: [],
+    });
+
+    await updateRequirementFromSpec(requirementId, specString);
+
+    const req = await db.requirement.findUnique({ where: { id: requirementId } });
+    expect(req!.businessGoal).toBeNull();
+    expect(req!.specDoc).toContain('scope');
   });
 });
