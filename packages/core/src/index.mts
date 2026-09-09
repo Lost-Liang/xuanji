@@ -73,6 +73,7 @@ import { agentBindingsRouter } from './routes/agent-bindings.mjs';
 import { skillsRouter } from './routes/skills.mjs';
 import { graphDefinitionsRouter } from './routes/graph-definitions.mjs';
 import { booksRouter } from './routes/books.mjs';
+import { projectsRouter } from './routes/projects.mjs';
 
 // ─── 后台调度 ────────────────────────────────────────────────────────────────
 import { buildSchedulerGraph } from './graph/scheduler-graph.mjs';
@@ -102,6 +103,7 @@ export function createApp(): express.Express {
   app.use('/api/skills', skillsRouter);
   app.use('/api/graph-definitions', graphDefinitionsRouter);
   app.use('/api/books', booksRouter);
+  app.use('/api/projects', projectsRouter);
 
   // 内部 API（MCP Bridge 专用）
   app.use('/api/internal', internalRouter);
