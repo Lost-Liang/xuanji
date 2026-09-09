@@ -75,6 +75,8 @@ model Requirement {
   targetRepoPath      String   @map("target_repo_path")
   autoExecute         Boolean  @default(false) @map("auto_execute")
   maxConcurrentTasks  Int      @default(1) @map("max_concurrent_tasks")
+  businessGoal        String?  @map("business_goal")
+  specDoc             String?  @map("spec_doc")
   createdAt           DateTime @default(now()) @map("created_at")
 
   // 关系
@@ -93,6 +95,8 @@ model Epic {
   title           String
   description     String?
   module          String?
+  priority        String?   // P0/P1/P2
+  acceptanceCriteria String? @map("acceptance_criteria")
   status          String   @default("pending")
   createdAt       DateTime @default(now()) @map("created_at")
 
@@ -111,6 +115,9 @@ model Feature {
   epicId      String?  @map("epic_id")
   title       String
   description String?
+  module      String?
+  acceptanceCriteria String? @map("acceptance_criteria")
+  priority    String?   // P0/P1/P2
   status      String   @default("pending")
   createdAt   DateTime @default(now()) @map("created_at")
 
@@ -131,6 +138,7 @@ model UserStory {
   iWant           String?  @map("i_want")
   soThat          String?  @map("so_that")
   acceptanceText  String?  @map("acceptance_text")
+  module          String?
   priority        String   @default("P2")
   status          String   @default("pending")
   createdAt       DateTime @default(now()) @map("created_at")
@@ -152,6 +160,8 @@ model Task {
   title               String
   description         String?
   acceptanceCriteria  String?     @map("acceptance_criteria")
+  acceptanceSteps     Json?       @map("acceptance_steps")
+  priority            String?     // P0/P1/P2
   techConstraints     Json?       @map("tech_constraints")
   storyContext        String?     @map("story_context")
   taskType            String?     @map("task_type")        // CRUD / CRUD_PAGE / MODULE_ENHANCEMENT …
