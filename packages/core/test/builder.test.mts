@@ -233,4 +233,64 @@ describe('builder.mts 核心函数', () => {
       expect(buildAgentContext(state, 'input')).toBe('');
     });
   });
+
+  describe('yaml-loader context field', () => {
+    it('should preserve context field in GraphNode', () => {
+      const yaml = `
+version: "1"
+id: test
+name: 测试
+nodes:
+  - id: node1
+    type: agent
+    agent_binding_ids: [agent1]
+    context: spec
+edges: []
+start:
+  - node1
+`;
+      const workflow = loadWorkflowFromYaml(yaml);
+      const graphDef = mapYamlToGraphDef(workflow);
+
+      expect(graphDef.nodes[0].context).toBe('spec');
+    });
+
+    it('should default context to undefined when not specified', () => {
+      const yaml = `
+version: "1"
+id: test
+name: 测试
+nodes:
+  - id: node1
+    type: agent
+    agent_binding_ids: [agent1]
+edges: []
+start:
+  - node1
+`;
+      const workflow = loadWorkflowFromYaml(yaml);
+      const graphDef = mapYamlToGraphDef(workflow);
+
+      expect(graphDef.nodes[0].context).toBeUndefined();
+    });
+
+    it('should preserve context in WorkflowNode type', () => {
+      const yaml = `
+version: "1"
+id: test
+name: 测试
+nodes:
+  - id: node1
+    type: agent
+    agent_binding_ids: [agent1]
+    context: tasks
+edges: []
+start:
+  - node1
+`;
+      const workflow = loadWorkflowFromYaml(yaml);
+
+      expect(workflow.nodes[0].context).toBe('tasks');
+    });
+  });
 });

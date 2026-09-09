@@ -225,7 +225,7 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         throw new Error(`agent 节点 ${node.id} 缺少 agent_binding_ids`)
       }
 
-      const contextKey = (node as any).context || 'input'
+      const contextKey = node.context || 'input'
 
       return makeAgentNode({
         bindingIds,

@@ -97,6 +97,9 @@ export interface GraphNode {
 
   // 循环节点计数器键
   loop_counter_key?: string
+
+  // 控制 agent 读取的 state 通道，默认 'input'（spec §4.A）
+  context?: string
 }
 export interface GraphEdge {
   id: string
@@ -145,6 +148,7 @@ export interface WorkflowNode {
   condition_config?: { write_key: string }
   loop_counter_key?: string
   python_config?: { timeout_seconds: number; encoding: string }   // 未来扩展占位，保留类型不实现
+  context?: string                    // 控制 agent 读取的 state 通道，默认 'input'
 }
 
 // 作者边：字段用 from/to（映射前绝不读 source/target），loop_max 只落在条件回环边上

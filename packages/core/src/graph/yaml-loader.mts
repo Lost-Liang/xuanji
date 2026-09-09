@@ -211,6 +211,7 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
     if (wn.loop_counter_key) gn.loop_counter_key = wn.loop_counter_key
     if (wn.python_config) gn.python_config = wn.python_config
     if (wn.selector) gn.selector = wn.selector
+    if (wn.context) gn.context = wn.context  // 保留 context 字段（类型安全）
 
     // 合并 agent_binding_id 到 agent_binding_ids
     if (wn.agent_binding_id || wn.agent_binding_ids) {
@@ -227,15 +228,18 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
     return gn
   })
 
-  // 映射边：from→source, to→target
-  // 注意：不过滤 __end__ 边，因为 gate 节点需要知道它的出边指向 __end__
-  // builder.mts 会正确处理 gate 节点的条件边路由
+  // 映射边：from→source, to→target，保留 loop_max / condition / is_default
   const edges: GraphEdge[] = def.edges
-    .map((we: WorkflowEdge, index: number): GraphEdge => ({
-      id: `edge-${index}`,
-      source: we.from,
-      target: we.to  // 保留 __end__ 作为 target
-    }))
+    .map((we: WorkflowEdge, index: number): GraphEdge => {
+      const ge: GraphEdge = {
+        id: `edge-${index}`,
+        source: we.from,
+        target: we.to,
+      }
+      if (we.loop_max !== undefined) ge.loop_max = we.loop_max
+      if (we.condition) ge.condition = we.condition
+      return ge
+    })
 
   return {
     id: def.id,
