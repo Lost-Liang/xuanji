@@ -5,6 +5,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, type RequirementListItem, type RequirementDetail, type CreateRequirement } from '../api/requirements'
+import { api as projectApi, type Project } from '../api/projects'
 import RequirementLogDrawer from '../components/drawers/RequirementLogDrawer.vue'
 import RequirementTreeView from '../components/RequirementTreeView.vue'
 
@@ -15,7 +16,20 @@ const loading = ref(false)
 const newInput = ref('')
 const creating = ref(false)
 const searchText = ref('')
-const targetRepoPath = ref('')  // 工作目录
+
+// 项目选择
+const projects = ref<Project[]>([])
+const selectedProjectId = ref<string>('')
+const customPath = ref('')
+
+// 计算实际使用的路径
+const targetRepoPath = computed(() => {
+  if (selectedProjectId.value) {
+    const p = projects.value.find(x => x.id === selectedProjectId.value)
+    return p?.path || ''
+  }
+  return customPath.value.trim()
+})
 
 // 工作流选择
 const workflows = ref<{ id: string; name: string }[]>([])
@@ -105,6 +119,15 @@ async function loadWorkflows() {
   }
 }
 
+// 加载项目列表
+async function loadProjects() {
+  try {
+    projects.value = await projectApi.list()
+  } catch (e: any) {
+    console.error('加载项目列表失败:', e)
+  }
+}
+
 // 创建需求
 async function createAndExecute() {
   const text = newInput.value.trim()
@@ -116,7 +139,7 @@ async function createAndExecute() {
       id: reqId,
       input_text: text,
       workflow_id: selectedWorkflowId.value,
-      targetRepoPath: targetRepoPath.value.trim() || undefined,
+      targetRepoPath: targetRepoPath.value || undefined,
     }
     const cr = await fetch('/api/requirements', {
       method: 'POST',
@@ -130,7 +153,8 @@ async function createAndExecute() {
     }
     await api.execute(reqId, text)
     newInput.value = ''
-    targetRepoPath.value = ''
+    selectedProjectId.value = ''
+    customPath.value = ''
     ElMessage.success('已创建并执行')
     loadList()
   } catch (e: any) {
@@ -265,7 +289,7 @@ async function deleteFromDetail() {
   }
 }
 
-onMounted(() => { loadList(); loadWorkflows() })
+onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
 </script>
 
 <template>
@@ -287,12 +311,17 @@ onMounted(() => { loadList(); loadWorkflows() })
           rows="2"
         ></textarea>
         <div class="workdir-input-row">
+          <select v-model="selectedProjectId" class="project-select" :disabled="creating">
+            <option value="">选择项目（可选）</option>
+            <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+          <span class="input-separator">或</span>
           <input
-            v-model="targetRepoPath"
+            v-model="customPath"
             type="text"
             class="workdir-input"
-            placeholder="工作目录（可选，留空使用默认目录）"
-            :disabled="creating"
+            placeholder="手动输入路径"
+            :disabled="creating || !!selectedProjectId"
           />
         </div>
         <div class="create-footer">
@@ -552,6 +581,35 @@ onMounted(() => { loadList(); loadWorkflows() })
 
 .workdir-input-row {
   display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-select {
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.project-select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.project-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-separator {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .workdir-input {
