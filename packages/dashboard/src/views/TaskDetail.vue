@@ -151,28 +151,39 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
 
   // 从工作流定义获取阶段列表
   const workflowNodes = workflow.value?.definition_json?.nodes || []
-  if (workflowNodes.length === 0) {
+  if (!workflow.value || workflowNodes.length === 0) {
     // 回退到硬编码（兼容旧数据）
     return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending' as const, iteration: 0 }))
   }
 
-  // 构建状态映射
-  const statusMap = new Map<string, string>()
-  for (const po of d.phase_outputs) {
-    statusMap.set(po.node_id, 'completed')
+  // 构建状态映射（从 session_refs，因为 phase_outputs 为空）
+  const statusMap = new Map<string, { status: string; iteration: number }>()
+
+  // 从 session_refs 获取状态（omnigent_status: completed/failed/running 等）
+  for (const sr of d.session_refs) {
+    const existing = statusMap.get(sr.node_id)
+    if (!existing || sr.iteration > existing.iteration) {
+      statusMap.set(sr.node_id, {
+        status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
+        iteration: sr.iteration || 0
+      })
+    }
   }
 
   // 当前节点
   const currentNode = d.current_node_id
 
   // 从工作流节点生成阶段列表
-  return workflowNodes.map((n: any) => ({
-    id: n.id,
-    label: n.name || n.id,  // 使用 name，无则回退 id
-    status: statusMap.get(n.id)
-      || (n.id === currentNode ? 'running' : 'pending'),
-    iteration: 0,
-  }))
+  return workflowNodes.map((n: any) => {
+    const phaseInfo = statusMap.get(n.id)
+    return {
+      id: n.id,
+      label: n.name || n.id,  // 使用 name，无则回退 id
+      status: phaseInfo?.status
+        || (n.id === currentNode ? 'running' : 'pending'),
+      iteration: phaseInfo?.iteration || 0,
+    }
+  })
 })
 
 function phaseLabel(id: string): string {
