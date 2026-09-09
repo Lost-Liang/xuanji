@@ -191,7 +191,7 @@
 |--------|------|------|------|
 | title | string | 是 | 任务标题 |
 | acceptance_criteria | string | **是** | 任务级验收标准（如何判断任务完成） |
-| **acceptance_steps** | array | 否 | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
+| **acceptance_steps** | array | **是** | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
 | **estimated_hours** | number | **是** | **预估工时（小时，如 0.5、1、2、4 等）** |
 | tech_constraints | array | 否 | 技术约束列表（如框架、库、规范） |
 | priority | string | 否 | 优先级（P0/P1/P2） |
@@ -206,7 +206,7 @@
 | title | string | 是 | 任务标题 |
 | user_story_id | string | 是 | 关联的用户故事 ID |
 | acceptance_criteria | string | **是** | 任务级验收标准 |
-| **acceptance_steps** | array | 否 | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
+| **acceptance_steps** | array | **是** | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
 | **estimated_hours** | number | **是** | **预估工时（小时）** |
 | tech_constraints | array | 否 | 技术约束列表 |
 | module | string | 否 | 所属模块 |
