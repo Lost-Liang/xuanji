@@ -9,6 +9,7 @@ import { taskStore } from '../src/storage/task-store.mjs';
 import { executionStore } from '../src/storage/execution-store.mjs';
 import { requirementStore } from '../src/storage/requirement-store.mjs';
 import { conversationStore } from '../src/storage/conversation-store.mjs';
+import { createTaskTreeFromParsed, updateRequirementFromSpec } from '../src/graph/graph-runner.mjs';
 
 // ============================================================================
 // PostgreSQL 可用性检测 —— 数据库不可用时跳过全部测试
@@ -663,6 +664,153 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
       for (const id of cleanupIds.requirements) {
         await db.requirement.delete({ where: { id } }).catch(() => {});
       }
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 6. 需求分析增强字段验证（V4.1 新字段）
+  // --------------------------------------------------------------------------
+  describe('需求分析增强字段验证', () => {
+    let cleanupReqId: string | null = null;
+
+    afterAll(async () => {
+      if (cleanupReqId) {
+        // 按依赖顺序清理
+        const tasks = await db.task.findMany({
+          where: { userStory: { epic: { requirementId: cleanupReqId } } },
+        });
+        for (const t of tasks) {
+          await db.task.delete({ where: { id: t.id } }).catch(() => {});
+        }
+        const stories = await db.userStory.findMany({
+          where: { epic: { requirementId: cleanupReqId } },
+        });
+        for (const s of stories) {
+          await db.userStory.delete({ where: { id: s.id } }).catch(() => {});
+        }
+        const features = await db.feature.findMany({
+          where: { epic: { requirementId: cleanupReqId } },
+        });
+        for (const f of features) {
+          await db.feature.delete({ where: { id: f.id } }).catch(() => {});
+        }
+        const epics = await db.epic.findMany({ where: { requirementId: cleanupReqId } });
+        for (const e of epics) {
+          await db.epic.delete({ where: { id: e.id } }).catch(() => {});
+        }
+        await db.requirement.delete({ where: { id: cleanupReqId } }).catch(() => {});
+      }
+    });
+
+    it('should write all new enhancement fields through createTaskTreeFromParsed', async () => {
+      // 1. 创建测试需求
+      const req = await db.requirement.create({
+        data: {
+          id: `req-e2e-${Date.now()}`,
+          title: 'E2E 增强字段测试需求',
+          description: '计划管理功能',
+          targetProjectId: 'proj-test',
+          targetRepoPath: '/tmp/test',
+        },
+      });
+      cleanupReqId = req.id;
+
+      // 2. 模拟 requirement-analyst 输出（epics + features）
+      const analystOutput = {
+        spec: {
+          business_goal: '让项目经理能够管理开发计划',
+          scope: { in_scope: ['计划 CRUD'], out_of_scope: [] },
+          data_models: [{ entity: 'Plan', fields: [] }],
+          api_design: [],
+          ui_design: [],
+          risks: [],
+        },
+        epics: [{
+          id: 'E1',
+          name: '计划管理',
+          description: '实现开发计划的完整管理',
+          module: 'plan',
+          priority: 'P0',
+          acceptance_criteria: '支持完整的 CRUD',
+          features: [{
+            id: 'F1',
+            title: '计划列表',
+            description: '展示计划列表',
+            module: 'plan',
+            priority: 'P0',
+            acceptance_criteria: '支持分页查询',
+          }],
+        }],
+        user_stories: [],
+      };
+
+      await createTaskTreeFromParsed(
+        { id: req.id, targetProjectId: req.targetProjectId, targetRepoPath: req.targetRepoPath },
+        analystOutput,
+      );
+
+      // 手动调用 updateRequirementFromSpec（实际流程中由 onFlowComplete 触发）
+      // 参数是 spec 对象，而非整个 analystOutput
+      await updateRequirementFromSpec(req.id, analystOutput.spec);
+
+      // 3. 验证 Requirement 新字段
+      const requirement = await db.requirement.findUnique({ where: { id: req.id } });
+      expect(requirement).toBeTruthy();
+      expect(requirement!.businessGoal).toBe('让项目经理能够管理开发计划');
+      expect(requirement!.specDoc).toContain('scope');
+
+      // 4. 验证 Epic 新字段
+      const epic = await db.epic.findFirst({ where: { requirementId: req.id } });
+      expect(epic).toBeTruthy();
+      expect(epic!.module).toBe('plan');
+      expect(epic!.priority).toBe('P0');
+      expect(epic!.acceptanceCriteria).toBe('支持完整的 CRUD');
+
+      // 5. 验证 Feature 新字段
+      const feature = await db.feature.findFirst({ where: { epicId: epic!.id } });
+      expect(feature).toBeTruthy();
+      expect(feature!.module).toBe('plan');
+      expect(feature!.priority).toBe('P0');
+      expect(feature!.acceptanceCriteria).toBe('支持分页查询');
+
+      // 6. 模拟 task-planner 输出（user_stories + tasks，含 acceptanceSteps）
+      const plannerOutput = {
+        user_stories: [{
+          epic_id: 'E1',
+          feature_id: 'F1',
+          as_a: '项目经理',
+          i_want: '查看计划列表',
+          so_that: '了解项目进度',
+          title: '作为项目经理，我想要查看计划列表，以便了解项目进度',
+          module: 'plan',
+          tasks: [{
+            title: '实现计划列表 API',
+            description: 'GET /api/plans 接口',
+            acceptance_criteria: '返回分页计划列表',
+            acceptance_steps: [
+              'Given 存在10条计划; When GET /api/plans?page=1&size=5; Then 返回第1页5条',
+            ],
+            priority: 'P0',
+            task_type: 'API',
+            estimated_hours: 4,
+          }],
+        }],
+      };
+
+      await createTaskTreeFromParsed(
+        { id: req.id, targetProjectId: req.targetProjectId, targetRepoPath: req.targetRepoPath },
+        plannerOutput,
+      );
+
+      // 7. 验证 Task 新字段
+      const task = await db.task.findFirst({
+        where: { userStory: { epic: { requirementId: req.id } } },
+      });
+      expect(task).toBeTruthy();
+      expect(task!.acceptanceSteps).toEqual([
+        'Given 存在10条计划; When GET /api/plans?page=1&size=5; Then 返回第1页5条',
+      ]);
+      expect(task!.priority).toBe('P0');
     });
   });
 });
