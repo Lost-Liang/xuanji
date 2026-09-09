@@ -18,6 +18,7 @@ nodes:
     agent_binding_ids: [requirement-analyst]
     interaction_mode: interactive
     write_key: spec
+    context: input  # 读 state.input（默认）
 
   # ─── 2. 任务拆分 ─────────────────────────────────────────────────────────────
   - id: task_breakdown
@@ -26,6 +27,7 @@ nodes:
     agent_binding_ids: [task-planner]
     interaction_mode: interactive
     write_key: tasks
+    context: spec  # 读 state.spec（requirement-analyst 的产出）
 
   # ─── 3. 人工审核门控 ─────────────────────────────────────────────────────────
   - id: review_gate
