@@ -204,27 +204,34 @@
 
 ```json
 {
+  "spec": {
+    "business_goal": "统一管理后台用户，支撑权限隔离",
+    "scope": { "in_scope": ["用户增删改查", "角色分配"], "out_of_scope": ["组织架构"] },
+    "data_models": [{ "entity": "User", "fields": ["id", "name", "role"], "relations": [] }],
+    "api_design": [{ "method": "GET", "path": "/api/users", "desc": "分页查询用户" }],
+    "ui_design": [{ "page": "用户管理", "components": ["用户表格", "新建用户弹窗"] }],
+    "risks": []
+  },
   "epics": [
     {
       "id": "E1",
       "name": "用户管理",
-      "title": "用户管理模块",
       "module": "system",
       "description": "实现用户的增删改查功能",
+      "priority": "P0",
+      "acceptance_criteria": "支持用户的增删改查与角色分配",
       "features": [
         {
           "id": "F1",
           "title": "用户管理",
-          "description": "用户的增删改查"
+          "description": "用户的增删改查",
+          "module": "system",
+          "priority": "P0",
+          "acceptance_criteria": "可新增、编辑、删除、查询用户"
         }
       ]
     }
-  ],
-  "scope": "系统管理模块",
-  "key_requirements": [
-    "支持用户 CRUD"
-  ],
-  "risks": []
+  ]
 }
 ```
 
@@ -232,23 +239,38 @@
 
 ```json
 {
+  "spec": {
+    "business_goal": "实现菜品从录入到分类查询的完整管理",
+    "scope": { "in_scope": ["菜品 CRUD", "分类管理"], "out_of_scope": ["库存管理"] },
+    "data_models": [{ "entity": "Dish", "fields": ["id", "name", "category"], "relations": ["Dish N:1 Category"] }],
+    "api_design": [{ "method": "POST", "path": "/api/dishes", "desc": "创建菜品" }],
+    "ui_design": [{ "page": "菜品管理", "components": ["菜品表单", "分类下拉"] }],
+    "risks": []
+  },
   "epics": [
     {
       "id": "E1",
       "name": "菜品管理",
-      "title": "菜品管理模块",
       "module": "dish",
       "description": "菜品的增删改查及分类管理",
+      "priority": "P0",
+      "acceptance_criteria": "支持菜品 CRUD 及分类管理",
       "features": [
         {
           "id": "F1",
           "title": "菜品创建",
-          "description": "添加新菜品"
+          "description": "添加新菜品",
+          "module": "dish",
+          "priority": "P0",
+          "acceptance_criteria": "可填写菜品信息并保存成功"
         },
         {
           "id": "F2",
           "title": "菜品查询",
-          "description": "查询菜品列表"
+          "description": "查询菜品列表",
+          "module": "dish",
+          "priority": "P1",
+          "acceptance_criteria": "可按名称/分类查询菜品"
         }
       ]
     }
