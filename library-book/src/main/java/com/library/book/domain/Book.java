@@ -4,7 +4,6 @@ package com.library.book.domain;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.ruoyi.common.core.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 

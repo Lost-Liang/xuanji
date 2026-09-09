@@ -1,10 +1,12 @@
 // library-book/src/main/java/com/library/book/domain/Category.java
 package com.library.book.domain;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.ruoyi.common.core.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+
+import java.util.List;
 
 /**
  * 图书分类实体
@@ -28,4 +30,10 @@ public class Category extends BaseEntity {
      * 排序
      */
     private Integer sort;
+
+    /**
+     * 子分类列表
+     */
+    @TableField(exist = false)
+    private List<Category> children;
 }
