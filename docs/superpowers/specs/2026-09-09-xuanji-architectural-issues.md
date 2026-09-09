@@ -469,6 +469,26 @@ develop → compile_check ─(fail)→ compile_fix ─→ compile_check (loop)
 
 ---
 
+### 发现 5：前端 Skill 缺失
+
+**问题**：
+
+| Skill | Workspace 位置 | 璇玑核心位置 | 状态 |
+|-------|---------------|-------------|------|
+| `ruoyi-plus-ai-coding` | RuoYi-Cloud-Plus/.codex/skills/ | skills/presets/ | ✅ 已复制 |
+| `frontend-crud-coding` | plus-ui/.codex/skills/ | **缺失** | ❌ 没有复制 |
+
+**影响**：
+- 前端 agent (`frontend-crud-page`) 使用 `ruoyi-plus-ai-coding` skill
+- 但该 skill 的前端部分 (`references/frontend.md`) 是简化版
+- 完整的前端规范在 `frontend-crud-coding` skill 里（8479 字节），但没有被使用
+
+**修复**：
+1. 复制 `workspace/plus-ui/.codex/skills/frontend-crud-coding/` 到 `packages/core/skills/presets/`
+2. 修改 `frontend-crud-page` agent 的 skillId 为 `frontend-crud-coding`
+
+---
+
 ## 六、待讨论事项
 
 1. ~~工作目录形态~~ ✅ 已确定：本地路径 + 文件夹选择器
