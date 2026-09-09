@@ -12,6 +12,7 @@ import SkillDetail from './views/SkillDetail.vue'
 import WorkflowList from './views/WorkflowList.vue'
 import InboxView from './views/InboxView.vue'
 import ConversationView from './views/ConversationView.vue'
+import Projects from './views/Projects.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -33,5 +34,7 @@ export const router = createRouter({
     { path: '/inbox', component: InboxView },
     // 对话历史查看（根据 sessionId 渲染对话事件流 + 人类追问）
     { path: '/conversations/:sessionId', component: ConversationView, props: true },
+    // 项目管理
+    { path: '/projects', component: Projects },
   ],
 })
