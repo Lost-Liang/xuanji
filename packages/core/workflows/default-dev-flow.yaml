@@ -98,9 +98,21 @@ edges:
   - from: bug_fix
     to: compile_check
 
-  # test_check → quality_review（测试通过或未阻塞时进入质量审查）
+  # test_check 条件边：pass → quality_review, fail → bug_fix (loop_max 3)
   - from: test_check
     to: quality_review
+    condition:
+      type: function
+      config:
+        name: test_pass
+
+  - from: test_check
+    to: bug_fix
+    condition:
+      type: function
+      config:
+        name: test_fail
+    loop_max: 3   # 最多循环修复 3 次
 
   # quality_review 条件边：pass → security_review, issues → quality_issue_fix
   - from: quality_review
