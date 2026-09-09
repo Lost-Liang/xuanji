@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // core/web/src/views/AgentConfig.vue —— Agent 列表页
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api, type AgentBinding } from '../api/agent-bindings'
@@ -8,11 +8,35 @@ import { api, type AgentBinding } from '../api/agent-bindings'
 const router = useRouter()
 const list = ref<AgentBinding[]>([])
 const loading = ref(false)
+const workflows = ref<{ id: string; name: string; nodes: any[] }[]>([])
+
+// 统计每个 agent 被引用的工作流数量
+const agentWorkflowCount = computed(() => {
+  const counts = new Map<string, number>()
+  for (const wf of workflows.value) {
+    const usedAgents = new Set<string>()
+    for (const node of wf.nodes || []) {
+      for (const agentId of node.agent_binding_ids || []) {
+        usedAgents.add(agentId)
+      }
+    }
+    for (const agentId of usedAgents) {
+      counts.set(agentId, (counts.get(agentId) || 0) + 1)
+    }
+  }
+  return counts
+})
 
 async function loadList() {
   loading.value = true
   try {
     list.value = await api.list()
+    // 同时加载工作流列表，统计引用
+    const wfRes = await fetch('/api/workflows')
+    if (wfRes.ok) {
+      const wfData = await wfRes.json()
+      workflows.value = [...(wfData.presets || []), ...(wfData.user || [])]
+    }
   } catch {
     ElMessage.error('加载 Agent 绑定列表失败')
   } finally {
@@ -49,17 +73,19 @@ onMounted(loadList)
           <span class="mono">{{ row.agent_id }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="Harness" prop="harness" width="140" />
+      <el-table-column label="Harness" prop="harness" width="100" />
       <el-table-column label="Skill" prop="skill_id" min-width="140" />
-      <el-table-column label="Plugin" prop="plugin_id" min-width="120" />
-      <el-table-column label="Agent 绑定" min-width="160">
+      <el-table-column label="Plugin" prop="plugin_id" width="80" />
+      <el-table-column label="工作流引用" min-width="120">
         <template #default="{ row }">
-          <span v-if="row.omnigent_agent_id" class="mono">{{ row.omnigent_agent_id.slice(0, 12) }}...</span>
-          <span v-else class="muted">未注册</span>
+          <span v-if="agentWorkflowCount.get(row.id)" class="workflow-count">
+            {{ agentWorkflowCount.get(row.id) }} 个工作流
+          </span>
+          <span v-else class="muted">未被引用</span>
         </template>
       </el-table-column>
       <el-table-column label="Model" prop="model" width="120" />
-      <el-table-column label="执行历史" width="100">
+      <el-table-column label="执行历史" width="80">
         <template #default="{ row }">
           <span class="session-count">{{ row.session_count ?? 0 }} 次</span>
         </template>
@@ -98,6 +124,7 @@ onMounted(loadList)
 .mono { font-family: var(--font-mono); font-size: 12px; }
 .muted { color: var(--muted); font-size: 12px; }
 .session-count { font-size: 13px; color: var(--muted); }
+.workflow-count { font-size: 13px; color: var(--accent); font-weight: 500; }
 
 .clickable-table :deep(.el-table__row) {
   cursor: pointer;

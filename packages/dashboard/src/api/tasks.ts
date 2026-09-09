@@ -124,4 +124,8 @@ export const api = {
     const r = await fetch(`${base}/${execId}/confirm`, { method: 'POST' })
     return r.json()
   },
+  async execute(execId: string): Promise<any> {
+    const r = await fetch(`${base}/${execId}/execute`, { method: 'POST' })
+    return r.json()
+  },
 }

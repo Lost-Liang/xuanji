@@ -226,13 +226,14 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
     return gn
   })
 
-  // 映射边：from→source, to→target，过滤 __end__ 边
+  // 映射边：from→source, to→target
+  // 注意：不过滤 __end__ 边，因为 gate 节点需要知道它的出边指向 __end__
+  // builder.mts 会正确处理 gate 节点的条件边路由
   const edges: GraphEdge[] = def.edges
-    .filter((we: WorkflowEdge) => we.to !== '__end__')
     .map((we: WorkflowEdge, index: number): GraphEdge => ({
       id: `edge-${index}`,
       source: we.from,
-      target: we.to
+      target: we.to  // 保留 __end__ 作为 target
     }))
 
   return {

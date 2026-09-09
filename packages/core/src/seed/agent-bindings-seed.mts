@@ -3,7 +3,17 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// 获取当前文件所在目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// agents 目录相对于当前文件的位置
+// 编译后文件在 dist/seed/，agents 在 packages/core/agents/
+// 所以需要 ../../agents
+const AGENTS_DIR = join(__dirname, '../../agents');
 
 const prisma = new PrismaClient();
 
@@ -46,8 +56,7 @@ function readPromptContent(agentId: string): string {
   const fileName = AGENT_FILE_MAP[agentId];
   if (!fileName) return '';
 
-  // dist/seed/agent-bindings-seed.mjs 运行时 cwd=packages/core
-  const filePath = join(process.cwd(), 'agents', 'ruoyi', fileName);
+  const filePath = join(AGENTS_DIR, 'ruoyi', fileName);
   if (existsSync(filePath)) {
     return readFileSync(filePath, 'utf-8');
   }
@@ -61,20 +70,21 @@ async function main() {
   for (const def of AGENT_DEFS) {
     const promptContent = readPromptContent(def.id);
 
-    const binding = await prisma.agentBinding.upsert({
+    // 检查是否已存在，已存在则跳过（保留用户修改）
+    const existing = await prisma.agentBinding.findUnique({
       where: { id: def.id },
-      update: {
-        agentId: def.name,  // 中文名称，如"需求分析师"
-        skillId: def.skill,
-        model: def.model,
-        reasoningEffort: def.reasoningEffort,
-        triggers: def.triggers ? def.triggers : Prisma.JsonNull,
-        // promptContent 每次都更新（确保同步）
-        promptContent,
-      },
-      create: {
+    });
+
+    if (existing) {
+      console.log(`[seed] ⊘ ${def.id} 已存在，跳过（保留用户修改）`);
+      continue;
+    }
+
+    // 不存在才创建
+    const binding = await prisma.agentBinding.create({
+      data: {
         id: def.id,
-        agentId: def.name,  // 中文名称，如"需求分析师"
+        agentId: def.name,
         pluginId: 'ruoyi',
         harness: 'claude',
         skillId: def.skill,

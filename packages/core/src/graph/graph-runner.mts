@@ -16,10 +16,18 @@ import { loadWorkflowFromYaml, loadWorkflowFromFile, mapYamlToGraphDef } from '.
 import { executionStore } from '../storage/execution-store.mjs';
 import { db } from '../db.mjs';
 import { randomUUID } from 'node:crypto';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
 import { HEARTBEAT_INTERVAL_MS } from '../timing-constants.mjs';
 import type { GraphDef, WorkflowDef } from './types.mjs';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+
+// 获取当前文件所在目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// workflows 目录相对于当前文件的位置（src/graph -> ../../workflows）
+const WORKFLOWS_DIR = join(__dirname, '../../workflows');
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +55,7 @@ export interface ResumeExecutionOpts {
  */
 export async function loadFlow(flowId: string): Promise<{ yamlContent: string; graphDef: GraphDef } | null> {
   // 先尝试作为 preset 加载
-  const presetPath = join(process.cwd(), 'workflows', `${flowId}.yaml`);
+  const presetPath = join(WORKFLOWS_DIR, `${flowId}.yaml`);
   if (existsSync(presetPath)) {
     try {
       const yamlContent = readFileSync(presetPath, 'utf-8');

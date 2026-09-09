@@ -337,18 +337,18 @@ executionsRouter.get('/:id/stream', async (req, res) => {
   // 发送初始连接消息
   res.write('data: {"type":"connected"}\n\n');
 
-  // 跟踪最后看到的事件 ID
-  let lastEventId: string | null = null;
+  // 跟踪最后看到的事件时间戳（使用 createdAt 而非 id，因为 UUID 字典序不可靠）
+  let lastEventAt: Date | null = null;
 
-  // 获取初始事件列表
+  // 获取数据库中最后一个事件的时间戳
   try {
-    const initialEvents = await db.conversationEvent.findMany({
+    const lastEvent = await db.conversationEvent.findFirst({
       where: { executionId },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
     });
-    if (initialEvents.length > 0) {
-      lastEventId = initialEvents[initialEvents.length - 1].id;
+    if (lastEvent) {
+      lastEventAt = lastEvent.createdAt;
     }
   } catch {
     // 初始查询失败，继续运行
@@ -371,10 +371,16 @@ executionsRouter.get('/:id/stream', async (req, res) => {
         return;
       }
 
-      // 查询新事件
+      // waiting/paused 状态：Agent 在等待人类回答，通知前端刷新问题列表
+      if (exec.status === 'waiting' || exec.status === 'paused') {
+        res.write(`data: {"type":"execution_done","status":"${exec.status}"}\n\n`);
+        // 不关闭连接，继续轮询等待恢复
+      }
+
+      // 查询新事件（使用 createdAt 时间戳过滤，避免 UUID 字典序比较不可靠）
       const whereClause: any = { executionId };
-      if (lastEventId) {
-        whereClause.id = { gt: lastEventId };
+      if (lastEventAt) {
+        whereClause.createdAt = { gt: lastEventAt };
       }
 
       const newEvents = await db.conversationEvent.findMany({
@@ -445,8 +451,10 @@ executionsRouter.get('/:id/stream', async (req, res) => {
         }
         // model_started 事件不推送（没有实际内容）
 
-        // 更新最后事件 ID
-        lastEventId = e.id;
+        // 更新最后事件时间戳
+        if (!lastEventAt || e.createdAt > lastEventAt) {
+          lastEventAt = e.createdAt;
+        }
       }
     } catch (err) {
       console.error('[executions/stream] 轮询错误:', err);

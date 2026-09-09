@@ -63,6 +63,8 @@ const parsedBreakdown = computed<ParsedBreakdown>(() => {
 })
 
 const title = computed(() => {
+  // 优先使用 API 返回的 title 字段
+  if (detail.value?.title) return detail.value.title
   const p = parsedBreakdown.value
   if (!p) return '(无标题)'
   if (p.kind === 'json') return p.obj.title || p.obj.task_type || '(无标题)'
@@ -130,7 +132,9 @@ function formatDuration(start: string | null, end: string | null): string {
 }
 
 // 阶段定义（按典型执行顺序）
-const phaseOrder = ['breakdown', 'planning', 'code', 'test', 'review', 'deploy', 'archive']
+// 支持两种命名体系：旧版（breakdown/planning/code/test/review/deploy/archive）
+// 和新版工作流（develop/compile_check/test_check/quality_review/security_review/final_review）
+const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review']
 
 // 计算阶段状态
 interface PhaseStatus {
@@ -145,10 +149,21 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
   if (!d) return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending' as const, iteration: 0 }))
 
   const phaseMap = new Map<string, { status: string; iteration: number }>()
+
+  // 优先从 phase_outputs 读取
   for (const po of d.phase_outputs) {
     const existing = phaseMap.get(po.node_id)
     if (!existing || po.iteration > existing.iteration) {
       phaseMap.set(po.node_id, { status: 'done', iteration: po.iteration })
+    }
+  }
+
+  // 如果 phase_outputs 为空，从 session_refs 推导（兼容旧数据）
+  if (d.phase_outputs.length === 0 && d.session_refs?.length) {
+    for (const sr of d.session_refs) {
+      if (sr.omnigent_status === 'completed') {
+        phaseMap.set(sr.node_id, { status: 'done', iteration: sr.iteration || 1 })
+      }
     }
   }
 
@@ -181,6 +196,10 @@ function phaseLabel(id: string): string {
   const map: Record<string, string> = {
     breakdown: '拆分', planning: '规划', code: '编码',
     test: '测试', review: '审查', deploy: '部署', archive: '归档',
+    // 新版工作流节点
+    develop: '开发', compile_check: '编译', test_check: '测试',
+    quality_review: '质量审查', security_review: '安全审查', final_review: '终审',
+    bug_fix: '修复', quality_issue_fix: '质量修复', security_issue_fix: '安全修复',
   }
   return map[id] || id
 }

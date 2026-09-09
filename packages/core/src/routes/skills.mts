@@ -7,14 +7,19 @@
 
 import { Router, type Request, type Response } from 'express';
 import { readdirSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 export const skillsRouter: Router = Router();
 
-// cwd = packages/core（运行时）
-const SKILLS_DIR = () => join(process.cwd(), 'skills');
-const PRESETS_DIR = () => join(SKILLS_DIR(), 'presets');
-const USER_DIR = () => join(SKILLS_DIR(), 'user');
+// 获取当前文件所在目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// skills 目录相对于当前文件的位置（src/routes -> ../../skills）
+const SKILLS_DIR = join(__dirname, '../../skills');
+const PRESETS_DIR = join(SKILLS_DIR, 'presets');
+const USER_DIR = join(SKILLS_DIR, 'user');
 
 // 解析 SKILL.md 的 frontmatter
 function parseSkillMd(filePath: string): { id: string; name: string; description: string; content?: string } | null {
@@ -73,8 +78,8 @@ function scanSkills(dir: string, type: 'preset' | 'user'): Array<{ id: string; n
 
 // GET / - 列表
 skillsRouter.get('/', async (_req, res) => {
-  const presets = scanSkills(PRESETS_DIR(), 'preset');
-  const user = scanSkills(USER_DIR(), 'user');
+  const presets = scanSkills(PRESETS_DIR, 'preset');
+  const user = scanSkills(USER_DIR, 'user');
 
   res.json({ presets, user });
 });
@@ -84,11 +89,11 @@ skillsRouter.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   // 先查 presets，再查 user
-  let filePath = join(PRESETS_DIR(), id, 'SKILL.md');
+  let filePath = join(PRESETS_DIR, id, 'SKILL.md');
   let type: 'preset' | 'user' = 'preset';
 
   if (!existsSync(filePath)) {
-    filePath = join(USER_DIR(), id, 'SKILL.md');
+    filePath = join(USER_DIR, id, 'SKILL.md');
     type = 'user';
   }
 
@@ -118,7 +123,7 @@ skillsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: 'id is required' });
   }
 
-  const skillDir = join(USER_DIR(), id);
+  const skillDir = join(USER_DIR, id);
   const filePath = join(skillDir, 'SKILL.md');
 
   if (existsSync(filePath)) {
@@ -148,7 +153,7 @@ skillsRouter.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { name, description, content } = req.body;
 
-  const filePath = join(USER_DIR(), id, 'SKILL.md');
+  const filePath = join(USER_DIR, id, 'SKILL.md');
 
   if (!existsSync(filePath)) {
     return res.status(404).json({ error: 'Skill not found or not editable (preset skills are read-only)' });
@@ -171,7 +176,7 @@ ${content || ''}
 skillsRouter.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
-  const skillDir = join(USER_DIR(), id);
+  const skillDir = join(USER_DIR, id);
 
   if (!existsSync(skillDir)) {
     return res.status(404).json({ error: 'Skill not found or not deletable (preset skills are protected)' });

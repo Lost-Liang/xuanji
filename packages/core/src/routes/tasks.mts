@@ -183,6 +183,52 @@ tasksRouter.post('/', async (req, res) => {
 });
 
 /**
+ * POST /api/tasks/:id/execute
+ * 手动触发任务执行（将 pending 任务交给 worker 执行）
+ */
+tasksRouter.post('/:id/execute', async (req, res) => {
+  try {
+    const executionId = req.params.id;
+
+    // 检查当前状态
+    const execution = await db.taskExecution.findUnique({
+      where: { executionId },
+      select: { status: true, taskId: true },
+    });
+
+    if (!execution) {
+      res.status(404).json({ error: '任务不存在' });
+      return;
+    }
+
+    if (execution.status !== 'pending') {
+      res.status(400).json({ error: '只能执行 pending 状态的任务', current_status: execution.status });
+      return;
+    }
+
+    // 异步启动任务执行
+    setImmediate(async () => {
+      try {
+        const { graphRunner } = await import('../graph/graph-runner.mjs');
+        await graphRunner.startExecution({
+          executionId,
+          flowId: 'default-dev-flow',
+          input: `执行任务 ${execution.taskId}`,
+          task: execution.taskId,
+        });
+      } catch (err) {
+        console.error(`[tasks] 执行任务失败:`, err);
+        await executionStore.fail(executionId, (err as Error).message);
+      }
+    });
+
+    res.json({ ok: true, message: '执行已启动' });
+  } catch (err) {
+    res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });
+  }
+});
+
+/**
  * DELETE /api/tasks/:id
  * 删除任务执行实例
  */

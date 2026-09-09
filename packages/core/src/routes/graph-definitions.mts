@@ -7,29 +7,33 @@
 
 import { Router } from 'express';
 import { readdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { db } from '../db.mjs';
 import { loadWorkflowFromFile, mapYamlToGraphDef } from '../graph/yaml-loader.mjs';
 import type { GraphDef } from '../graph/types.mjs';
 
 export const graphDefinitionsRouter: Router = Router();
 
-// cwd = packages/core（运行时）
-const WORKFLOWS_DIR = () => join(process.cwd(), 'workflows');
+// 获取当前文件所在目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// workflows 目录相对于当前文件的位置（src/routes -> ../../workflows）
+const WORKFLOWS_DIR = join(__dirname, '../../workflows');
 
 // 扫描 presets（workflows/*.yaml）
 async function scanPresetGraphs(): Promise<Array<{ id: string; name: string; description: string; type: 'preset' }>> {
-  const dir = WORKFLOWS_DIR();
-  if (!existsSync(dir)) return [];
+  if (!existsSync(WORKFLOWS_DIR)) return [];
 
   const results: Array<{ id: string; name: string; description: string; type: 'preset' }> = [];
 
-  const entries = readdirSync(dir, { withFileTypes: true });
+  const entries = readdirSync(WORKFLOWS_DIR, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.yaml')) continue;
 
     try {
-      const workflow = await loadWorkflowFromFile(join(dir, entry.name));
+      const workflow = await loadWorkflowFromFile(join(WORKFLOWS_DIR, entry.name));
       const graphDef = mapYamlToGraphDef(workflow);
       results.push({
         id: graphDef.id || entry.name.replace(/\.yaml$/, ''),
@@ -70,7 +74,7 @@ graphDefinitionsRouter.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   // 先查 preset（YAML）
-  const yamlPath = join(WORKFLOWS_DIR(), `${id}.yaml`);
+  const yamlPath = join(WORKFLOWS_DIR, `${id}.yaml`);
   if (existsSync(yamlPath)) {
     try {
       const workflow = await loadWorkflowFromFile(yamlPath);
@@ -119,7 +123,7 @@ graphDefinitionsRouter.post('/', async (req, res) => {
   }
 
   // 检查是否与 preset 冲突
-  const yamlPath = join(WORKFLOWS_DIR(), `${id}.yaml`);
+  const yamlPath = join(WORKFLOWS_DIR, `${id}.yaml`);
   if (existsSync(yamlPath)) {
     return res.status(409).json({ error: 'Cannot overwrite preset graph' });
   }
@@ -152,7 +156,7 @@ graphDefinitionsRouter.put('/:id', async (req, res) => {
   const { name, description, plugin_id, definition_json } = req.body;
 
   // 检查是否是 preset
-  const yamlPath = join(WORKFLOWS_DIR(), `${id}.yaml`);
+  const yamlPath = join(WORKFLOWS_DIR, `${id}.yaml`);
   if (existsSync(yamlPath)) {
     return res.status(403).json({ error: 'Cannot modify preset graph' });
   }
@@ -184,7 +188,7 @@ graphDefinitionsRouter.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   // 检查是否是 preset
-  const yamlPath = join(WORKFLOWS_DIR(), `${id}.yaml`);
+  const yamlPath = join(WORKFLOWS_DIR, `${id}.yaml`);
   if (existsSync(yamlPath)) {
     return res.status(403).json({ error: 'Cannot delete preset graph' });
   }

@@ -53,12 +53,11 @@ function toDetail(r: any): any {
  */
 async function attachExecution(item: any, requirementId: string) {
   try {
+    // 只查询 requirement 级执行（需求管理页面只显示需求级执行 ID）
     const exec = await db.taskExecution.findFirst({
       where: {
-        OR: [
-          { subjectType: 'requirement', subjectId: requirementId },
-          { requirementId },
-        ],
+        subjectType: 'requirement',
+        subjectId: requirementId,
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -196,6 +196,21 @@ async function confirmTask(task: TaskListItem, event?: Event) {
   }
 }
 
+async function executeTask(task: TaskListItem, event?: Event) {
+  event?.stopPropagation()
+  try {
+    const res = await api.execute(task.id)
+    if (res.ok) {
+      ElMessage.success('已开始执行')
+      loadList()
+    } else {
+      ElMessage.error(res.error || '执行失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '执行失败')
+  }
+}
+
 // 删除任务
 async function deleteTask(task: TaskListItem, event?: Event) {
   event?.stopPropagation()
@@ -358,6 +373,7 @@ function duration(start: string | null, end: string | null): string {
                   <button class="action-btn danger" @click="cancelTask(task)">取消</button>
                 </template>
                 <button v-if="group === 'draft'" class="action-btn primary" @click="confirmTask(task, $event)">确认执行</button>
+                <button v-if="group === 'pending'" class="action-btn primary" @click="executeTask(task, $event)">开始执行</button>
                 <button v-if="group === 'paused'" class="action-btn primary" @click="resumeTask(task)">继续</button>
                 <button v-if="group === 'failed'" class="action-btn primary" @click="retryTask(task)">重试</button>
                 <button
@@ -399,6 +415,7 @@ function duration(start: string | null, end: string | null): string {
                   <div class="card-actions" @click.stop>
                     <button class="action-btn" :disabled="!task.session_ref_id" @click="openChatDrawer(task)">对话</button>
                     <button class="action-btn" @click="openLogDrawer(task)">日志</button>
+                    <button v-if="group === 'pending'" class="action-btn primary" @click="executeTask(task, $event)">开始执行</button>
                     <button
                       class="action-btn delete"
                       @click="deleteTask(task, $event)"

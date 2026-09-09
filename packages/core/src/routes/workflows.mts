@@ -4,9 +4,17 @@
 
 import { Router } from 'express';
 import { readdir, readFile, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { db } from '../db.mjs';
+
+// 获取当前文件所在目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// workflows 目录相对于当前文件的位置（src/routes -> ../../workflows）
+const WORKFLOWS_DIR = join(__dirname, '../../workflows');
 
 export const workflowsRouter: Router = Router();
 
@@ -18,19 +26,17 @@ export const workflowsRouter: Router = Router();
  */
 workflowsRouter.get('/', async (_req, res) => {
   try {
-    const workflowsDir = join(process.cwd(), 'workflows');
-
     // presets（YAML）
     const presets = [];
-    if (existsSync(workflowsDir)) {
+    if (existsSync(WORKFLOWS_DIR)) {
       const files = await new Promise<string[]>((resolve, reject) => {
-        readdir(workflowsDir, (err, files) => err ? reject(err) : resolve(files));
+        readdir(WORKFLOWS_DIR, (err, files) => err ? reject(err) : resolve(files));
       });
       const yamlFiles = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
 
       for (const file of yamlFiles) {
         const content = await new Promise<string>((resolve, reject) => {
-          readFile(join(workflowsDir, file), 'utf-8', (err, data) => err ? reject(err) : resolve(data));
+          readFile(join(WORKFLOWS_DIR, file), 'utf-8', (err, data) => err ? reject(err) : resolve(data));
         });
         const def = parse(content) as any;
 
@@ -82,12 +88,11 @@ workflowsRouter.get('/', async (_req, res) => {
 workflowsRouter.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const workflowsDir = join(process.cwd(), 'workflows');
 
     // 先查 YAML preset
-    if (existsSync(workflowsDir)) {
+    if (existsSync(WORKFLOWS_DIR)) {
       const files = await new Promise<string[]>((resolve, reject) => {
-        readdir(workflowsDir, (err, files) => err ? reject(err) : resolve(files));
+        readdir(WORKFLOWS_DIR, (err, files) => err ? reject(err) : resolve(files));
       });
       const file = files.find(f => {
         const fileId = f.replace(/\.(yaml|yml)$/, '');
@@ -96,7 +101,7 @@ workflowsRouter.get('/:id', async (req, res) => {
 
       if (file) {
         const content = await new Promise<string>((resolve, reject) => {
-          readFile(join(workflowsDir, file), 'utf-8', (err, data) => err ? reject(err) : resolve(data));
+          readFile(join(WORKFLOWS_DIR, file), 'utf-8', (err, data) => err ? reject(err) : resolve(data));
         });
         const def = parse(content);
         return res.json({ ...def, type: 'preset' });
@@ -138,8 +143,7 @@ workflowsRouter.delete('/:id', async (req, res) => {
     const { id } = req.params;
 
     // 检查是否是 preset
-    const workflowsDir = join(process.cwd(), 'workflows');
-    const yamlPath = join(workflowsDir, `${id}.yaml`);
+    const yamlPath = join(WORKFLOWS_DIR, `${id}.yaml`);
     if (existsSync(yamlPath)) {
       return res.status(403).json({ error: 'Cannot delete preset workflow' });
     }
