@@ -43,6 +43,7 @@ export interface SessionRef {
 
 export interface TaskDetail {
   id: string
+  title: string  // 任务标题（从 Task 表关联获取）
   status: string
   thread_id: string
   parent_execution_id: string | null

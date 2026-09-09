@@ -205,7 +205,7 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
     case 'gate':
       return makeGateNode({ gateId: node.id })
     case 'command':
-      return makeCommandNode({ command: node.command!, db, nodeId: node.id })
+      return makeCommandNode({ command: node.command!, nodeId: node.id })
     default:
       throw new Error(`未知节点类型 ${node.type}`)
   }

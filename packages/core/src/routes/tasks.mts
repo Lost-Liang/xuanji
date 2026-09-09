@@ -193,7 +193,7 @@ tasksRouter.post('/:id/execute', async (req, res) => {
     // 检查当前状态
     const execution = await db.taskExecution.findUnique({
       where: { executionId },
-      select: { status: true, taskId: true },
+      select: { status: true, taskId: true, graphDefinitionId: true },
     });
 
     if (!execution) {
@@ -206,6 +206,13 @@ tasksRouter.post('/:id/execute', async (req, res) => {
       return;
     }
 
+    // 获取完整的任务对象（参考 worker-graph.mts 的正确模式）
+    const task = execution.taskId ? await taskStore.getById(execution.taskId) : null;
+    if (!task) {
+      res.status(400).json({ error: '任务数据不存在', taskId: execution.taskId });
+      return;
+    }
+
     // 异步启动任务执行
     setImmediate(async () => {
       try {
@@ -213,8 +220,8 @@ tasksRouter.post('/:id/execute', async (req, res) => {
         await graphRunner.startExecution({
           executionId,
           flowId: 'default-dev-flow',
-          input: `执行任务 ${execution.taskId}`,
-          task: execution.taskId,
+          input: '', // 任务上下文由 agent-node 从 task 对象读取
+          task, // 传入完整的任务对象，而非 taskId 字符串
         });
       } catch (err) {
         console.error(`[tasks] 执行任务失败:`, err);
