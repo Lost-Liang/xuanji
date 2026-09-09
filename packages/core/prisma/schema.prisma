@@ -1,7 +1,3 @@
-// =============================================================================
-// 璇玑 (Xuanji) V4 - 统一数据库 Schema
-// =============================================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,432 +7,324 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// =============================================================================
-// 配置层（V4 新增）
-// =============================================================================
-
-/// Agent 绑定配置（角色 Agent = prompt + model + harness + skill）
-model AgentBinding {
-  id               String    @id                      // 即角色 id（YAML agent_binding_ids 直指）
-  pluginId         String?   @map("plugin_id")
-  agentId          String    @map("agent_id")         // 角色名，如 backend-crud
-  harness          String    @default("claude")       // 'claude' | 'codex' → runner provider
-  skillId          String?   @map("skill_id")         // 指向 skills 树 id
-  promptContent    String    @default("") @map("prompt_content")  // 角色指令
-  triggers         Json?                              // { task_type?: string[], stack_type?: string[] }
-  model            String?                            // 传给 runLocal(--model)；空则 CLI 默认
-  reasoningEffort  String?   @map("reasoning_effort") // low | medium | high
-  createdAt        DateTime  @default(now()) @map("created_at")
-
-  @@map("agent_bindings")
+model agent_bindings {
+  id               String   @id
+  plugin_id        String?
+  agent_id         String
+  harness          String   @default("claude")
+  skill_id         String?
+  prompt_content   String   @default("")
+  triggers         Json?
+  model            String?
+  reasoning_effort String?
+  created_at       DateTime @default(now())
 }
 
-/// 用户自建流程图（graph_definitions）
-model GraphDefinition {
-  id              String    @id
-  name            String
-  pluginId        String?   @map("plugin_id")
-  description     String?
-  definitionJson  Json      @map("definition_json")   // { name, plugin_id, nodes: GraphNode[], edges: GraphEdge[] }
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-
-  @@map("graph_definitions")
+model books {
+  id             String   @id
+  isbn           String   @unique
+  title          String
+  author         String
+  publisher      String
+  category       String
+  stock_quantity Int      @default(0)
+  created_at     DateTime @default(now())
 }
 
-// =============================================================================
-// 项目注册层
-// =============================================================================
-
-/// 项目注册（用户常用项目路径）
-model Project {
-  id          String   @id @default(uuid())
-  name        String   // 项目名称（用户自定义）
-  path        String   @unique // 项目路径
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("projects")
-}
-
-// =============================================================================
-// 项目管理层
-// =============================================================================
-
-/// 需求
-model Requirement {
-  id                  String   @id
-  title               String
-  description         String?
-  status              String   @default("draft")
-  workflowId          String?  @default("requirement-decomposition") @map("workflow_id")  // 选中的流程
-  targetProjectId     String   @map("target_project_id")
-  targetRepoPath      String   @map("target_repo_path")
-  autoExecute         Boolean  @default(false) @map("auto_execute")
-  maxConcurrentTasks  Int      @default(1) @map("max_concurrent_tasks")
-  businessGoal        String?  @map("business_goal")
-  specDoc             String?  @map("spec_doc")
-  createdAt           DateTime @default(now()) @map("created_at")
-
-  // 关系
-  epics               Epic[]
-  taskExecutions      TaskExecution[]
-  phaseInstances      PhaseInstance[]
-  taskLogs            TaskLog[]
-
-  @@map("requirements")
-}
-
-/// 史诗（业务模块）
-model Epic {
-  id              String   @id
-  requirementId   String?  @map("requirement_id")
-  title           String
-  description     String?
-  module          String?
-  priority        String?   // P0/P1/P2
-  acceptanceCriteria String? @map("acceptance_criteria")
-  status          String   @default("pending")
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  // 关系
-  requirement     Requirement? @relation(fields: [requirementId], references: [id])
-  features        Feature[]
-  userStories     UserStory[]
-  tasks           Task[]
-
-  @@map("epics")
-}
-
-/// 特性
-model Feature {
-  id          String   @id
-  epicId      String?  @map("epic_id")
-  title       String
-  description String?
-  module      String?
-  acceptanceCriteria String? @map("acceptance_criteria")
-  priority    String?   // P0/P1/P2
-  status      String   @default("pending")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  // 关系
-  epic        Epic? @relation(fields: [epicId], references: [id], onDelete: Cascade)
-  userStories UserStory[]
-
-  @@map("features")
-}
-
-/// 用户故事
-model UserStory {
-  id              String   @id
-  epicId          String?  @map("epic_id")
-  featureId       String?  @map("feature_id")
-  title           String
-  asA             String?  @map("as_a")
-  iWant           String?  @map("i_want")
-  soThat          String?  @map("so_that")
-  acceptanceText  String?  @map("acceptance_text")
-  module          String?
-  priority        String   @default("P2")
-  status          String   @default("pending")
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  // 关系
-  epic            Epic? @relation(fields: [epicId], references: [id])
-  feature         Feature? @relation(fields: [featureId], references: [id])
-  tasks           Task[]
-
-  @@map("user_stories")
-}
-
-/// 任务
-model Task {
-  id                  String      @id
-  userStoryId         String?     @map("user_story_id")
-  epicId              String?     @map("epic_id")
-  parentTaskId        String?     @map("parent_task_id")
-  title               String
-  description         String?
-  acceptanceCriteria  String?     @map("acceptance_criteria")
-  acceptanceSteps     Json?       @map("acceptance_steps")
-  priority            String?     // P0/P1/P2
-  techConstraints     Json?       @map("tech_constraints")
-  storyContext        String?     @map("story_context")
-  taskType            String?     @map("task_type")        // CRUD / CRUD_PAGE / MODULE_ENHANCEMENT …
-  estimatedHours      Float?      @map("estimated_hours")  // 预估工时
-  status              String      @default("pending")
-  targetProjectId     String      @map("target_project_id")
-  targetRepoPath      String      @map("target_repo_path")
-  sequence            Int         @default(0)
-  version             Int         @default(0)
-  retryAt             DateTime?   @map("retry_at")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  startedAt           DateTime?   @map("started_at")
-  completedAt         DateTime?   @map("completed_at")
-
-  // 关系
-  userStory           UserStory?  @relation(fields: [userStoryId], references: [id])
-  epic                Epic?       @relation(fields: [epicId], references: [id])
-  parentTask          Task?       @relation("TaskToTask", fields: [parentTaskId], references: [id])
-  childTasks          Task[]      @relation("TaskToTask")
-  taskExecutions      TaskExecution[]
-  phaseInstances      PhaseInstance[]
-  taskLogs            TaskLog[]
-  decisions           Decision[]
-  interventions       Intervention[]
-
-  @@map("tasks")
-}
-
-// =============================================================================
-// 执行层
-// =============================================================================
-
-/// 任务执行实例
-model TaskExecution {
-  executionId         String      @id @map("execution_id")
-  subjectType         String      @map("subject_type")        // 'task' | 'requirement'
-  subjectId           String      @map("subject_id")
-  taskId              String?     @map("task_id")
-  requirementId       String?     @map("requirement_id")
-  graphDefinitionId   String?     @map("graph_definition_id") // 该执行跑的流程 id
-  threadId            String?     @map("thread_id")           // LangGraph checkpointer 线程 id
-  targetProjectId     String      @map("target_project_id")
-  targetRepoPath      String      @map("target_repo_path")
-  stage               String      @default("planning")
-  status              String      @default("pending")
-  controlStatus       String      @default("idle") @map("control_status")
-  provider            String?                                 // 'claude' | 'codex'
-  sessionId           String?     @map("session_id")          // providerConversationId，用于 --resume
-  finalOutput         String?     @map("final_output")
-  workerId            String?     @map("worker_id")
-  leaseToken          String?     @map("lease_token")
-  fencingToken        Int         @default(0) @map("fencing_token")
-  leaseExpiresAt      DateTime?   @map("lease_expires_at")
-  heartbeatAt         DateTime?   @map("heartbeat_at")
-  rateLimitCount      Int         @default(0) @map("rate_limit_count")
-  maxDurationMin      Int         @default(240) @map("max_duration_min")
-  stallTimeoutMin     Int         @default(10) @map("stall_timeout_min")
-  errorMessage        String?     @map("error_message")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  startedAt           DateTime?   @map("started_at")
-  pausedAt            DateTime?   @map("paused_at")
-  completedAt         DateTime?   @map("completed_at")
-  retryAt             DateTime?   @map("retry_at")
-
-  // 关系
-  task                Task?       @relation(fields: [taskId], references: [id])
-  requirement         Requirement? @relation(fields: [requirementId], references: [id])
-  phaseInstances      PhaseInstance[]
-  conversationEvents  ConversationEvent[]
-  inboxQuestions      InboxQuestion[]
-  taskLogs            TaskLog[]
-  decisions           Decision[]
-  interventions       Intervention[]
-  executionEvents     ExecutionEvent[]
-
-  @@index([status])
-  @@index([subjectType, subjectId])
-  @@index([leaseExpiresAt])
-  @@map("task_executions")
-}
-
-/// 阶段实例
-model PhaseInstance {
-  id                  String      @id
-  executionId         String      @map("execution_id")
-  phaseId             String      @map("phase_id")
-  taskId              String?     @map("task_id")
-  requirementId       String?     @map("requirement_id")
-  attempt             Int         @default(1)
-  status              String      @default("pending")
-  sessionId           String?     @map("session_id")
-  agentUsed           String?     @map("agent_used")
-  resultSummary       String?     @map("result_summary")
-  resultContent       String?     @map("result_content")
-  resultPayload       Json?       @map("result_payload")
-  resultSchemaVersion String?     @map("result_schema_version")
-  errorMessage        String?     @map("error_message")
-  startedAt           DateTime?   @map("started_at")
-  completedAt         DateTime?   @map("completed_at")
-  createdAt           DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  execution           TaskExecution @relation(fields: [executionId], references: [executionId])
-  task                Task?       @relation(fields: [taskId], references: [id])
-  requirement         Requirement? @relation(fields: [requirementId], references: [id])
-  outputs             PhaseOutput[]
-  decisions           Decision[]
-
-  @@index([executionId])
-  @@index([taskId])
-  @@map("phase_instances")
-}
-
-/// 阶段输出
-model PhaseOutput {
-  id                Int         @id @default(autoincrement())
-  phaseInstanceId   String      @map("phase_instance_id")
-  key               String
-  value             String?
-  createdAt         DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  phaseInstance     PhaseInstance @relation(fields: [phaseInstanceId], references: [id])
-
-  @@map("phase_outputs")
-}
-
-// =============================================================================
-// 对话与事件
-// =============================================================================
-
-/// 对话事件流（V4 新增：完整记录每次对话）
-model ConversationEvent {
-  id              String      @id
-  executionId     String?     @map("execution_id")
-  sessionId       String?     @map("session_id")
-  turnIndex       Int?        @map("turn_index")
-  eventType       String      @map("event_type")  // 'model_started' | 'model_delta' | 'tool_started' | 'tool_completed' | 'final_output' | 'inbox_ask' | 'inbox_answer' | 'error'
-  role            String?                         // 'assistant' | 'user' | 'system'
+model conversation_events {
+  id              String           @id
+  execution_id    String?
+  session_id      String?
+  turn_index      Int?
+  event_type      String
+  role            String?
   payload         Json
-  createdAt       DateTime    @default(now()) @map("created_at")
+  created_at      DateTime         @default(now())
+  task_executions task_executions? @relation(fields: [execution_id], references: [execution_id])
 
-  // 关系
-  execution       TaskExecution? @relation(fields: [executionId], references: [executionId])
-
-  @@index([sessionId])
-  @@index([executionId])
-  @@map("conversation_events")
+  @@index([execution_id])
+  @@index([session_id])
 }
 
-/// 人机交互问题（V4 新增）
-model InboxQuestion {
-  id              String      @id
-  executionId     String?     @map("execution_id")
-  sessionId       String?     @map("session_id")
-  body            String
-  choices         Json?
-  answer          String?
-  status          String      @default("pending")  // 'pending' | 'answered' | 'timeout'
-  createdAt       DateTime    @default(now()) @map("created_at")
-  answeredAt      DateTime?   @map("answered_at")
-
-  // 人机交互状态持久化字段（V4 新增）
-  waitingSince    DateTime?   // 开始等待时间
-  processId       String?     // 等待进程 ID
-  timeoutMs       Int?        // 超时毫秒数
-
-  // 关系
-  execution       TaskExecution? @relation(fields: [executionId], references: [executionId])
-
-  @@map("inbox_questions")
-}
-
-/// 任务日志
-model TaskLog {
-  id              Int         @id @default(autoincrement())
-  executionId     String?     @map("execution_id")
-  taskId          String?     @map("task_id")
-  requirementId   String?     @map("requirement_id")
-  phase           String?
-  message         String
-  createdAt       DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  execution       TaskExecution? @relation(fields: [executionId], references: [executionId])
-  task            Task?       @relation(fields: [taskId], references: [id])
-  requirement     Requirement? @relation(fields: [requirementId], references: [id])
-
-  @@map("task_logs")
-}
-
-/// 决策记录
-model Decision {
-  id                Int         @id @default(autoincrement())
-  executionId       String?     @map("execution_id")
-  taskId            String?     @map("task_id")
-  phaseInstanceId   String?     @map("phase_instance_id")
+model decisions {
+  id                Int              @id @default(autoincrement())
+  execution_id      String?
+  task_id           String?
+  phase_instance_id String?
   phase             String
   decision          String
   confidence        Int
-  severity          String      @default("green")
+  severity          String           @default("green")
   raw               String?
-  createdAt         DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  execution         TaskExecution? @relation(fields: [executionId], references: [executionId])
-  task              Task?       @relation(fields: [taskId], references: [id])
-  phaseInstance     PhaseInstance? @relation(fields: [phaseInstanceId], references: [id])
-
-  @@map("decisions")
+  created_at        DateTime         @default(now())
+  task_executions   task_executions? @relation(fields: [execution_id], references: [execution_id])
+  phase_instances   phase_instances? @relation(fields: [phase_instance_id], references: [id])
+  tasks             tasks?           @relation(fields: [task_id], references: [id])
 }
 
-/// 人工干预记录
-model Intervention {
-  id              Int         @id @default(autoincrement())
-  executionId     String?     @map("execution_id")
-  taskId          String?     @map("task_id")
-  phaseId         String?     @map("phase_id")
-  type            String                        // 'feedback' | 'redirect' | 'abort'
-  message         String
-  suggestedAgent  String?     @map("suggested_agent")
-  status          String      @default("pending")
-  createdAt       DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  execution       TaskExecution? @relation(fields: [executionId], references: [executionId])
-  task            Task?       @relation(fields: [taskId], references: [id])
-
-  @@map("interventions")
+model epics {
+  id                  String         @id
+  requirement_id      String?
+  title               String
+  description         String?
+  module              String?
+  status              String         @default("pending")
+  created_at          DateTime       @default(now())
+  acceptance_criteria String?
+  priority            String?
+  requirements        requirements?  @relation(fields: [requirement_id], references: [id])
+  features            features[]
+  tasks               tasks[]
+  user_stories        user_stories[]
 }
 
-/// 执行事件流
-model ExecutionEvent {
-  id              Int         @id @default(autoincrement())
-  executionId     String      @map("execution_id")
-  eventType       String      @map("event_type")  // 'rate_limited' | 'timed_out' | 'completed' | 'failed'
-  fromStatus      String?     @map("from_status")
-  toStatus        String?     @map("to_status")
+model execution_events {
+  id              Int             @id @default(autoincrement())
+  execution_id    String
+  event_type      String
+  from_status     String?
+  to_status       String?
   message         String?
-  createdAt       DateTime    @default(now()) @map("created_at")
-
-  // 关系
-  execution       TaskExecution @relation(fields: [executionId], references: [executionId])
-
-  @@map("execution_events")
+  created_at      DateTime        @default(now())
+  task_executions task_executions @relation(fields: [execution_id], references: [execution_id])
 }
 
-/// 调度决策留痕
-model SchedulingEvent {
-  id                  Int     @id @default(autoincrement())
-  actor               String                    // 'scheduler' | 'recovery'
+model features {
+  id                  String         @id
+  epic_id             String?
+  title               String
+  description         String?
+  status              String         @default("pending")
+  created_at          DateTime       @default(now())
+  acceptance_criteria String?
+  module              String?
+  priority            String?
+  epics               epics?         @relation(fields: [epic_id], references: [id], onDelete: Cascade)
+  user_stories        user_stories[]
+}
+
+model graph_definitions {
+  id              String   @id
+  name            String
+  plugin_id       String?
+  description     String?
+  definition_json Json
+  created_at      DateTime @default(now())
+  updated_at      DateTime
+}
+
+model inbox_questions {
+  id              String           @id
+  execution_id    String?
+  session_id      String?
+  body            String
+  choices         Json?
+  answer          String?
+  status          String           @default("pending")
+  created_at      DateTime         @default(now())
+  answered_at     DateTime?
+  processId       String?
+  timeoutMs       Int?
+  waitingSince    DateTime?
+  task_executions task_executions? @relation(fields: [execution_id], references: [execution_id])
+}
+
+model interventions {
+  id              Int              @id @default(autoincrement())
+  execution_id    String?
+  task_id         String?
+  phase_id        String?
+  type            String
+  message         String
+  suggested_agent String?
+  status          String           @default("pending")
+  created_at      DateTime         @default(now())
+  task_executions task_executions? @relation(fields: [execution_id], references: [execution_id])
+  tasks           tasks?           @relation(fields: [task_id], references: [id])
+}
+
+model phase_instances {
+  id                    String          @id
+  execution_id          String
+  phase_id              String
+  task_id               String?
+  requirement_id        String?
+  attempt               Int             @default(1)
+  status                String          @default("pending")
+  session_id            String?
+  agent_used            String?
+  result_summary        String?
+  result_content        String?
+  result_payload        Json?
+  result_schema_version String?
+  error_message         String?
+  started_at            DateTime?
+  completed_at          DateTime?
+  created_at            DateTime        @default(now())
+  decisions             decisions[]
+  task_executions       task_executions @relation(fields: [execution_id], references: [execution_id])
+  requirements          requirements?   @relation(fields: [requirement_id], references: [id])
+  tasks                 tasks?          @relation(fields: [task_id], references: [id])
+  phase_outputs         phase_outputs[]
+
+  @@index([execution_id])
+  @@index([task_id])
+}
+
+model phase_outputs {
+  id                Int             @id @default(autoincrement())
+  phase_instance_id String
+  key               String
+  value             String?
+  created_at        DateTime        @default(now())
+  phase_instances   phase_instances @relation(fields: [phase_instance_id], references: [id])
+}
+
+model projects {
+  id          String   @id
+  name        String
+  path        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+}
+
+model requirements {
+  id                   String            @id
+  title                String
+  description          String?
+  status               String            @default("draft")
+  target_project_id    String
+  target_repo_path     String
+  auto_execute         Boolean           @default(false)
+  max_concurrent_tasks Int               @default(1)
+  created_at           DateTime          @default(now())
+  workflow_id          String?           @default("requirement-decomposition")
+  business_goal        String?
+  spec_doc             String?
+  epics                epics[]
+  phase_instances      phase_instances[]
+  task_executions      task_executions[]
+  task_logs            task_logs[]
+}
+
+model scheduling_events {
+  id                  Int      @id @default(autoincrement())
+  actor               String
   action              String
-  targetExecutionId   String? @map("target_execution_id")
-  targetTaskId        String? @map("target_task_id")
-  decision            String                    // 'pass' | 'block' | 'wake' | 'demote' | 'kill' | 'skip'
+  target_execution_id String?
+  target_task_id      String?
+  decision            String
   reason              String?
-  createdAt           DateTime @default(now()) @map("created_at")
-
-  @@map("scheduling_events")
+  created_at          DateTime @default(now())
 }
 
-// =============================================================================
-// 图书管理
-// =============================================================================
+model task_executions {
+  execution_id        String                @id
+  subject_type        String
+  subject_id          String
+  task_id             String?
+  requirement_id      String?
+  target_project_id   String
+  target_repo_path    String
+  stage               String                @default("planning")
+  status              String                @default("pending")
+  control_status      String                @default("idle")
+  provider            String?
+  session_id          String?
+  final_output        String?
+  worker_id           String?
+  lease_token         String?
+  fencing_token       Int                   @default(0)
+  lease_expires_at    DateTime?
+  heartbeat_at        DateTime?
+  rate_limit_count    Int                   @default(0)
+  max_duration_min    Int                   @default(240)
+  stall_timeout_min   Int                   @default(10)
+  error_message       String?
+  created_at          DateTime              @default(now())
+  started_at          DateTime?
+  paused_at           DateTime?
+  completed_at        DateTime?
+  retry_at            DateTime?
+  graph_definition_id String?
+  thread_id           String?
+  conversation_events conversation_events[]
+  decisions           decisions[]
+  execution_events    execution_events[]
+  inbox_questions     inbox_questions[]
+  interventions       interventions[]
+  phase_instances     phase_instances[]
+  requirements        requirements?         @relation(fields: [requirement_id], references: [id])
+  tasks               tasks?                @relation(fields: [task_id], references: [id])
+  task_logs           task_logs[]
 
-/// 图书
-model Book {
-  id            String   @id
-  isbn          String   @unique
-  title         String
-  author        String
-  publisher     String
-  category      String
-  stockQuantity Int      @default(0) @map("stock_quantity")
-  createdAt     DateTime @default(now()) @map("created_at")
+  @@index([lease_expires_at])
+  @@index([status])
+  @@index([subject_type, subject_id])
+}
 
-  @@map("books")
+model task_logs {
+  id              Int              @id @default(autoincrement())
+  execution_id    String?
+  task_id         String?
+  requirement_id  String?
+  phase           String?
+  message         String
+  created_at      DateTime         @default(now())
+  task_executions task_executions? @relation(fields: [execution_id], references: [execution_id])
+  requirements    requirements?    @relation(fields: [requirement_id], references: [id])
+  tasks           tasks?           @relation(fields: [task_id], references: [id])
+}
+
+model tasks {
+  id                  String            @id
+  user_story_id       String?
+  epic_id             String?
+  parent_task_id      String?
+  title               String
+  description         String?
+  acceptance_criteria String?
+  tech_constraints    Json?
+  story_context       String?
+  status              String            @default("pending")
+  target_project_id   String
+  target_repo_path    String
+  sequence            Int               @default(0)
+  version             Int               @default(0)
+  retry_at            DateTime?
+  created_at          DateTime          @default(now())
+  started_at          DateTime?
+  completed_at        DateTime?
+  estimated_hours     Float?
+  task_type           String?
+  acceptance_steps    Json?
+  priority            String?
+  decisions           decisions[]
+  interventions       interventions[]
+  phase_instances     phase_instances[]
+  task_executions     task_executions[]
+  task_logs           task_logs[]
+  epics               epics?            @relation(fields: [epic_id], references: [id])
+  tasks               tasks?            @relation("tasksTotasks", fields: [parent_task_id], references: [id])
+  other_tasks         tasks[]           @relation("tasksTotasks")
+  user_stories        user_stories?     @relation(fields: [user_story_id], references: [id])
+}
+
+model user_stories {
+  id              String    @id
+  epic_id         String?
+  feature_id      String?
+  title           String
+  as_a            String?
+  i_want          String?
+  so_that         String?
+  acceptance_text String?
+  priority        String    @default("P2")
+  status          String    @default("pending")
+  created_at      DateTime  @default(now())
+  module          String?
+  tasks           tasks[]
+  epics           epics?    @relation(fields: [epic_id], references: [id])
+  features        features? @relation(fields: [feature_id], references: [id])
 }
