@@ -11,13 +11,6 @@ const showDialog = ref(false)
 const form = ref({ name: '', path: '', description: '' })
 const submitting = ref(false)
 
-// 常用路径快捷按钮
-const quickPaths = [
-  { label: '01-tula-explore', path: '/Users/admin/code/01-tula-explore' },
-  { label: '02-AI-Research', path: '/Users/admin/code/01-tula-explore/02-AI-Research' },
-  { label: 'long-running-agent-v4', path: '/Users/admin/code/01-tula-explore/02-AI-Research/long-running-agent-v4' },
-]
-
 async function loadProjects() {
   loading.value = true
   try {
@@ -27,10 +20,6 @@ async function loadProjects() {
   } finally {
     loading.value = false
   }
-}
-
-function setPath(path: string) {
-  form.value.path = path
 }
 
 async function createProject() {
@@ -91,14 +80,6 @@ onMounted(loadProjects)
         <el-form-item label="路径" required>
           <el-input v-model="form.path" placeholder="/Users/admin/code/..." />
         </el-form-item>
-        <el-form-item>
-          <div class="quick-paths">
-            <span class="quick-label">快捷选择：</span>
-            <el-button v-for="qp in quickPaths" :key="qp.path" size="small" @click="setPath(qp.path)">
-              {{ qp.label }}
-            </el-button>
-          </div>
-        </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
@@ -124,15 +105,5 @@ onMounted(loadProjects)
 .page-header h1 {
   margin: 0;
   font-size: 24px;
-}
-.quick-paths {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.quick-label {
-  color: #666;
-  font-size: 13px;
 }
 </style>
