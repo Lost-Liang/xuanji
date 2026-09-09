@@ -130,15 +130,15 @@ export async function workerNode(
     return { status: 'idle' };
   }
 
-  // 任务执行：走 default-dev-flow 工作流
+  // 任务执行：走 ruoyi-dev-flow 工作流
   if (execution.subjectType === 'task' && taskId) {
-    console.log(`[worker-graph] 任务执行，委托给 graphRunner (default-dev-flow)`);
+    console.log(`[worker-graph] 任务执行，委托给 graphRunner (ruoyi-dev-flow)`);
 
     try {
       // 委托给 graphRunner（它会自己获取租约和管理心跳）
       await graphRunner.startExecution({
         executionId,
-        flowId: 'default-dev-flow',
+        flowId: 'ruoyi-dev-flow',
         input: '', // 任务上下文由 agent-node 从 task 读取
         task: await taskStore.getById(taskId),
       });

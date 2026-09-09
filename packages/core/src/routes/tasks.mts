@@ -225,7 +225,7 @@ tasksRouter.post('/:id/execute', async (req, res) => {
         const { graphRunner } = await import('../graph/graph-runner.mjs');
         await graphRunner.startExecution({
           executionId,
-          flowId: 'default-dev-flow',
+          flowId: 'ruoyi-dev-flow',
           input: '', // 任务上下文由 agent-node 从 task 对象读取
           task, // 传入完整的任务对象，而非 taskId 字符串
         });
