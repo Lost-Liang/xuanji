@@ -222,6 +222,60 @@ const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check',
 
 ---
 
+### 缺陷 10：execute API 与调度器存在竞态条件
+
+**现象**：
+手动执行 API (`/api/tasks/:id/execute`) 和调度器 (`scheduler-graph.mts`) 可能同时拾取同一个任务。
+
+**根因分析**：
+
+```typescript
+// tasks.mts 手动执行 API（非原子操作）
+const execution = await db.taskExecution.findUnique({ ... });  // 读取
+if (execution.status !== 'pending') { ... }
+setImmediate(async () => {
+  await graphRunner.startExecution({ ... });  // 异步启动
+});
+
+// scheduler-graph.mts 调度器（使用租约机制）
+const pending = await db.taskExecution.findFirst({ where: { status: 'pending' } });
+// 但 worker-graph 检查 graphDefinitionId 来避免重复执行
+```
+
+**竞态场景**：
+1. 用户点击"执行"，API 检查 status='pending'
+2. 启动 `graphRunner.startExecution()`（异步，还没更新状态）
+3. 调度器同时查询到同一任务
+4. 两边同时尝试执行
+
+**防御机制不足**：
+- worker-graph.mts 有 `graphDefinitionId` 检查，但存在时间窗口
+- 手动执行 API 没有使用调度器的租约机制
+
+---
+
+### 缺陷 11：Agent Bindings 从文件系统 Seed
+
+**现象**：
+```typescript
+// agent-bindings-seed.mts
+const AGENTS_DIR = join(__dirname, '../../agents');
+function readPromptContent(agentId: string): string {
+  const filePath = join(AGENTS_DIR, 'ruoyi', fileName);
+  return readFileSync(filePath, 'utf-8');
+}
+```
+
+**问题**：
+- Seed 从文件系统加载 agent 定义
+- 运行时从 DB 读取
+- 如果需要更新 prompt，用户必须删除 binding 再 re-seed
+
+**与设计目标不符**：
+- "agent/skill/workflow 应该只在初始化时从文件加载一次，后续从 DB 读写"
+
+---
+
 ## 三、设计方向讨论
 
 ### 方向 1：三层分离架构
@@ -314,12 +368,14 @@ const phaseOrder = computed(() => {
 |--------|------|------|
 | P0 | 工作目录（缺陷 1、2） | 核心功能，Agent 在错误目录做什么都是错的 |
 | P0 | 三层分离（缺陷 3） | 架构设计决策，影响全局 |
+| P1 | 竞态条件（缺陷 10） | 可能导致任务重复执行 |
 | P1 | loop_max 失效（缺陷 4） | 导致无限循环，触发 LangGraph 限制 |
 | P1 | YAML 从文件加载（缺陷 5） | 用户无法自定义工作流 |
 | P2 | bug_fix 上下文（缺陷 7） | Agent 不知道要修什么 |
 | P2 | 命令硬编码（缺陷 8） | 不同项目构建命令不同 |
 | P3 | 前端阶段（缺陷 6） | 显示问题，不影响核心流程 |
 | P3 | 项目管理（缺陷 9） | 增强功能，可后续迭代 |
+| P3 | Agent Bindings Seed（缺陷 11） | 更新流程可手动处理 |
 
 ---
 
@@ -339,7 +395,11 @@ const phaseOrder = computed(() => {
 | `packages/core/src/graph/agent-node.mts` | 工作目录、targetRepoPath 未使用 |
 | `packages/core/src/graph/builder.mts` | loop_counter 机制 |
 | `packages/core/src/graph/graph-runner.mts` | YAML 从文件加载 |
+| `packages/core/src/graph/scheduler-graph.mts` | 调度器拾取逻辑 |
+| `packages/core/src/graph/worker-graph.mts` | 租约机制、竞态防御 |
 | `packages/core/src/routes/requirements.mts` | target_repo_path 写死 |
+| `packages/core/src/routes/tasks.mts` | execute API 竞态条件 |
+| `packages/core/src/seed/agent-bindings-seed.mts` | Agent 从文件系统加载 |
 | `packages/core/workflows/default-dev-flow.yaml` | 命令硬编码 |
 | `packages/dashboard/src/views/TaskDetail.vue` | 阶段硬编码 |
 | `packages/core/prisma/schema.prisma` | 缺少 projects 表 |
