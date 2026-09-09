@@ -5,11 +5,13 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 import static org.junit.jupiter.api.Assertions.*;
 import com.library.book.domain.Category;
 import com.library.book.service.CategoryService;
 
 @SpringBootTest
+@Transactional
 class CategoryServiceTest {
 
     @Autowired

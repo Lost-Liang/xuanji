@@ -19,6 +19,21 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category>
         implements CategoryService {
 
     @Override
+    public void saveCategory(Category category) {
+        save(category);
+    }
+
+    @Override
+    public void updateCategory(Category category) {
+        updateById(category);
+    }
+
+    @Override
+    public void deleteCategory(Long id) {
+        removeById(id);
+    }
+
+    @Override
     public List<Category> getCategoryTree() {
         List<Category> allCategories = list();
 

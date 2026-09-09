@@ -11,6 +11,21 @@ import com.library.book.domain.Category;
 public interface CategoryService extends IService<Category> {
 
     /**
+     * 保存分类
+     */
+    void saveCategory(Category category);
+
+    /**
+     * 更新分类
+     */
+    void updateCategory(Category category);
+
+    /**
+     * 删除分类
+     */
+    void deleteCategory(Long id);
+
+    /**
      * 查询分类树
      */
     List<Category> getCategoryTree();
