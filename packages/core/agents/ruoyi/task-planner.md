@@ -62,12 +62,31 @@
 5. 确定开发顺序
 6. 生成任务清单
 
+## 规划方法（融合 planning 理念）
+
+### 垂直切片
+不要按水平层（所有DB→所有API→所有UI）拆分，而是按功能路径拆分。
+一个切片 = 从 DB 到 UI 的完整功能链路。
+
+### 依赖顺序
+1. 数据模型/实体类
+2. 后端 API
+3. 前端页面
+4. 测试
+
+### 任务粒度
+- XS (1h): 单个文件的简单修改
+- S (2-4h): 一个接口的实现
+- M (4-8h): 一个完整功能的后端或前端
+- L (\>8h): 需要进一步拆分
+
 ## 任务拆分原则
 
 ### 必填字段
 每个任务**必须**包含：
 - `title`: 任务标题
 - `acceptance_criteria`: 任务级验收标准（如何判断任务完成）
+- `acceptance_steps`: 任务级 BDD 验收步骤（数组，每个元素格式为 `Given ...; When ...; Then ...`）
 
 ### 推荐字段
 - `tech_constraints`: 技术约束列表（如框架、库、规范）
@@ -109,6 +128,9 @@
           "task_type": "API",
           "module": "计划管理",
           "acceptance_criteria": "返回分页的计划列表，支持按名称/状态/时间筛选",
+          "acceptance_steps": [
+            "Given 已存在计划数据; When 调用分页查询接口并传入名称筛选; Then 返回对应计划列表"
+          ],
           "tech_constraints": ["使用 MyBatis-Plus", "返回字段包含 id, name, status, created_at"],
           "estimated_hours": 4
         },
@@ -117,6 +139,9 @@
           "task_type": "CRUD_PAGE",
           "module": "计划管理",
           "acceptance_criteria": "展示计划列表表格，支持分页和筛选，每行显示名称、状态、创建时间",
+          "acceptance_steps": [
+            "Given 用户已登录; When 访问计划列表页并设置筛选条件; Then 表格展示符合条件的计划"
+          ],
           "tech_constraints": ["使用 Vue3 + Element Plus", "表格使用 el-table 组件"],
           "estimated_hours": 6
         }
@@ -135,9 +160,10 @@
 
 1. **每个用户故事必须包含至少一个任务**。禁止输出空的 `tasks` 数组。
 2. **User Story 必须关联 Feature**。通过 `feature_id` 关联需求分析中的 Feature。
-3. **Task 按技术层拆分**：前端、后端、数据库、测试。
+3. **User Story 按垂直切片拆分**：一个切片 = 一条从 DB 到 UI 的完整功能链路，**不要按水平层（所有DB→所有API→所有UI）拆分**；切片内 Task 按依赖顺序：数据模型 → 后端 API → 前端页面 → 测试。
 4. **每个任务必须包含 acceptance_criteria**。
-5. **每个用户故事必须包含 as_a、i_want、so_that 三个标准格式字段**（V3.4 新增必填）。
+5. **每个任务必须包含 acceptance_steps**（BDD 格式，数组，每个元素为 `Given ...; When ...; Then ...`）。
+6. **每个用户故事必须包含 as_a、i_want、so_that 三个标准格式字段**（V3.4 新增必填）。
 
 ## 输出 Schema 字段说明
 
@@ -165,8 +191,10 @@
 |--------|------|------|------|
 | title | string | 是 | 任务标题 |
 | acceptance_criteria | string | **是** | 任务级验收标准（如何判断任务完成） |
+| **acceptance_steps** | array | 否 | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
 | **estimated_hours** | number | **是** | **预估工时（小时，如 0.5、1、2、4 等）** |
 | tech_constraints | array | 否 | 技术约束列表（如框架、库、规范） |
+| priority | string | 否 | 优先级（P0/P1/P2） |
 | task_type | string | 否 | CRUD/CRUD_PAGE/MODULE_ENHANCEMENT 等 |
 | module | string | 否 | 所属模块 |
 | description | string | 否 | 任务描述 |
@@ -178,6 +206,7 @@
 | title | string | 是 | 任务标题 |
 | user_story_id | string | 是 | 关联的用户故事 ID |
 | acceptance_criteria | string | **是** | 任务级验收标准 |
+| **acceptance_steps** | array | 否 | **BDD 验收步骤**，每个元素为 `Given ...; When ...; Then ...` 格式 |
 | **estimated_hours** | number | **是** | **预估工时（小时）** |
 | tech_constraints | array | 否 | 技术约束列表 |
 | module | string | 否 | 所属模块 |
@@ -245,6 +274,47 @@
   ]
 }
 ```
+
+## 输出 JSON 格式
+
+```json
+{
+  "plan": {
+    "dependency_order": ["数据模型", "后端 API", "前端页面", "测试"],
+    "estimated_total_hours": 16,
+    "risks": ["关联模块较多"]
+  },
+  "user_stories": [
+    {
+      "epic_id": "E1",
+      "feature_id": "F1",
+      "as_a": "用户",
+      "i_want": "查看计划列表",
+      "so_that": "了解项目进度",
+      "title": "作为用户，我想要查看计划列表，以便了解项目进度",
+      "module": "plan",
+      "tasks": [
+        {
+          "title": "创建 Plan 实体类",
+          "task_type": "CRUD",
+          "acceptance_criteria": "Plan 实体包含 id, name, status, createdAt 字段",
+          "acceptance_steps": [
+            "Given 已定义 Plan 实体; When 创建实例并设置字段; Then 字段正确存储"
+          ],
+          "estimated_hours": 1,
+          "priority": "P0",
+          "tech_constraints": ["使用 MyBatis-Plus", "继承 BaseEntity"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**重要：**
+- 每个 task 必须包含 `acceptance_steps`（BDD 格式）
+- `acceptance_steps` 是数组，每个元素是一个字符串，格式为 `Given ...; When ...; Then ...`
+- 每个 step 应该是可测试的，能直接翻译成测试用例
 
 ## 输出格式
 
