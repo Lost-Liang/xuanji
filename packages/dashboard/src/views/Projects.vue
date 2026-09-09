@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, type Project } from '../api/projects'
 
@@ -11,26 +11,11 @@ const showDialog = ref(false)
 const form = ref({ name: '', path: '', description: '' })
 const submitting = ref(false)
 
-// 选择目录
-async function selectFolder() {
-  try {
-    // @ts-ignore - File System Access API
-    const dirHandle = await window.showDirectoryPicker()
-    // 获取目录路径（从 entries 中提取）
-    const entries = []
-    for await (const entry of dirHandle.values()) {
-      entries.push(entry.name)
-    }
-    // 用户需要手动确认完整路径，因为浏览器安全限制无法获取绝对路径
-    // 但我们可以显示目录名作为提示
-    form.value.name = form.value.name || dirHandle.name
-    ElMessage.info(`已选择目录 "${dirHandle.name}"，请确认完整路径`)
-  } catch (e: any) {
-    if (e.name !== 'AbortError') {
-      ElMessage.warning('浏览器不支持目录选择，请手动输入路径')
-    }
-  }
-}
+// 目录浏览器
+const browseDialog = ref(false)
+const browsePath = ref('')
+const browseDirs = ref<{name: string, path: string}[]>([])
+const browseLoading = ref(false)
 
 async function loadProjects() {
   loading.value = true
@@ -41,6 +26,35 @@ async function loadProjects() {
   } finally {
     loading.value = false
   }
+}
+
+async function browseDir(path?: string) {
+  browseLoading.value = true
+  try {
+    const url = `/api/fs/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`
+    const res = await fetch(url)
+    const data = await res.json()
+    browsePath.value = data.current_path
+    browseDirs.value = data.directories
+    // 添加 "返回上级" 选项
+    if (data.parent_path) {
+      browseDirs.value.unshift({ name: '..', path: data.parent_path })
+    }
+  } catch (e) {
+    ElMessage.error('读取目录失败')
+  } finally {
+    browseLoading.value = false
+  }
+}
+
+function openBrowseDialog() {
+  browseDir()
+  browseDialog.value = true
+}
+
+function selectPath(path: string) {
+  form.value.path = path
+  browseDialog.value = false
 }
 
 async function createProject() {
@@ -99,9 +113,9 @@ onMounted(loadProjects)
           <el-input v-model="form.name" placeholder="项目名称" />
         </el-form-item>
         <el-form-item label="路径" required>
-          <el-input v-model="form.path" placeholder="/path/to/project">
+          <el-input v-model="form.path" placeholder="点击浏览选择目录" readonly>
             <template #append>
-              <el-button @click="selectFolder">选择</el-button>
+              <el-button @click="openBrowseDialog">浏览</el-button>
             </template>
           </el-input>
         </el-form-item>
@@ -113,6 +127,24 @@ onMounted(loadProjects)
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="createProject">添加</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 目录浏览对话框 -->
+    <el-dialog v-model="browseDialog" title="选择目录" width="600px">
+      <div class="browse-header">
+        <span>当前目录：</span>
+        <el-input v-model="browsePath" readonly style="flex: 1" />
+      </div>
+      <el-table :data="browseDirs" v-loading="browseLoading" height="400px" stripe
+        @row-click="(row: any) => browseDir(row.path)">
+        <el-table-column prop="name" label="目录名" />
+        <el-table-column prop="path" label="路径" show-overflow-tooltip />
+        <el-table-column width="100">
+          <template #default="{ row }">
+            <el-button v-if="row.name !== '..'" type="primary" text @click.stop="selectPath(row.path)">选择</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -130,5 +162,11 @@ onMounted(loadProjects)
 .page-header h1 {
   margin: 0;
   font-size: 24px;
+}
+.browse-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 10px;
 }
 </style>

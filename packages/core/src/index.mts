@@ -104,6 +104,7 @@ export function createApp(): express.Express {
   app.use('/api/graph-definitions', graphDefinitionsRouter);
   app.use('/api/books', booksRouter);
   app.use('/api/projects', projectsRouter);
+  app.use('/api/fs', projectsRouter);  // 文件系统浏览（复用 projectsRouter 的 /browse 路由）
 
   // 内部 API（MCP Bridge 专用）
   app.use('/api/internal', internalRouter);

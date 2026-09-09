@@ -4,6 +4,9 @@
 
 import { Router } from 'express';
 import { db } from '../db.mjs';
+import { readdirSync, statSync, existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 export const projectsRouter: Router = Router();
 
@@ -89,5 +92,38 @@ projectsRouter.delete('/:id', async (req, res) => {
       return;
     }
     res.status(500).json({ error: '删除项目失败', detail: err.message });
+  }
+});
+
+/**
+ * GET /api/fs/browse
+ * 浏览文件系统目录
+ * 返回指定路径下的子目录列表
+ */
+projectsRouter.get('/browse', async (req, res) => {
+  try {
+    let dirPath = req.query.path as string || homedir();
+
+    // 安全检查：确保路径存在
+    if (!existsSync(dirPath)) {
+      dirPath = homedir();
+    }
+
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    const directories = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => ({
+        name: e.name,
+        path: join(dirPath, e.name),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({
+      current_path: dirPath,
+      parent_path: dirPath === '/' ? null : join(dirPath, '..'),
+      directories,
+    });
+  } catch (err) {
+    res.status(500).json({ error: '读取目录失败', detail: (err as Error).message });
   }
 });
