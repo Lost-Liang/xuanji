@@ -54,7 +54,7 @@ export { buildRecoveryGraph, findZombies, RecoveryState } from './graph/recovery
 export type { RecoveryStateType } from './graph/recovery-graph.mjs';
 
 // 流程执行运行时（M1.2 graph-runner）
-export { graphRunner, startExecution, resumeExecution, loadFlow } from './graph/graph-runner.mjs';
+export { graphRunner, startExecution, resumeExecution, loadFlow, createTaskTreeFromParsed } from './graph/graph-runner.mjs';
 export type { StartExecutionOpts, ResumeExecutionOpts } from './graph/graph-runner.mjs';
 
 // 时序常量

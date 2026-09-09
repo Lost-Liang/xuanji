@@ -429,7 +429,7 @@ async function createTaskTreeFromPhaseOutputs(
 /**
  * 从解析后的数据创建任务树
  */
-async function createTaskTreeFromParsed(
+export async function createTaskTreeFromParsed(
   requirement: any,
   parsed: any,
 ): Promise<void> {
@@ -439,7 +439,16 @@ async function createTaskTreeFromParsed(
   const epicMap = new Map<string, string>(); // 临时ID -> 真实ID
   const epics = new Map<string, any>();
 
-  // 从 user_stories 提取 epics
+  // 从 parsed.epics[] 提取 epics（优先，有完整数据）
+  if (parsed.epics && Array.isArray(parsed.epics)) {
+    for (const epicData of parsed.epics) {
+      if (epicData.id && !epics.has(epicData.id)) {
+        epics.set(epicData.id, epicData);
+      }
+    }
+  }
+
+  // 从 user_stories 提取 epics（补充）
   for (const us of user_stories) {
     if (us.epic_id && !epics.has(us.epic_id)) {
       epics.set(us.epic_id, { id: us.epic_id, module: us.module });
@@ -455,7 +464,11 @@ async function createTaskTreeFromParsed(
       data: {
         id: epicId,
         requirementId: requirement.id,
-        title: epicData.module || `Epic ${tempId}`,
+        title: epicData.name || epicData.title || `Epic ${tempId}`,
+        description: epicData.description || null,
+        module: epicData.module || null,
+        priority: epicData.priority || null,
+        acceptanceCriteria: epicData.acceptance_criteria || null,
         status: 'pending',
       },
     });
@@ -465,6 +478,20 @@ async function createTaskTreeFromParsed(
   const featureMap = new Map<string, string>();
   const features = new Map<string, any>();
 
+  // 从 parsed.epics[].features[] 提取 features（优先，有完整数据）
+  if (parsed.epics && Array.isArray(parsed.epics)) {
+    for (const epicData of parsed.epics) {
+      if (epicData.features && Array.isArray(epicData.features)) {
+        for (const featureData of epicData.features) {
+          if (featureData.id && !features.has(featureData.id)) {
+            features.set(featureData.id, { ...featureData, epic_id: epicData.id });
+          }
+        }
+      }
+    }
+  }
+
+  // 从 user_stories 提取 features（补充）
   for (const us of user_stories) {
     if (us.feature_id && !features.has(us.feature_id)) {
       features.set(us.feature_id, { id: us.feature_id, epic_id: us.epic_id });
@@ -481,7 +508,11 @@ async function createTaskTreeFromParsed(
       data: {
         id: featureId,
         epicId: epicRealId || null,
-        title: `Feature ${tempId}`,
+        title: featureData.title || featureData.name || `Feature ${tempId}`,
+        description: featureData.description || null,
+        module: featureData.module || null,
+        acceptanceCriteria: featureData.acceptance_criteria || null,
+        priority: featureData.priority || null,
         status: 'pending',
       },
     });
@@ -505,6 +536,7 @@ async function createTaskTreeFromParsed(
         iWant: us.i_want || null,
         soThat: us.so_that || null,
         acceptanceText: us.acceptance_text || null,
+        module: us.module || null,
         priority: us.priority || 'P2',
         status: 'pending',
       },
@@ -526,6 +558,8 @@ async function createTaskTreeFromParsed(
             title: taskData.title,
             description: taskData.description || null,
             acceptanceCriteria: taskData.acceptance_criteria || null,
+            acceptanceSteps: taskData.acceptance_steps || null,
+            priority: taskData.priority || null,
             techConstraints: taskData.tech_constraints || null,
             taskType: taskData.task_type || null,
             estimatedHours: taskData.estimated_hours || null,
@@ -566,6 +600,8 @@ async function createTaskTreeFromParsed(
         title: taskData.title,
         description: taskData.description || null,
         acceptanceCriteria: taskData.acceptance_criteria || null,
+        acceptanceSteps: taskData.acceptance_steps || null,
+        priority: taskData.priority || null,
         techConstraints: taskData.tech_constraints || null,
         taskType: taskData.task_type || null,
         estimatedHours: taskData.estimated_hours || null,
