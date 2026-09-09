@@ -1,54 +1,110 @@
-# 若依研发流程
+# 若依研发流程 (TDD)
 #
-# 流程：开发 → 质量审查 → 安全审查 → 最终审查
-# - develop Agent 自己验证编译和测试
-# - 验证失败时 Agent 自己修复，无需单独的 fix 节点
-# - 流程大幅简化，减少状态管理复杂度
+# 流程：write_tests → develop → test → code_review ↔ code_fix → final_review
+#
+# TDD 思想：
+# 1. 先写测试（Red）：根据 acceptance_criteria 生成测试代码
+# 2. 再写代码（Green）：实现功能让测试通过
+# 3. 重构优化：代码审查确保质量
+#
+# 循环设计：
+# - test → develop：功能测试失败，回到开发（最多 2 次）
+# - code_review ↔ code_fix：代码质量问题修复循环（最多 3 次）
 
 version: "1"
 id: ruoyi-dev-flow
 name: 若依研发流程
-description: 开发 → 质量审查 → 安全审查 → 最终审查
+description: TDD流程：先写测试 → 开发实现 → 测试验证 → 代码审查 → 最终审查
 
 nodes:
-  # 1. 开发阶段（Agent 自己验证编译和测试）
+  # 1. 写测试（TDD Red 阶段）
+  - id: write_tests
+    type: agent
+    name: 写测试
+    agent_binding_ids: [test-engineer]
+    write_key: results
+
+  # 2. 开发（TDD Green 阶段）
   - id: develop
     type: agent
     name: 开发
     agent_binding_ids: [ruoyi-developer]
     write_key: results
 
-  # 2. 质量审查
-  - id: quality_review
+  # 3. 测试验证
+  - id: test
     type: agent
-    name: 质量审查
+    name: 测试验证
+    agent_binding_ids: [tester]
+    write_key: results
+
+  # 4. 代码审查
+  - id: code_review
+    type: agent
+    name: 代码审查
     agent_binding_ids: [reviewer]
     write_key: results
 
-  # 3. 安全审查
-  - id: security_review
+  # 5. 代码修复（审查发现问题时进入）
+  - id: code_fix
     type: agent
-    name: 安全审查
-    agent_binding_ids: [reviewer]
+    name: 代码修复
+    agent_binding_ids: [code-fixer]
     write_key: results
 
-  # 4. 最终审查（人审 gate）
+  # 6. 最终审查（人审 gate）
   - id: final_review
     type: gate
     name: 最终审查
 
 edges:
+  # write_tests → develop（先写测试，再写代码）
+  - from: write_tests
+    to: develop
+
+  # develop → test（开发完成后测试验证）
   - from: develop
-    to: quality_review
+    to: test
 
-  - from: quality_review
-    to: security_review
+  # test 条件边：pass → code_review, fail → develop（最多 2 次）
+  - from: test
+    to: code_review
+    condition:
+      type: expression
+      config:
+        expression: "state.results.test?.passed === true"
 
-  - from: security_review
+  - from: test
+    to: develop
+    condition:
+      type: expression
+      config:
+        expression: "state.results.test?.passed === false"
+    loop_max: 2
+
+  # code_review 条件边：pass → final_review, issues → code_fix（最多 3 次）
+  - from: code_review
     to: final_review
+    condition:
+      type: expression
+      config:
+        expression: "state.results.code_review?.approved === true"
 
+  - from: code_review
+    to: code_fix
+    condition:
+      type: expression
+      config:
+        expression: "state.results.code_review?.approved === false"
+    loop_max: 3
+
+  # code_fix → code_review（修复后重新审查）
+  - from: code_fix
+    to: code_review
+
+  # final_review → __end__（人审通过后流程结束）
   - from: final_review
     to: __end__
 
 start:
-  - develop
+  - write_tests

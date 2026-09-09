@@ -32,7 +32,9 @@ const AGENT_DEFS: Array<{
   { id: 'backend-crud', name: '后端 CRUD 开发工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD'], stack_type: ['BACKEND', 'FULLSTACK'] } },
   { id: 'backend-module-enhancement', name: '后端模块增强工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD_UPLOAD', 'CRUD_WORKFLOW', 'CRUD_BUSINESS', 'MODULE_ENHANCEMENT'] } },
   { id: 'frontend-crud-page', name: '前端 CRUD 页面开发工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD_PAGE'] } },
+  { id: 'test-engineer', name: '测试工程师', skill: 'test-driven-development', model: 'claude-sonnet-5', reasoningEffort: 'medium' },
   { id: 'tester', name: '测试验证员', skill: 'test-driven-development', model: 'claude-sonnet-5', reasoningEffort: 'medium' },
+  { id: 'code-fixer', name: '代码修复工程师', skill: 'debugging-and-error-recovery', model: 'claude-sonnet-5', reasoningEffort: 'high' },
   { id: 'bug-fixer', name: 'Bug 修复工程师', skill: 'debugging-and-error-recovery', model: 'claude-sonnet-5', reasoningEffort: 'high' },
   { id: 'reviewer', name: '代码审查员', skill: 'code-review-and-quality', model: 'claude-sonnet-5', reasoningEffort: 'high' },
   { id: 'quality-fixer', name: '质量问题修复工程师', skill: 'code-simplification', model: 'claude-sonnet-5', reasoningEffort: 'medium' },
@@ -47,7 +49,9 @@ const AGENT_FILE_MAP: Record<string, string> = {
   'backend-crud': 'backend-crud.md',
   'backend-module-enhancement': 'backend-module-enhancement.md',
   'frontend-crud-page': 'frontend-crud-page.md',
+  'test-engineer': 'test-engineer.md',
   'tester': 'tester.md',
+  'code-fixer': 'code-fixer.md',
   'bug-fixer': 'bug-fixer.md',
   'reviewer': 'reviewer.md',
   'quality-fixer': 'quality-fixer.md',
@@ -100,7 +104,7 @@ async function main() {
     console.log(`[seed] ✓ ${binding.id} (${def.name})`);
   }
 
-  console.log('[seed] 完成，共 11 个 Agent Bindings');
+  console.log('[seed] 完成，共 13 个 Agent Bindings');
 }
 
 main()
