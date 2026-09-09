@@ -14,6 +14,7 @@ nodes:
   # ─── 1. 需求分析 ─────────────────────────────────────────────────────────────
   - id: requirement_analysis
     type: agent
+    name: 需求分析
     agent_binding_ids: [requirement-analyst]
     interaction_mode: interactive
     write_key: spec
@@ -21,6 +22,7 @@ nodes:
   # ─── 2. 任务拆分 ─────────────────────────────────────────────────────────────
   - id: task_breakdown
     type: agent
+    name: 任务拆分
     agent_binding_ids: [task-planner]
     interaction_mode: interactive
     write_key: tasks
@@ -28,6 +30,7 @@ nodes:
   # ─── 3. 人工审核门控 ─────────────────────────────────────────────────────────
   - id: review_gate
     type: gate
+    name: 人工审核
 
 edges:
   # requirement_analysis → task_breakdown
