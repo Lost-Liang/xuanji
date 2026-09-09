@@ -4,7 +4,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type RequirementListItem, type RequirementDetail } from '../api/requirements'
+import { api, type RequirementListItem, type RequirementDetail, type CreateRequirement } from '../api/requirements'
 import RequirementLogDrawer from '../components/drawers/RequirementLogDrawer.vue'
 import RequirementTreeView from '../components/RequirementTreeView.vue'
 
@@ -15,6 +15,7 @@ const loading = ref(false)
 const newInput = ref('')
 const creating = ref(false)
 const searchText = ref('')
+const targetRepoPath = ref('')  // 工作目录
 
 // 工作流选择
 const workflows = ref<{ id: string; name: string }[]>([])
@@ -111,10 +112,16 @@ async function createAndExecute() {
   creating.value = true
   try {
     const reqId = `req-${Date.now()}`
+    const payload: CreateRequirement = {
+      id: reqId,
+      input_text: text,
+      workflow_id: selectedWorkflowId.value,
+      targetRepoPath: targetRepoPath.value.trim() || undefined,
+    }
     const cr = await fetch('/api/requirements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: reqId, input_text: text, workflow_id: selectedWorkflowId.value }),
+      body: JSON.stringify(payload),
     })
     if (!cr.ok) {
       const e = await cr.json()
@@ -123,6 +130,7 @@ async function createAndExecute() {
     }
     await api.execute(reqId, text)
     newInput.value = ''
+    targetRepoPath.value = ''
     ElMessage.success('已创建并执行')
     loadList()
   } catch (e: any) {
@@ -278,6 +286,15 @@ onMounted(() => { loadList(); loadWorkflows() })
           :disabled="creating"
           rows="2"
         ></textarea>
+        <div class="workdir-input-row">
+          <input
+            v-model="targetRepoPath"
+            type="text"
+            class="workdir-input"
+            placeholder="工作目录（可选，留空使用默认目录）"
+            :disabled="creating"
+          />
+        </div>
         <div class="create-footer">
           <button class="create-btn" :loading="creating" :disabled="!newInput.trim()" @click="createAndExecute">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
@@ -531,6 +548,32 @@ onMounted(() => { loadList(); loadWorkflows() })
 .create-input:focus {
   outline: none;
   border-color: var(--accent-dim);
+}
+
+.workdir-input-row {
+  display: flex;
+}
+
+.workdir-input {
+  flex: 1;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  transition: border-color 0.16s;
+}
+
+.workdir-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.workdir-input::placeholder {
+  color: var(--muted);
+  font-family: var(--font-sans);
 }
 
 .create-btn {

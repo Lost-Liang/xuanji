@@ -1,6 +1,13 @@
 // core/web/src/api/requirements.ts —— 需求 API 客户端（fetch 薄封装，照 graph.ts 模式）
 const base = '/api/requirements'
 
+export interface CreateRequirement {
+  id: string
+  input_text: string
+  workflow_id?: string
+  targetRepoPath?: string  // 工作目录
+}
+
 export interface RequirementListItem {
   id: string
   input_text: string
