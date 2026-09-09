@@ -1,5 +1,5 @@
 // 璇玑 V4 - Agent Bindings Seed
-// 从 V3 ruoyi plugin.yaml + agents/*.md 初始化 10 个角色绑定
+// 从 V3 ruoyi plugin.yaml + agents/*.md 初始化 11 个角色绑定
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { readFileSync, existsSync } from 'fs';
@@ -28,6 +28,7 @@ const AGENT_DEFS: Array<{
 }> = [
   { id: 'requirement-analyst', name: '需求分析师', skill: 'spec-driven-development', model: 'claude-sonnet-5', reasoningEffort: 'high' },
   { id: 'task-planner', name: '任务规划师', skill: 'planning-and-task-breakdown', model: 'claude-sonnet-5', reasoningEffort: 'high' },
+  { id: 'ruoyi-developer', name: '若依全栈开发 Agent', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-4-20250514', reasoningEffort: 'high', triggers: { task_type: ['feature', 'bugfix', 'enhancement'] } },
   { id: 'backend-crud', name: '后端 CRUD 开发工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD'], stack_type: ['BACKEND', 'FULLSTACK'] } },
   { id: 'backend-module-enhancement', name: '后端模块增强工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD_UPLOAD', 'CRUD_WORKFLOW', 'CRUD_BUSINESS', 'MODULE_ENHANCEMENT'] } },
   { id: 'frontend-crud-page', name: '前端 CRUD 页面开发工程师', skill: 'ruoyi-plus-ai-coding', model: 'claude-sonnet-5', reasoningEffort: 'medium', triggers: { task_type: ['CRUD_PAGE'] } },
@@ -42,6 +43,7 @@ const AGENT_DEFS: Array<{
 const AGENT_FILE_MAP: Record<string, string> = {
   'requirement-analyst': 'requirement-analyst.md',
   'task-planner': 'task-planner.md',
+  'ruoyi-developer': 'ruoyi-developer.md',
   'backend-crud': 'backend-crud.md',
   'backend-module-enhancement': 'backend-module-enhancement.md',
   'frontend-crud-page': 'frontend-crud-page.md',
@@ -98,7 +100,7 @@ async function main() {
     console.log(`[seed] ✓ ${binding.id} (${def.name})`);
   }
 
-  console.log('[seed] 完成，共 10 个 Agent Bindings');
+  console.log('[seed] 完成，共 11 个 Agent Bindings');
 }
 
 main()
