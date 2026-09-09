@@ -3,12 +3,49 @@
 // 提供需求的 CRUD 接口 + 执行触发
 
 import { Router } from 'express';
+import { join, dirname } from 'path';
+import { mkdir, cp } from 'fs/promises';
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { requirementStore } from '../storage/requirement-store.mjs';
 import { executionStore } from '../storage/execution-store.mjs';
 import { graphRunner } from '../graph/graph-runner.mjs';
 import { db } from '../db.mjs';
 
+// 获取当前文件目录（ESM 兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// skills 目录路径（编译后从 dist/routes 到 skills）
+const SKILLS_DIR = join(__dirname, '../../skills');
+
 export const requirementsRouter: Router = Router();
+
+// =============================================================================
+// Skill 复制工具函数
+// =============================================================================
+
+/**
+ * 复制系统预置 skill 到工作目录
+ * @param targetRepoPath 目标项目路径
+ */
+async function copySkillsToWorkdir(targetRepoPath: string): Promise<void> {
+  const skillsDir = join(targetRepoPath, '.claude', 'skills');
+  await mkdir(skillsDir, { recursive: true });
+
+  // 复制若依相关 skill
+  const skills = ['ruoyi-plus-ai-coding', 'frontend-crud-coding'];
+  for (const skillId of skills) {
+    const src = join(SKILLS_DIR, 'presets', skillId);
+    if (existsSync(src)) {
+      const dest = join(skillsDir, skillId);
+      await cp(src, dest, { recursive: true });
+      console.log(`[requirements] 已复制 skill: ${skillId}`);
+    } else {
+      console.warn(`[requirements] skill 不存在: ${skillId}`);
+    }
+  }
+}
 
 // =============================================================================
 // 字段映射：Prisma (camelCase) <-> Dashboard (snake_case)
@@ -178,6 +215,16 @@ requirementsRouter.post('/', async (req, res) => {
         status: 'pending',
       },
     });
+
+    // 复制 skill 到工作目录
+    if (targetRepoPath) {
+      try {
+        await copySkillsToWorkdir(targetRepoPath);
+      } catch (e) {
+        console.warn('[requirements] 复制 skill 失败:', e);
+        // 不阻塞需求创建
+      }
+    }
 
     const item = toListItem(requirement);
     res.json(item);
