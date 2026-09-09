@@ -16,6 +16,7 @@ import {
   collectRoutes,
   routeFromSource,
   withLoopCounter,
+  buildAgentContext,
 } from '../src/index.mjs';
 import type { GraphDef } from '../src/index.mjs';
 
@@ -168,6 +169,68 @@ describe('builder.mts 核心函数', () => {
 
       const compiled = buildSubGraph(def);
       expect(compiled).toBeTruthy();
+    });
+  });
+
+  describe('buildAgentContext', () => {
+    it('should read state.spec when context=spec', () => {
+      const state = {
+        spec: JSON.stringify({
+          business_goal: '业务目标',
+          scope: { in_scope: ['功能1'] },
+        }),
+      };
+
+      const result = buildAgentContext(state, 'spec');
+
+      expect(result).toContain('基于以下需求规格进行任务拆解');
+      expect(result).toContain('业务目标');
+      expect(result).toContain('scope');
+    });
+
+    it('should read state.input when context=input (default)', () => {
+      const state = {
+        input: '原始需求文本',
+      };
+
+      const result = buildAgentContext(state, 'input');
+
+      expect(result).toBe('原始需求文本');
+    });
+
+    it('should fallback to input when spec is invalid JSON', () => {
+      const state = {
+        spec: 'invalid json',
+        input: 'fallback text',
+      };
+
+      const result = buildAgentContext(state, 'spec');
+
+      expect(result).toBe('fallback text');
+    });
+
+    it('should handle spec as an object (not string)', () => {
+      const state = {
+        spec: { business_goal: '直接对象' },
+      };
+
+      const result = buildAgentContext(state, 'spec');
+
+      expect(result).toContain('基于以下需求规格进行任务拆解');
+      expect(result).toContain('直接对象');
+    });
+
+    it('should fallback to task.title then task.description', () => {
+      const stateWithTaskTitle = { task: { title: '任务标题', description: '任务描述' } };
+      expect(buildAgentContext(stateWithTaskTitle, 'input')).toBe('任务标题');
+
+      const stateWithTaskDesc = { task: { description: '任务描述' } };
+      expect(buildAgentContext(stateWithTaskDesc, 'input')).toBe('任务描述');
+    });
+
+    it('should return empty string when no data available', () => {
+      const state = {};
+      expect(buildAgentContext(state, 'input')).toBe('');
     });
   });
 });

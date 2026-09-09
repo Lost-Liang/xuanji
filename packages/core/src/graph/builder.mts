@@ -35,9 +35,12 @@ const defaultSubGraph: GraphDef = {
 // ─── 循环节点 → 计数器键 映射（spec §4.5） ─────────────────────────────────────
 // fix 节点执行后自增对应 check 节点的 loop_counter，供 routeFromSource 判断是否继续循环
 const FIX_LOOP_KEY: Record<string, string> = {
+  // V3 遗留
   bug_fix: 'compile_check',
   quality_issue_fix: 'quality_check',
   security_issue_fix: 'security_check',
+  // V4 新设计
+  code_fix: 'code_review',  // 代码审查循环
 }
 
 // ─── 条件边源节点集合（spec §4.5） ─────────────────────────────────────────────
@@ -171,6 +174,36 @@ export function collectRoutes(def: WorkflowDef, _graph: GraphDef): RouteMeta[] {
   return routes
 }
 
+// ─── 辅助函数 ───────────────────────────────────────────────────────────────────
+function safeJsonParse(str: string): any {
+  try {
+    return JSON.parse(str)
+  } catch {
+    return null
+  }
+}
+
+// ─── buildAgentContext：根据 contextKey 从 state 提取 prompt 文本（spec §6.2） ──
+/**
+ * 根据 context 字段从 state 中构建 agent prompt 文本
+ *
+ * - context='spec'：读取 state.spec（JSON 字符串或对象），格式化为需求规格文本
+ * - context='input'（默认）：读取 state.input，回退到 state.task.title / state.task.description
+ *
+ * @param state LangGraph 状态
+ * @param contextKey context 字段值（'spec' | 'input' | 其他）
+ * @returns prompt 文本
+ */
+export function buildAgentContext(state: any, contextKey: string): string {
+  if (contextKey === 'spec') {
+    const specData = typeof state.spec === 'string' ? safeJsonParse(state.spec) : state.spec
+    if (specData) {
+      return `基于以下需求规格进行任务拆解：\n\n${JSON.stringify(specData, null, 2)}`
+    }
+  }
+  return state.input ?? state.task?.title ?? state.task?.description ?? ''
+}
+
 // ─── 节点 type → action 工厂 ────────────────────────────────────────────────────
 /**
  * 根据节点类型创建对应的 LangGraph action
@@ -191,6 +224,9 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
       if (bindingIds.length === 0) {
         throw new Error(`agent 节点 ${node.id} 缺少 agent_binding_ids`)
       }
+
+      const contextKey = (node as any).context || 'input'
+
       return makeAgentNode({
         bindingIds,
         selector: node.selector,
@@ -199,7 +235,7 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         isSubgraph,
         isArchive: node.id === 'archive',
         interactionMode,
-        buildPrompt: (s: any) => s.input ?? s.task?.title ?? s.task?.description ?? '',
+        buildPrompt: (s: any) => buildAgentContext(s, contextKey),
       })
     }
     case 'gate':
