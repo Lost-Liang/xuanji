@@ -202,6 +202,11 @@ tasksRouter.post('/:id/execute', async (req, res) => {
     }
 
     if (execution.status !== 'pending') {
+      // 任务已经在执行中，返回成功（避免竞态条件导致的报错）
+      if (execution.status === 'running' || execution.status === 'waiting') {
+        res.json({ ok: true, message: '任务已在执行中', status: execution.status });
+        return;
+      }
       res.status(400).json({ error: '只能执行 pending 状态的任务', current_status: execution.status });
       return;
     }
