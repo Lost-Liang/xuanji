@@ -103,6 +103,7 @@ tasksRouter.get('/:id', async (req, res) => {
       rate_limited_until: execution.retryAt?.toISOString?.() ?? null,
       breakdown_content: execution.task?.description ?? null,
       requirement_id: execution.requirementId,
+      graph_definition_id: execution.graphDefinitionId ?? null,
       token_in: null,
       token_out: null,
       cost: null,

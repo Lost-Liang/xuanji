@@ -197,7 +197,8 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
   const nodes: GraphNode[] = def.nodes.map((wn: WorkflowNode): GraphNode => {
     const gn: GraphNode = {
       id: wn.id,
-      type: wn.type
+      type: wn.type,
+      name: wn.name               // 映射 name 字段
     }
 
     // 复制可选字段

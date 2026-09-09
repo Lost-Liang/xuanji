@@ -45,6 +45,7 @@ export interface SelectorRule { by: 'task_type' | 'stack_type'; mapping: Record<
 export interface GraphNode {
   id: string
   type: NodeType
+  name?: string             // 节点显示名称（中文标签）
 
   // Agent 节点配置（对齐 Omnigent AgentSpec）
   config?: {
@@ -123,6 +124,7 @@ export interface GraphDef {
 export interface WorkflowNode {
   id: string
   type: NodeType                       // 'agent' | 'gate' | 'command' | 'subgraph' | 'python'
+  name?: string                        // 节点显示名称（中文标签）
   agent_binding_id?: string            // 单绑定：作者可写，映射后并入运行时 agent_binding_ids
   agent_binding_ids?: string[]
   selector?: SelectorRule

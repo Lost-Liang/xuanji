@@ -58,6 +58,7 @@ export interface TaskDetail {
   task_id: string | null
   breakdown_content: string | null
   requirement_id: string | null
+  graph_definition_id: string | null  // 图定义 ID（用于画布跳转）
   // token 聚合 + 循环计数（spec §9.4 子图执行态）
   token_in: number | null
   token_out: number | null
