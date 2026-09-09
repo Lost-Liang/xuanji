@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, type Project } from '../api/projects'
 
@@ -11,11 +11,12 @@ const showDialog = ref(false)
 const form = ref({ name: '', path: '', description: '' })
 const submitting = ref(false)
 
-// 目录浏览器
-const browseDialog = ref(false)
-const browsePath = ref('')
-const browseDirs = ref<{name: string, path: string}[]>([])
-const browseLoading = ref(false)
+// 常用路径快捷按钮
+const quickPaths = [
+  { label: '01-tula-explore', path: '/Users/admin/code/01-tula-explore' },
+  { label: '02-AI-Research', path: '/Users/admin/code/01-tula-explore/02-AI-Research' },
+  { label: 'long-running-agent-v4', path: '/Users/admin/code/01-tula-explore/02-AI-Research/long-running-agent-v4' },
+]
 
 async function loadProjects() {
   loading.value = true
@@ -28,33 +29,8 @@ async function loadProjects() {
   }
 }
 
-async function browseDir(path?: string) {
-  browseLoading.value = true
-  try {
-    const url = `/api/fs/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`
-    const res = await fetch(url)
-    const data = await res.json()
-    browsePath.value = data.current_path
-    browseDirs.value = data.directories
-    // 添加 "返回上级" 选项
-    if (data.parent_path) {
-      browseDirs.value.unshift({ name: '..', path: data.parent_path })
-    }
-  } catch (e) {
-    ElMessage.error('读取目录失败')
-  } finally {
-    browseLoading.value = false
-  }
-}
-
-function openBrowseDialog() {
-  browseDir()
-  browseDialog.value = true
-}
-
-function selectPath(path: string) {
+function setPath(path: string) {
   form.value.path = path
-  browseDialog.value = false
 }
 
 async function createProject() {
@@ -113,11 +89,15 @@ onMounted(loadProjects)
           <el-input v-model="form.name" placeholder="项目名称" />
         </el-form-item>
         <el-form-item label="路径" required>
-          <el-input v-model="form.path" placeholder="点击浏览选择目录" readonly>
-            <template #append>
-              <el-button @click="openBrowseDialog">浏览</el-button>
-            </template>
-          </el-input>
+          <el-input v-model="form.path" placeholder="/Users/admin/code/..." />
+        </el-form-item>
+        <el-form-item>
+          <div class="quick-paths">
+            <span class="quick-label">快捷选择：</span>
+            <el-button v-for="qp in quickPaths" :key="qp.path" size="small" @click="setPath(qp.path)">
+              {{ qp.label }}
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" />
@@ -127,24 +107,6 @@ onMounted(loadProjects)
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="createProject">添加</el-button>
       </template>
-    </el-dialog>
-
-    <!-- 目录浏览对话框 -->
-    <el-dialog v-model="browseDialog" title="选择目录" width="600px">
-      <div class="browse-header">
-        <span>当前目录：</span>
-        <el-input v-model="browsePath" readonly style="flex: 1" />
-      </div>
-      <el-table :data="browseDirs" v-loading="browseLoading" height="400px" stripe
-        @row-click="(row: any) => browseDir(row.path)">
-        <el-table-column prop="name" label="目录名" />
-        <el-table-column prop="path" label="路径" show-overflow-tooltip />
-        <el-table-column width="100">
-          <template #default="{ row }">
-            <el-button v-if="row.name !== '..'" type="primary" text @click.stop="selectPath(row.path)">选择</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -163,10 +125,14 @@ onMounted(loadProjects)
   margin: 0;
   font-size: 24px;
 }
-.browse-header {
+.quick-paths {
   display: flex;
   align-items: center;
-  margin-bottom: 15px;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quick-label {
+  color: #666;
+  font-size: 13px;
 }
 </style>
