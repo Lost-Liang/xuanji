@@ -11,6 +11,27 @@ const showDialog = ref(false)
 const form = ref({ name: '', path: '', description: '' })
 const submitting = ref(false)
 
+// 选择目录
+async function selectFolder() {
+  try {
+    // @ts-ignore - File System Access API
+    const dirHandle = await window.showDirectoryPicker()
+    // 获取目录路径（从 entries 中提取）
+    const entries = []
+    for await (const entry of dirHandle.values()) {
+      entries.push(entry.name)
+    }
+    // 用户需要手动确认完整路径，因为浏览器安全限制无法获取绝对路径
+    // 但我们可以显示目录名作为提示
+    form.value.name = form.value.name || dirHandle.name
+    ElMessage.info(`已选择目录 "${dirHandle.name}"，请确认完整路径`)
+  } catch (e: any) {
+    if (e.name !== 'AbortError') {
+      ElMessage.warning('浏览器不支持目录选择，请手动输入路径')
+    }
+  }
+}
+
 async function loadProjects() {
   loading.value = true
   try {
@@ -78,7 +99,11 @@ onMounted(loadProjects)
           <el-input v-model="form.name" placeholder="项目名称" />
         </el-form-item>
         <el-form-item label="路径" required>
-          <el-input v-model="form.path" placeholder="/path/to/project" />
+          <el-input v-model="form.path" placeholder="/path/to/project">
+            <template #append>
+              <el-button @click="selectFolder">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" />
