@@ -1,0 +1,54 @@
+# 若依研发流程
+#
+# 流程：开发 → 质量审查 → 安全审查 → 最终审查
+# - develop Agent 自己验证编译和测试
+# - 验证失败时 Agent 自己修复，无需单独的 fix 节点
+# - 流程大幅简化，减少状态管理复杂度
+
+version: "1"
+id: ruoyi-dev-flow
+name: 若依研发流程
+description: 开发 → 质量审查 → 安全审查 → 最终审查
+
+nodes:
+  # 1. 开发阶段（Agent 自己验证编译和测试）
+  - id: develop
+    type: agent
+    name: 开发
+    agent_binding_ids: [ruoyi-developer]
+    write_key: results
+
+  # 2. 质量审查
+  - id: quality_review
+    type: agent
+    name: 质量审查
+    agent_binding_ids: [reviewer]
+    write_key: results
+
+  # 3. 安全审查
+  - id: security_review
+    type: agent
+    name: 安全审查
+    agent_binding_ids: [reviewer]
+    write_key: results
+
+  # 4. 最终审查（人审 gate）
+  - id: final_review
+    type: gate
+    name: 最终审查
+
+edges:
+  - from: develop
+    to: quality_review
+
+  - from: quality_review
+    to: security_review
+
+  - from: security_review
+    to: final_review
+
+  - from: final_review
+    to: __end__
+
+start:
+  - develop
