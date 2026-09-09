@@ -154,16 +154,19 @@
 
 ## JSON 输出规范
 
+> **注意**：以下为历史规范，保留用于参考。当与"分析框架"+"输出 JSON 格式"章节冲突时，以"输出 JSON 格式"章节为准。
+
 分析结果必须输出为符合以下 schema 的 JSON 对象。
 
 ### 根对象字段
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
+| spec | object | **是** | 完整规格文档（参见"分析框架"章节的 6 个维度） |
 | epics | array | **是** | 业务模块/史诗列表 |
-| scope | string | 否 | 分析范围说明 |
+| scope | string | 否 | 分析范围说明（已迁移到 spec.scope） |
 | key_requirements | array[string] | 否 | 核心需求列表 |
-| risks | array[string] | 否 | 识别的风险 |
+| risks | array[string] | 否 | 识别的风险（已迁移到 spec.risks） |
 
 ### epics 数组项字段
 
@@ -174,6 +177,8 @@
 | title | string | 否 | 史诗标题 |
 | module | string | 否 | 所属业务模块 |
 | description | string | 否 | 史诗描述 |
+| priority | string | 否 | 优先级（如 P0、P1、P2） |
+| acceptance_criteria | string | 否 | 验收标准 |
 | features | array | 否 | 特性列表（V3.2 新增） |
 
 ### epics[].features 数组项字段
@@ -183,13 +188,17 @@
 | id | string | **是** | 特性临时标识（如 F1、F2，用于后续关联） |
 | title | string | **是** | 特性标题 |
 | description | string | 否 | 特性描述 |
+| module | string | 否 | 所属业务模块 |
+| priority | string | 否 | 优先级（如 P0、P1、P2） |
+| acceptance_criteria | string | 否 | 验收标准 |
 
 ### 严格约束
 
-1. **禁止输出未定义字段**：不要输出 `key`、`features`、`priority` 等 schema 未定义的字段
-2. **id 和 name 必须存在**：每个 epic 必须包含 `id` 和 `name` 字段
-3. **类型必须正确**：数组字段必须是数组，字符串字段必须是字符串
-4. **小需求 Epic = Feature**：当功能数量 = 1 时，Epic 内必须包含 1 个同名 Feature
+1. **id 和 name 必须存在**：每个 epic 必须包含 `id` 和 `name` 字段
+2. **类型必须正确**：数组字段必须是数组，字符串字段必须是字符串
+3. **小需求 Epic = Feature**：当功能数量 = 1 时，Epic 内必须包含 1 个同名 Feature
+4. **spec 对象是必须的**：输出必须包含 `spec` 对象（参见"分析框架"章节的 6 个维度）
+5. **优先遵循"输出 JSON 格式"**：当本节与"输出 JSON 格式"章节冲突时，以"输出 JSON 格式"为准
 
 ### 正确示例（小需求：Epic = Feature）
 
@@ -248,3 +257,54 @@
 ```
 
 **重要**：输出不符合 schema 将导致验证失败，任务会被重试。请确保输出严格遵守上述格式。
+
+## 分析框架（融合 SDD 理念）
+
+按照以下 6 个维度分析需求：
+
+1. **业务目标**：用一句话说清楚这个需求解决什么业务问题
+2. **功能范围**：明确包含什么（in_scope）、不包含什么（out_of_scope）
+3. **数据模型**：核心实体、字段、关系
+4. **API 设计**：关键接口的路径、方法、输入输出
+5. **前端模块**：页面、组件、交互流程
+6. **风险评估**：技术难点、依赖风险
+
+## 输出 JSON 格式
+
+```json
+{
+  "spec": {
+    "business_goal": "...",
+    "scope": { "in_scope": [...], "out_of_scope": [...] },
+    "data_models": [{ "entity": "Plan", "fields": [...], "relations": [...] }],
+    "api_design": [{ "method": "GET", "path": "/api/plans", "desc": "..." }],
+    "ui_design": [{ "page": "计划列表", "components": [...] }],
+    "risks": ["关联模块较多，需注意兼容性"]
+  },
+  "epics": [
+    {
+      "id": "E1",
+      "name": "计划管理",
+      "description": "实现开发计划的完整管理",
+      "module": "plan",
+      "priority": "P0",
+      "acceptance_criteria": "支持完整的 CRUD 和列表查询",
+      "features": [
+        {
+          "id": "F1",
+          "title": "计划列表",
+          "description": "展示计划列表，支持分页和筛选",
+          "module": "plan",
+          "priority": "P0",
+          "acceptance_criteria": "支持分页查询、按名称/状态筛选"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**重要：**
+- `spec` 对象必须包含所有 6 个维度
+- `epics` 数组中的每个 epic 必须包含 `name`, `description`, `module`, `priority`, `acceptance_criteria`
+- `features` 数组中的每个 feature 必须包含 `title`, `description`, `module`, `priority`, `acceptance_criteria`
