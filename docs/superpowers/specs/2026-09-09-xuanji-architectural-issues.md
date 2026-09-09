@@ -379,16 +379,109 @@ const phaseOrder = computed(() => {
 
 ---
 
-## 五、待讨论事项
+## 五、设计决策（2026-09-09 讨论确定）
 
-1. **工作目录形态**：用户直接填本地路径？还是需要 git clone/worktree 管理？
-2. **项目管理 UI**：是否需要"项目注册"入口？还是创建需求时直接填路径？
-3. **.claude/ 配置**：系统预置 vs 用户自定义如何合并展示？
-4. **loop_counter 方案**：边级别 vs 节点级别？哪种改动更小？
+### 决策 1：工作目录管理
+
+**设计**：用户创建需求时通过文件夹选择器指定工作目录。
+
+```
+创建需求 → 选择文件夹 → requirements.target_repo_path
+                              ↓
+                         tasks.target_repo_path
+                              ↓
+                    agent-node → workDir = task.targetRepoPath
+```
 
 ---
 
-## 六、涉及文件
+### 决策 2：三层分离架构
+
+| 层 | 存储位置 | 说明 |
+|---|---------|------|
+| **第 1 层：璇玑平台** | DB | Agent、Workflow、系统预置 Skill |
+| **第 2 层：目标项目** | `.claude/` | 用户自定义 Skill |
+| **第 3 层：Agent Runtime** | runLocal({ workDir }) | 在目标项目目录执行 |
+
+**各类型的存储**：
+
+| 类型 | 加载方 | 存储 |
+|------|--------|------|
+| Agent | 璇玑 | DB（agent_bindings 表） |
+| Workflow | 璇玑 | DB（graph_definitions 表） |
+| Skill（系统预置） | 璇玑 | DB + 执行时复制到 `.claude/` |
+| Skill（用户自定义） | Claude Code | 工作目录 `.claude/skills/` |
+
+---
+
+### 决策 3：上下文传递设计
+
+**原则**：
+- 只有需要显式输入的节点才配置 `inputs`
+- 每个修复节点只从一个来源读取
+
+**YAML Schema 扩展**：
+```yaml
+inputs:
+  from: <node_id>    # 从哪个节点读取输出
+```
+
+**修正后的流程**：
+```
+develop → compile_check ─(fail)→ compile_fix ─→ compile_check (loop)
+                │
+                ↓ (pass)
+           test_check ─(fail)→ bug_fix ─→ compile_check (loop)
+                │
+                ↓ (pass)
+           quality_review → security_review → final_review
+```
+
+**关键改动**：
+1. 新增 `compile_fix` 节点，专门处理编译错误
+2. `bug_fix` 专门处理测试失败
+3. 每个修复节点只需一个 `from`，上下文清晰
+4. 修复后回到 `compile_check` 重新验证整个流程
+
+**YAML 示例**：
+```yaml
+- id: compile_fix
+  type: agent
+  agent_binding_ids: [compile-fixer]
+  inputs:
+    from: compile_check
+
+- id: bug_fix
+  type: agent
+  agent_binding_ids: [bug-fixer]
+  inputs:
+    from: test_check
+```
+
+---
+
+### 决策 4：loop_counter 问题解决
+
+通过流程拆分自然解决：
+- `compile_fix` 只处理 `compile_check` 的循环
+- `bug_fix` 只处理 `test_check` 的循环
+- 不再共享计数器，`FIX_LOOP_KEY` 映射正确
+
+---
+
+## 六、待讨论事项
+
+1. ~~工作目录形态~~ ✅ 已确定：本地路径 + 文件夹选择器
+2. ~~系统预置 vs 用户自定义~~ ✅ 已确定：三层分离
+3. ~~上下文传递设计~~ ✅ 已确定：YAML inputs 声明 + 流程拆分
+4. ~~loop_counter 修复~~ ✅ 通过流程拆分自然解决
+5. **command 节点命令动态化** — 不同项目构建命令不同
+6. **前端阶段动态化** — 从工作流定义读取节点列表
+7. **项目管理 UI** — 是否需要项目注册功能
+
+---
+
+## 七、参考
 
 | 文件 | 问题关联 |
 |------|----------|
