@@ -2,8 +2,8 @@
   <div class="app">
     <aside class="side">
       <div class="brand">
-        <div class="mark"></div>
-        <div class="name">璇玑<span class="dot-sep">·</span>CONSOLE</div>
+        <img src="/favicon.svg" class="logo-icon" alt="璇玑">
+        <div class="name">璇玑</div>
       </div>
       <nav class="nav">
         <router-link
@@ -197,20 +197,10 @@ onUnmounted(() => clearInterval(timer))
   padding: 0 18px;
   border-bottom: 1px solid var(--border);
 }
-.brand .mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  background: linear-gradient(135deg, var(--accent), var(--ai));
-  position: relative;
+.brand .logo-icon {
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-}
-.brand .mark::after {
-  content: '';
-  position: absolute;
-  inset: 5px;
-  background: var(--panel);
-  border-radius: 2px;
 }
 .brand .name {
   font-family: var(--font-ui);
@@ -218,10 +208,6 @@ onUnmounted(() => clearInterval(timer))
   font-size: 15px;
   letter-spacing: .02em;
   color: var(--text);
-}
-.brand .dot-sep {
-  color: var(--accent);
-  margin: 0 1px;
 }
 
 .nav {

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50" width="50" height="50">
+    <defs>
+        <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="0.8" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+    </defs>
+
+    <!-- 外层：子午圈 -->
+    <circle cx="25" cy="25" r="20" fill="none" stroke="#00D4FF" stroke-width="1.5" opacity="0.4"/>
+
+    <!-- 外层蓝色星星：沿大圆快速旋转（4秒一圈） -->
+    <g>
+        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite" />
+        <circle cx="25" cy="5" r="1.5" fill="#FFFFFF" />
+        <circle cx="25" cy="5" r="3.5" fill="#00D4FF" opacity="0.6" filter="url(#glow)"/>
+    </g>
+
+    <!-- 中层：水平椭圆环（静态） -->
+    <ellipse cx="25" cy="25" rx="16" ry="6" fill="none" stroke="#FFD700" stroke-width="1.5" opacity="0.5"/>
+
+    <!-- 中层：斜着的椭圆环（保留 transform 旋转，形状圆滑） -->
+    <ellipse cx="25" cy="25" rx="16" ry="6" fill="none" stroke="#E6A800" stroke-width="1.5" opacity="0.75" transform="rotate(60 25 25)"/>
+
+    <!-- 中层黄色星星：路径内联，避免 mpath 引用抖动 -->
+    <g>
+        <animateMotion dur="6s" repeatCount="indefinite" calcMode="linear"
+            path="M 41 25
+                  C 41 28.31 33.84 31 25 31
+                  C 16.16 31 9 28.31 9 25
+                  C 9 21.69 16.16 19 25 19
+                  C 33.84 19 41 21.69 41 25 Z" />
+        <circle cx="0" cy="0" r="1.5" fill="#FFFFFF" />
+        <circle cx="0" cy="0" r="3.5" fill="#FFD700" />
+    </g>
+
+    <!-- 内层：四游仪环 + 窥管 -->
+    <g>
+        <circle cx="25" cy="25" r="10" fill="none" stroke="#FF6B6B" stroke-width="1.2" opacity="0.7"/>
+        <rect x="21" y="21" width="8" height="8" fill="none" stroke="#FFFFFF" stroke-width="1.2"/>
+        <line x1="22" y1="25" x2="28" y2="25" stroke="#FFFFFF" stroke-width="0.6"/>
+        <line x1="25" y1="22" x2="25" y2="28" stroke="#FFFFFF" stroke-width="0.6"/>
+    </g>
+
+    <!-- 中心星点 -->
+    <circle cx="25" cy="25" r="2" fill="#FFFFFF" filter="url(#glow)">
+        <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />
+    </circle>
+</svg>

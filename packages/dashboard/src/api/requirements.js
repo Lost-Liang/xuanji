@@ -49,6 +49,11 @@ export const api = {
         const r = await fetch(`${base}/${id}/pause`, { method: 'POST' });
         return r.json();
     },
+    // Requirement 级恢复
+    async resumeRequirement(id) {
+        const r = await fetch(`${base}/${id}/resume`, { method: 'POST' });
+        return r.json();
+    },
     // Epic 级操作
     async executeEpic(epicId) {
         const r = await fetch(`${base}/epics/${epicId}/execute`, { method: 'POST' });
@@ -56,6 +61,10 @@ export const api = {
     },
     async pauseEpic(epicId) {
         const r = await fetch(`${base}/epics/${epicId}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    async resumeEpic(epicId) {
+        const r = await fetch(`${base}/epics/${epicId}/resume`, { method: 'POST' });
         return r.json();
     },
     async deleteEpic(epicId) {
@@ -71,6 +80,10 @@ export const api = {
         const r = await fetch(`${base}/features/${featureId}/pause`, { method: 'POST' });
         return r.json();
     },
+    async resumeFeature(featureId) {
+        const r = await fetch(`${base}/features/${featureId}/resume`, { method: 'POST' });
+        return r.json();
+    },
     async deleteFeature(featureId) {
         const r = await fetch(`${base}/features/${featureId}`, { method: 'DELETE' });
         return r.json();
@@ -82,6 +95,10 @@ export const api = {
     },
     async pauseUserStory(userStoryId) {
         const r = await fetch(`${base}/user-stories/${userStoryId}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    async resumeUserStory(userStoryId) {
+        const r = await fetch(`${base}/user-stories/${userStoryId}/resume`, { method: 'POST' });
         return r.json();
     },
     async deleteUserStory(userStoryId) {
