@@ -250,7 +250,7 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
         ...{ class: "created-at" },
     });
-    (new Date(req.created_at).toLocaleDateString());
+    (req.created_at ? new Date(req.created_at).toLocaleDateString() : '');
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ onClick: () => { } },
         ...{ class: "actions" },
@@ -376,7 +376,7 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
             onClick: (...[$event]) => {
                 if (!(req.execution_id))
                     return;
-                __VLS_ctx.router.push('/canvas');
+                __VLS_ctx.router.push(`/canvas?execution_id=${req.execution_id}`);
             }
         };
         __VLS_35.slots.default;

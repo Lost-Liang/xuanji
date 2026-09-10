@@ -12,17 +12,16 @@ const loading = ref(false);
 const newInput = ref('');
 const creating = ref(false);
 const searchText = ref('');
-// 项目选择
+// 项目选择（必选）
 const projects = ref([]);
 const selectedProjectId = ref('');
-const customPath = ref('');
 // 计算实际使用的路径
 const targetRepoPath = computed(() => {
     if (selectedProjectId.value) {
         const p = projects.value.find(x => x.id === selectedProjectId.value);
         return p?.path || '';
     }
-    return customPath.value.trim();
+    return '';
 });
 // 工作流选择
 const workflows = ref([]);
@@ -89,6 +88,10 @@ async function createAndExecute() {
     const text = newInput.value.trim();
     if (!text)
         return;
+    if (!selectedProjectId.value) {
+        ElMessage.warning('请选择项目');
+        return;
+    }
     creating.value = true;
     try {
         const reqId = `req-${Date.now()}`;
@@ -111,7 +114,6 @@ async function createAndExecute() {
         await api.execute(reqId, text);
         newInput.value = '';
         selectedProjectId.value = '';
-        customPath.value = '';
         ElMessage.success('已创建并执行');
         loadList();
     }
@@ -131,8 +133,6 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['create-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['project-select']} */ ;
 /** @type {__VLS_StyleScopedClasses['project-select']} */ ;
-/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
-/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['stat-card']} */ ;
@@ -192,7 +192,10 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.textarea, __VLS_intrinsicEleme
     rows: "2",
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: "workdir-input-row" },
+    ...{ class: "project-select-row" },
+});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+    ...{ class: "project-label" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.select, __VLS_intrinsicElements.select)({
     value: (__VLS_ctx.selectedProjectId),
@@ -201,6 +204,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.select, __VLS_intrinsicElement
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
     value: "",
+    disabled: true,
 });
 for (const [p] of __VLS_getVForSourceType((__VLS_ctx.projects))) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
@@ -209,23 +213,13 @@ for (const [p] of __VLS_getVForSourceType((__VLS_ctx.projects))) {
     });
     (p.name);
 }
-__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-    ...{ class: "input-separator" },
-});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
-    value: (__VLS_ctx.customPath),
-    type: "text",
-    ...{ class: "workdir-input" },
-    placeholder: "手动输入路径",
-    disabled: (__VLS_ctx.creating || !!__VLS_ctx.selectedProjectId),
-});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "create-footer" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
     ...{ onClick: (__VLS_ctx.createAndExecute) },
     ...{ class: "create-btn" },
-    disabled: (!__VLS_ctx.newInput.trim()),
+    disabled: (!__VLS_ctx.newInput.trim() || !__VLS_ctx.selectedProjectId),
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
     viewBox: "0 0 24 24",
@@ -369,10 +363,9 @@ var __VLS_2;
 /** @type {__VLS_StyleScopedClasses['create-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['workflow-select']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-input']} */ ;
-/** @type {__VLS_StyleScopedClasses['workdir-input-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['project-select-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['project-label']} */ ;
 /** @type {__VLS_StyleScopedClasses['project-select']} */ ;
-/** @type {__VLS_StyleScopedClasses['input-separator']} */ ;
-/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-footer']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['dashboard']} */ ;
@@ -412,7 +405,6 @@ const __VLS_self = (await import('vue')).defineComponent({
             searchText: searchText,
             projects: projects,
             selectedProjectId: selectedProjectId,
-            customPath: customPath,
             workflows: workflows,
             selectedWorkflowId: selectedWorkflowId,
             summary: summary,

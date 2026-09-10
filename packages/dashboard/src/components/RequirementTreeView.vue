@@ -229,7 +229,7 @@ function hasDraftTasks(tree: RequirementTree): boolean {
           <el-button v-if="req.execution_status === 'running' || req.execution_status === 'pending'" size="small" type="warning" @click="stopRequirement(req.id)">停止</el-button>
           <el-button v-if="treeData.get(req.id) && hasDraftTasks(treeData.get(req.id)!)" size="small" type="primary" @click="confirmAllTasks(req.id)">确认任务</el-button>
           <el-button size="small" @click="openLogDrawer(req.id)">日志</el-button>
-          <el-button v-if="req.execution_id" size="small" @click="router.push('/canvas')">画布</el-button>
+          <el-button v-if="req.execution_id" size="small" @click="router.push(`/canvas?execution_id=${req.execution_id}`)">画布</el-button>
           <el-button size="small" type="danger" @click="deleteRequirement(req.id)">删除</el-button>
         </div>
       </div>
