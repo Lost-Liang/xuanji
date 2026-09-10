@@ -218,7 +218,9 @@ export function buildReturn(
   const session_refs = [{ node_id: nodeId, session_id: sessionId }];
 
   if (writeKey === 'spec') {
-    return { spec: output, session_refs };
+    // 从 agent 输出中解析 JSON（requirement-analyst 的输出包含 markdown + JSON）
+    const parsed = extractJsonFromOutput(output);
+    return { spec: parsed || output, session_refs };
   }
   if (writeKey === 'tasks') {
     // 从 agent 输出中解析任务数据

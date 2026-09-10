@@ -393,13 +393,40 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
 /**
  * 安全 JSON 解析辅助函数
  * 解析失败返回 null，不抛出异常
+ * 支持从 markdown 代码块中提取 JSON（如 ```json ... ```）
  */
 export function safeJsonParse(str: string): any {
+  if (!str || typeof str !== 'string') return null;
+
+  // 尝试直接解析
   try {
     return JSON.parse(str);
   } catch {
-    return null;
+    // 继续尝试从 markdown 提取
   }
+
+  // 尝试从 markdown 代码块中提取 JSON
+  const jsonBlockMatch = str.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (jsonBlockMatch && jsonBlockMatch[1]) {
+    try {
+      return JSON.parse(jsonBlockMatch[1].trim());
+    } catch {
+      // 提取失败，继续尝试其他方式
+    }
+  }
+
+  // 尝试找到第一个 { 和最后一个 } 之间的内容
+  const firstBrace = str.indexOf('{');
+  const lastBrace = str.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(str.substring(firstBrace, lastBrace + 1));
+    } catch {
+      // 解析失败
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -458,9 +485,10 @@ async function onFlowComplete(
 
     if (tasks.length > 0) {
       console.log(`[graph-runner] 创建任务树，收到 ${tasks.length} 个解析结果`);
+      console.log(`[graph-runner] spec length=${spec.length}, spec preview: ${typeof spec === 'string' ? spec.substring(0, 100) : 'object'}`);
 
-      // 解析任务树格式并创建记录
-      await createTaskTreeFromBreakdown(requirementId, executionId, tasks);
+      // 解析任务树格式并创建记录（传入 spec，从中读取 epics）
+      await createTaskTreeFromBreakdown(requirementId, executionId, tasks, spec);
     } else {
       console.warn(`[graph-runner] 没有任务数据，尝试从 phase_outputs 读取`);
       // 回退：从 phase_outputs 读取
@@ -524,12 +552,23 @@ async function createTaskTreeFromPhaseOutputs(
 export async function createTaskTreeFromParsed(
   requirement: any,
   parsed: any,
+  specData?: any,  // 新增：接收 spec（requirement-analyst 的输出）
 ): Promise<void> {
   const { user_stories = [], tasks = [] } = parsed;
 
   // 1. 提取并创建 Epics
   const epicMap = new Map<string, string>(); // 临时ID -> 真实ID
   const epics = new Map<string, any>();
+
+  // 优先从 specData.epics[] 提取 epics（requirement-analyst 的输出，有完整数据）
+  if (specData?.epics && Array.isArray(specData.epics)) {
+    for (const epicData of specData.epics) {
+      if (epicData.id && !epics.has(epicData.id)) {
+        epics.set(epicData.id, epicData);
+      }
+    }
+    console.log(`[createTaskTreeFromParsed] 从 spec 读取了 ${epics.size} 个 epics`);
+  }
 
   // 从 parsed.epics[] 提取 epics（优先，有完整数据）
   if (parsed.epics && Array.isArray(parsed.epics)) {
@@ -783,14 +822,25 @@ async function createTaskTreeFromBreakdown(
   requirementId: string,
   requirementExecutionId: string,
   tasksData: any[],
+  spec?: string | any,  // 新增：接收 spec（requirement-analyst 的输出）
 ): Promise<void> {
   const requirement = await db.requirements.findUnique({ where: { id: requirementId } });
   if (!requirement) return;
 
+  // 解析 spec（如果是字符串）
+  let specData: any = null;
+  if (spec) {
+    specData = typeof spec === 'string' ? safeJsonParse(spec) : spec;
+    console.log(`[createTaskTreeFromBreakdown] spec 解析结果: ${specData ? '成功' : '失败'}`);
+    if (specData?.epics) {
+      console.log(`[createTaskTreeFromBreakdown] spec 中有 ${specData.epics.length} 个 epics`);
+    }
+  }
+
   // tasksData 现在是 [{ user_stories: [...], tasks: [...] }]
   for (const data of tasksData) {
     if (data.user_stories || data.tasks) {
-      await createTaskTreeFromParsed(requirement, data);
+      await createTaskTreeFromParsed(requirement, data, specData);
     }
   }
 }
