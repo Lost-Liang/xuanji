@@ -204,6 +204,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',  // 显式设置为 pending，才能被 acquireLease 获取
       });
 
       expect(e.executionId).toBeTruthy();
@@ -228,6 +229,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -254,6 +256,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -281,6 +284,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -307,6 +311,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -338,6 +343,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -371,6 +377,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -397,6 +404,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -442,6 +450,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -474,6 +483,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: t.id,
         targetProjectId: 'xuanji-e2e-test',
         targetRepoPath: '/tmp/xuanji-e2e-test',
+        status: 'pending',
       });
       testExecutionIds.push(e.executionId);
 
@@ -584,6 +594,7 @@ describeIf('璇玑 V4 E2E 集成测试', () => {
         taskId: task.id,
         targetProjectId: 'xuanji-e2e-integration',
         targetRepoPath: '/tmp/xuanji-e2e-integration',
+        status: 'pending',
       });
       cleanupIds.executions.push(execution.executionId);
       expect(execution.status).toBe('pending');

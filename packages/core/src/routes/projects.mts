@@ -35,7 +35,7 @@ function toResponse(p: any) {
  */
 projectsRouter.get('/', async (_req, res) => {
   try {
-    const projects = await db.project.findMany({
+    const projects = await db.projects.findMany({
       orderBy: { updatedAt: 'desc' },
     });
     res.json(projects.map(toResponse));
@@ -57,8 +57,14 @@ projectsRouter.post('/', async (req, res) => {
       return;
     }
 
-    const project = await db.project.create({
-      data: { name, path, description },
+    const project = await db.projects.create({
+      data: {
+        id: crypto.randomUUID(),
+        name,
+        path,
+        description,
+        updatedAt: new Date(),
+      },
     });
 
     res.status(201).json(toResponse(project));
@@ -78,7 +84,7 @@ projectsRouter.post('/', async (req, res) => {
  */
 projectsRouter.delete('/:id', async (req, res) => {
   try {
-    await db.project.delete({
+    await db.projects.delete({
       where: { id: req.params.id },
     });
     res.json({ ok: true });

@@ -1,13 +1,14 @@
 /// <reference types="../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { Odometer, Document, List, Monitor, Setting, Collection, Operation, ChatDotRound } from '@element-plus/icons-vue';
+import { Odometer, Document, List, Monitor, Setting, Collection, Operation, ChatDotRound, Folder } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import LoginDialog from './components/LoginDialog.vue';
 import { currentUser, isLoggedIn, logout, checkAuth } from './stores/user';
 const route = useRoute();
 const menus = [
     { path: '/canvas', match: '/canvas', label: '流程画布', icon: Odometer },
+    { path: '/projects', match: '/projects', label: '项目管理', icon: Folder },
     { path: '/requirements', match: '/requirements', label: '需求管理', icon: Document },
     { path: '/tasks', match: '/tasks', label: '任务列表', icon: List },
     { path: '/executions', match: '/executions', label: '执行概览', icon: Monitor },
@@ -27,6 +28,7 @@ const activeMenu = computed(() => {
 });
 const titleMap = {
     '/canvas': '流程画布',
+    '/projects': '项目管理',
     '/requirements': '需求管理',
     '/tasks': '任务列表',
     '/executions': '执行概览',

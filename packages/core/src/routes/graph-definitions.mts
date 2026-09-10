@@ -55,8 +55,8 @@ graphDefinitionsRouter.get('/', async (_req, res) => {
   const presets = await scanPresetGraphs();
 
   // user（DB）
-  const userRows = await db.graphDefinition.findMany({
-    orderBy: { updatedAt: 'desc' },
+  const userRows = await db.graph_definitions.findMany({
+    orderBy: { updated_at: 'desc' },
   });
 
   const user = userRows.map((row) => ({
@@ -94,7 +94,7 @@ graphDefinitionsRouter.get('/:id', async (req, res) => {
   }
 
   // 再查 user（DB）
-  const row = await db.graphDefinition.findUnique({
+  const row = await db.graph_definitions.findUnique({
     where: { id },
   });
 
@@ -106,11 +106,11 @@ graphDefinitionsRouter.get('/:id', async (req, res) => {
     id: row.id,
     name: row.name,
     description: row.description,
-    plugin_id: row.pluginId,
-    definition_json: row.definitionJson,
+    plugin_id: row.plugin_id,
+    definition_json: row.definition_json,
     type: 'user',
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
   });
 });
 
@@ -128,13 +128,14 @@ graphDefinitionsRouter.post('/', async (req, res) => {
     return res.status(409).json({ error: 'Cannot overwrite preset graph' });
   }
 
-  const row = await db.graphDefinition.create({
+  const row = await db.graph_definitions.create({
     data: {
       id,
       name,
       description: description || null,
-      pluginId: plugin_id || null,
-      definitionJson: definition_json,
+      plugin_id: plugin_id || null,
+      definition_json: definition_json,
+      updated_at: new Date(),
     },
   });
 
@@ -142,11 +143,11 @@ graphDefinitionsRouter.post('/', async (req, res) => {
     id: row.id,
     name: row.name,
     description: row.description,
-    plugin_id: row.pluginId,
-    definition_json: row.definitionJson,
+    plugin_id: row.plugin_id,
+    definition_json: row.definition_json,
     type: 'user',
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
   });
 });
 
@@ -161,13 +162,13 @@ graphDefinitionsRouter.put('/:id', async (req, res) => {
     return res.status(403).json({ error: 'Cannot modify preset graph' });
   }
 
-  const row = await db.graphDefinition.update({
+  const row = await db.graph_definitions.update({
     where: { id },
     data: {
       name,
       description: description || null,
-      pluginId: plugin_id || null,
-      definitionJson: definition_json,
+      plugin_id: plugin_id || null,
+      definition_json: definition_json,
     },
   });
 
@@ -175,11 +176,11 @@ graphDefinitionsRouter.put('/:id', async (req, res) => {
     id: row.id,
     name: row.name,
     description: row.description,
-    plugin_id: row.pluginId,
-    definition_json: row.definitionJson,
+    plugin_id: row.plugin_id,
+    definition_json: row.definition_json,
     type: 'user',
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
   });
 });
 
@@ -193,7 +194,7 @@ graphDefinitionsRouter.delete('/:id', async (req, res) => {
     return res.status(403).json({ error: 'Cannot delete preset graph' });
   }
 
-  await db.graphDefinition.delete({
+  await db.graph_definitions.delete({
     where: { id },
   });
 

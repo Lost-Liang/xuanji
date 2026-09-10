@@ -188,20 +188,79 @@ function safeJsonParse(str: string): any {
  * 根据 context 字段从 state 中构建 agent prompt 文本
  *
  * - context='spec'：读取 state.spec（JSON 字符串或对象），格式化为需求规格文本
+ * - context='task'：读取 state.task，格式化完整的任务详情（title, description, acceptanceCriteria, acceptanceSteps）
  * - context='input'（默认）：读取 state.input，回退到 state.task.title / state.task.description
  *
  * @param state LangGraph 状态
- * @param contextKey context 字段值（'spec' | 'input' | 其他）
+ * @param contextKey context 字段值（'spec' | 'task' | 'input' | 其他）
  * @returns prompt 文本
  */
 export function buildAgentContext(state: any, contextKey: string): string {
+  // context='task'：格式化完整的任务详情
+  if (contextKey === 'task' && state.task) {
+    const task = state.task
+    const parts: string[] = []
+
+    parts.push(`# 任务：${task.title || '未命名任务'}`)
+
+    if (task.description) {
+      parts.push(`\n## 任务描述\n${task.description}`)
+    }
+
+    if (task.acceptance_criteria || task.acceptanceCriteria) {
+      parts.push(`\n## 验收标准\n${task.acceptance_criteria || task.acceptanceCriteria}`)
+    }
+
+    if (task.acceptance_steps || task.acceptanceSteps) {
+      const steps = task.acceptance_steps || task.acceptanceSteps
+      if (Array.isArray(steps) && steps.length > 0) {
+        parts.push(`\n## BDD 验收步骤`)
+        steps.forEach((step: string, i: number) => {
+          parts.push(`${i + 1}. ${step}`)
+        })
+      } else if (typeof steps === 'string') {
+        parts.push(`\n## BDD 验收步骤\n${steps}`)
+      }
+    }
+
+    if (task.target_repo_path || task.targetRepoPath) {
+      parts.push(`\n## 工作目录\n${task.target_repo_path || task.targetRepoPath}`)
+    }
+
+    if (task.task_type || task.taskType) {
+      parts.push(`\n## 任务类型\n${task.task_type || task.taskType}`)
+    }
+
+    return parts.join('\n')
+  }
+
   if (contextKey === 'spec') {
     const specData = typeof state.spec === 'string' ? safeJsonParse(state.spec) : state.spec
     if (specData) {
       return `基于以下需求规格进行任务拆解：\n\n${JSON.stringify(specData, null, 2)}`
     }
   }
-  return state.input ?? state.task?.title ?? state.task?.description ?? ''
+
+  // 默认：如果有 task 对象，也包含基本信息
+  if (state.task) {
+    const task = state.task
+    let context = state.input ?? task.title ?? task.description ?? ''
+
+    // 如果有验收标准或步骤，追加到上下文
+    if (task.acceptance_criteria || task.acceptanceCriteria) {
+      context += `\n\n验收标准：${task.acceptance_criteria || task.acceptanceCriteria}`
+    }
+    if (task.acceptance_steps || task.acceptanceSteps) {
+      const steps = task.acceptance_steps || task.acceptanceSteps
+      if (Array.isArray(steps) && steps.length > 0) {
+        context += `\n\n验收步骤：\n${steps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
+      }
+    }
+
+    return context
+  }
+
+  return state.input ?? ''
 }
 
 // ─── 节点 type → action 工厂 ────────────────────────────────────────────────────

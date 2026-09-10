@@ -185,7 +185,7 @@ export async function pollForAnswer(
   const pollInterval = 1000; // 1秒轮询间隔
 
   while (Date.now() - startTime < timeoutMs) {
-    const question = await db.inboxQuestion.findUnique({
+    const question = await db.inbox_questions.findUnique({
       where: { id: questionId },
       select: { status: true, answer: true },
     });

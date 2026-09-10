@@ -38,10 +38,10 @@ export function makeCommandNode(opts: {
 
     if (execId) {
       // 查找已有的 phase instance（幂等续跑）
-      const existing = await db.phaseInstance.findFirst({
+      const existing = await db.phase_instances.findFirst({
         where: {
-          executionId: execId,
-          phaseId: nodeId,
+          execution_id: execId,
+          phase_id: nodeId,
           status: { in: ['running', 'completed'] },
         },
         orderBy: { attempt: 'desc' },
@@ -52,15 +52,15 @@ export function makeCommandNode(opts: {
         phaseInstance = { id: existing.id }
       } else {
         // 创建新的 phase instance
-        const newPhase = await db.phaseInstance.create({
+        const newPhase = await db.phase_instances.create({
           data: {
             id: randomUUID(),
-            executionId: execId,
-            phaseId: nodeId,
-            taskId: _state?.task?.id ?? null,
+            execution_id: execId,
+            phase_id: nodeId,
+            task_id: _state?.task?.id ?? null,
             attempt: (existing?.attempt ?? 0) + 1,
             status: 'running',
-            startedAt: new Date(),
+            started_at: new Date(),
           },
         })
         phaseInstance = { id: newPhase.id }
@@ -78,12 +78,12 @@ export function makeCommandNode(opts: {
 
     // ── 更新 PhaseInstance 状态 ──────────────────────────────────────────────
     if (phaseInstance) {
-      await db.phaseInstance.update({
+      await db.phase_instances.update({
         where: { id: phaseInstance.id },
         data: {
           status: compile_result.ok ? 'completed' : 'failed',
-          completedAt: new Date(),
-          resultSummary: JSON.stringify(compile_result),
+          completed_at: new Date(),
+          result_summary: JSON.stringify(compile_result),
         },
       })
     }

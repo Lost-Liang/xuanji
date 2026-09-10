@@ -77,23 +77,23 @@ async function scheduleNode(
   // 查找待执行的 execution：
   // 1. status='pending' 且 retryAt 为空或已过期（首次执行）
   // 2. status='rate_limited' 且 retryAt 已过期（限流重试到期）
-  const pending = await db.taskExecution.findFirst({
+  const pending = await db.task_executions.findFirst({
     where: {
       OR: [
         {
           status: 'pending',
           OR: [
-            { retryAt: null },
-            { retryAt: { lte: new Date() } },
+            { retry_at: null },
+            { retry_at: { lte: new Date() } },
           ],
         },
         {
           status: 'rate_limited',
-          retryAt: { lte: new Date() },
+          retry_at: { lte: new Date() },
         },
       ],
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { created_at: 'asc' },
   });
 
   if (!pending) {
@@ -103,8 +103,8 @@ async function scheduleNode(
 
   // 找到待执行任务，分发给 worker
   return {
-    executionId: pending.executionId,
-    taskId: pending.taskId,
+    executionId: pending.execution_id,
+    taskId: pending.task_id,
     status: 'dispatched',
   };
 }

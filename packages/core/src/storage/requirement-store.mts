@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.mjs';
-import type { Requirement } from '@prisma/client';
+import type { requirements } from '@prisma/client';
 
 export const requirementStore = {
   /**
@@ -14,11 +14,15 @@ export const requirementStore = {
     description?: string;
     targetProjectId: string;
     targetRepoPath: string;
-  }): Promise<Requirement> {
-    return db.requirement.create({
+  }): Promise<requirements> {
+    return db.requirements.create({
       data: {
         id: randomUUID(),
-        ...data,
+        title: data.title,
+        description: data.description,
+        target_project_id: data.targetProjectId,
+        target_repo_path: data.targetRepoPath,
+        status: 'pending',
       },
     });
   },
@@ -26,24 +30,24 @@ export const requirementStore = {
   /**
    * 根据 ID 查询需求
    */
-  async getById(id: string): Promise<Requirement | null> {
-    return db.requirement.findUnique({ where: { id } });
+  async getById(id: string): Promise<requirements | null> {
+    return db.requirements.findUnique({ where: { id } });
   },
 
   /**
    * 列出所有需求（按创建时间降序）
    */
-  async list(): Promise<Requirement[]> {
-    return db.requirement.findMany({
-      orderBy: { createdAt: 'desc' },
+  async list(): Promise<requirements[]> {
+    return db.requirements.findMany({
+      orderBy: { created_at: 'desc' },
     });
   },
 
   /**
    * 更新需求状态
    */
-  async updateStatus(id: string, status: string): Promise<Requirement> {
-    return db.requirement.update({
+  async updateStatus(id: string, status: string): Promise<requirements> {
+    return db.requirements.update({
       where: { id },
       data: { status },
     });

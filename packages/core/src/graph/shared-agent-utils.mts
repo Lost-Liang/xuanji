@@ -111,11 +111,11 @@ export async function handleInboxAsk(
 
   // 保存问题到 inbox_questions 表
   // Dashboard 通过 GET /api/inbox/pending 查询 status='pending' 的记录
-  await db.inboxQuestion.create({
+  await db.inbox_questions.create({
     data: {
       id: questionId,
-      executionId: executionId ?? null,
-      sessionId: sessionId ?? null,
+      execution_id: executionId ?? null,
+      session_id: sessionId ?? null,
       body: question.body,
       choices: question.choices ? question.choices : Prisma.JsonNull,
       status: 'pending',
@@ -124,9 +124,9 @@ export async function handleInboxAsk(
 
   // 保存对话事件（用于 Dashboard 对话历史显示）
   await conversationStore.saveEvent({
-    executionId,
-    sessionId: sessionId ?? undefined,
-    eventType: 'inbox_ask',
+    execution_id: executionId,
+    session_id: sessionId ?? undefined,
+    event_type: 'inbox_ask',
     payload: {
       questionId,
       body: question.body,
@@ -142,9 +142,9 @@ export async function handleInboxAsk(
 
   // 保存回答事件
   await conversationStore.saveEvent({
-    executionId,
-    sessionId: sessionId ?? undefined,
-    eventType: 'inbox_answer',
+    execution_id: executionId,
+    session_id: sessionId ?? undefined,
+    event_type: 'inbox_answer',
     payload: {
       questionId,
       answer,

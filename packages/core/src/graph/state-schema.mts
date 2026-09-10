@@ -6,6 +6,7 @@ export const TopState = Annotation.Root({
   input: Annotation<string>(),                              // 一句话需求
   spec: Annotation<string>(),                               // 需求规格
   tasks: Annotation<any[]>(),                               // 任务列表
+  task: Annotation<any>(),                                  // 当前任务（用于 ruoyi-dev-flow 等单任务流程）
   results: Annotation<any[]>({ reducer: (a, b) => a.concat(b), default: () => [] }),  // 子图回传合并
   review_decisions: Annotation<any[]>({ reducer: (a, b) => a.concat(b), default: () => [] }),
   loop_counters: Annotation<Record<string, number>>({ reducer: (a, b) => ({ ...a, ...b }), default: () => ({}) }),

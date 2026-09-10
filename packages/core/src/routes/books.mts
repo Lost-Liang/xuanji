@@ -48,7 +48,7 @@ export async function createBookHandler(req: Request, res: Response): Promise<vo
       author,
       publisher,
       category,
-      stockQuantity: stockQuantity ?? 0,
+      stock_quantity: stockQuantity ?? 0,
     });
 
     res.status(201).json(book);

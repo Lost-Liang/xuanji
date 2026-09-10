@@ -55,16 +55,16 @@ conversationsRouter.post('/session/:sessionId/followup', async (req, res) => {
     const result = await runLocal({
       provider: (execution.provider as 'claude' | 'codex') || 'claude',
       prompt: '',
-      workDir: execution.targetRepoPath,
+      workDir: execution.target_repo_path,
       resume: { providerConversationId: sessionId, input: message },
       // 执行实例 ID —— 用于 MCP 配置（如果需要 inbox_ask）
       executionId,
       onEvent: async (event: AdapterEvent) => {
         // 将每个适配器事件持久化到对话事件流
         await conversationStore.saveEvent({
-          executionId,
-          sessionId,
-          eventType: event.type,
+          execution_id: executionId,
+          session_id: sessionId,
+          event_type: event.type,
           payload: JSON.parse(JSON.stringify(event)) as any,
         });
       },

@@ -17,6 +17,7 @@ const router = useRouter();
 const taskId = computed(() => route.params.id);
 const detail = ref(null);
 const loading = ref(true);
+const workflow = ref(null);
 // 折叠状态
 const phaseOutputsExpanded = ref(false);
 const breakdownExpanded = ref(false);
@@ -52,6 +53,9 @@ const parsedBreakdown = computed(() => {
     return { kind: 'text', text: c };
 });
 const title = computed(() => {
+    // 优先使用 API 返回的 title 字段
+    if (detail.value?.title)
+        return detail.value.title;
     const p = parsedBreakdown.value;
     if (!p)
         return '(无标题)';
@@ -122,38 +126,42 @@ function formatDuration(start, end) {
     return min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
 }
 // 阶段定义（按典型执行顺序）
-const phaseOrder = ['breakdown', 'planning', 'code', 'test', 'review', 'deploy', 'archive'];
+// 支持两种命名体系：旧版（breakdown/planning/code/test/review/deploy/archive）
+// 和新版工作流（develop/compile_check/test_check/quality_review/security_review/final_review）
+const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review'];
 const phaseStatuses = computed(() => {
     const d = detail.value;
     if (!d)
         return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending', iteration: 0 }));
-    const phaseMap = new Map();
-    for (const po of d.phase_outputs) {
-        const existing = phaseMap.get(po.node_id);
-        if (!existing || po.iteration > existing.iteration) {
-            phaseMap.set(po.node_id, { status: 'done', iteration: po.iteration });
+    // 从工作流定义获取阶段列表
+    const workflowNodes = workflow.value?.definition_json?.nodes || [];
+    if (!workflow.value || workflowNodes.length === 0) {
+        // 回退到硬编码（兼容旧数据）
+        return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending', iteration: 0 }));
+    }
+    // 构建状态映射（从 session_refs，因为 phase_outputs 为空）
+    const statusMap = new Map();
+    // 从 session_refs 获取状态（omnigent_status: completed/failed/running 等）
+    for (const sr of d.session_refs) {
+        const existing = statusMap.get(sr.node_id);
+        if (!existing || sr.iteration > existing.iteration) {
+            statusMap.set(sr.node_id, {
+                status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
+                iteration: sr.iteration || 0
+            });
         }
     }
     // 当前节点
     const currentNode = d.current_node_id;
-    const currentIdx = phaseOrder.findIndex(p => currentNode?.includes(p));
-    return phaseOrder.map((id, idx) => {
-        const po = phaseMap.get(id);
-        let status = 'pending';
-        if (po) {
-            status = 'done';
-        }
-        else if (currentNode?.includes(id)) {
-            status = d.status === 'failed' ? 'failed' : 'running';
-        }
-        else if (currentIdx > idx && !po) {
-            status = 'skipped';
-        }
+    // 从工作流节点生成阶段列表
+    return workflowNodes.map((n) => {
+        const phaseInfo = statusMap.get(n.id);
         return {
-            id,
-            label: phaseLabel(id),
-            status,
-            iteration: po?.iteration || 0,
+            id: n.id,
+            label: n.name || n.id, // 使用 name，无则回退 id
+            status: phaseInfo?.status
+                || (n.id === currentNode ? 'running' : 'pending'),
+            iteration: phaseInfo?.iteration || 0,
         };
     });
 });
@@ -161,6 +169,10 @@ function phaseLabel(id) {
     const map = {
         breakdown: '拆分', planning: '规划', code: '编码',
         test: '测试', review: '审查', deploy: '部署', archive: '归档',
+        // 新版工作流节点
+        develop: '开发', compile_check: '编译', test_check: '测试',
+        quality_review: '质量审查', security_review: '安全审查', final_review: '终审',
+        bug_fix: '修复', quality_issue_fix: '质量修复', security_issue_fix: '安全修复',
     };
     return map[id] || id;
 }
@@ -178,10 +190,27 @@ async function loadData() {
         loading.value = false;
     }
 }
+// 加载工作流定义
+async function loadWorkflow() {
+    if (!detail.value?.graph_definition_id) {
+        workflow.value = null;
+        return;
+    }
+    try {
+        const res = await fetch(`/api/graph-definitions/${detail.value.graph_definition_id}`);
+        workflow.value = await res.json();
+    }
+    catch (e) {
+        console.warn('[TaskDetail] 加载工作流失败:', e);
+        workflow.value = null;
+    }
+}
 // 定时刷新
 let refreshTimer = null;
 onMounted(() => {
-    loadData();
+    loadData().then(() => {
+        loadWorkflow();
+    });
     refreshTimer = setInterval(() => {
         if (detail.value && ['running', 'rate_limited', 'paused', 'pending'].includes(effectiveStatus.value)) {
             loadData();

@@ -1,16 +1,39 @@
 /// <reference types="../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
 // core/web/src/views/AgentConfig.vue —— Agent 列表页
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { api } from '../api/agent-bindings';
 const router = useRouter();
 const list = ref([]);
 const loading = ref(false);
+const workflows = ref([]);
+// 统计每个 agent 被引用的工作流数量
+const agentWorkflowCount = computed(() => {
+    const counts = new Map();
+    for (const wf of workflows.value) {
+        const usedAgents = new Set();
+        for (const node of wf.nodes || []) {
+            for (const agentId of node.agent_binding_ids || []) {
+                usedAgents.add(agentId);
+            }
+        }
+        for (const agentId of usedAgents) {
+            counts.set(agentId, (counts.get(agentId) || 0) + 1);
+        }
+    }
+    return counts;
+});
 async function loadList() {
     loading.value = true;
     try {
         list.value = await api.list();
+        // 同时加载工作流列表，统计引用
+        const wfRes = await fetch('/api/workflows');
+        if (wfRes.ok) {
+            const wfData = await wfRes.json();
+            workflows.value = [...(wfData.presets || []), ...(wfData.user || [])];
+        }
     }
     catch {
         ElMessage.error('加载 Agent 绑定列表失败');
@@ -109,12 +132,12 @@ const __VLS_12 = {}.ElTableColumn;
 const __VLS_13 = __VLS_asFunctionalComponent(__VLS_12, new __VLS_12({
     label: "Harness",
     prop: "harness",
-    width: "140",
+    width: "100",
 }));
 const __VLS_14 = __VLS_13({
     label: "Harness",
     prop: "harness",
-    width: "140",
+    width: "100",
 }, ...__VLS_functionalComponentArgsRest(__VLS_13));
 const __VLS_16 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
@@ -135,33 +158,33 @@ const __VLS_20 = {}.ElTableColumn;
 const __VLS_21 = __VLS_asFunctionalComponent(__VLS_20, new __VLS_20({
     label: "Plugin",
     prop: "plugin_id",
-    minWidth: "120",
+    width: "80",
 }));
 const __VLS_22 = __VLS_21({
     label: "Plugin",
     prop: "plugin_id",
-    minWidth: "120",
+    width: "80",
 }, ...__VLS_functionalComponentArgsRest(__VLS_21));
 const __VLS_24 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
 const __VLS_25 = __VLS_asFunctionalComponent(__VLS_24, new __VLS_24({
-    label: "Agent 绑定",
-    minWidth: "160",
+    label: "工作流引用",
+    minWidth: "120",
 }));
 const __VLS_26 = __VLS_25({
-    label: "Agent 绑定",
-    minWidth: "160",
+    label: "工作流引用",
+    minWidth: "120",
 }, ...__VLS_functionalComponentArgsRest(__VLS_25));
 __VLS_27.slots.default;
 {
     const { default: __VLS_thisSlot } = __VLS_27.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
-    if (row.omnigent_agent_id) {
+    if (__VLS_ctx.agentWorkflowCount.get(row.id)) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "mono" },
+            ...{ class: "workflow-count" },
         });
-        (row.omnigent_agent_id.slice(0, 12));
+        (__VLS_ctx.agentWorkflowCount.get(row.id));
     }
     else {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
@@ -188,11 +211,11 @@ const __VLS_32 = {}.ElTableColumn;
 // @ts-ignore
 const __VLS_33 = __VLS_asFunctionalComponent(__VLS_32, new __VLS_32({
     label: "执行历史",
-    width: "100",
+    width: "80",
 }));
 const __VLS_34 = __VLS_33({
     label: "执行历史",
-    width: "100",
+    width: "80",
 }, ...__VLS_functionalComponentArgsRest(__VLS_33));
 __VLS_35.slots.default;
 {
@@ -224,7 +247,7 @@ if (!__VLS_ctx.loading && __VLS_ctx.list.length === 0) {
 /** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
 /** @type {__VLS_StyleScopedClasses['clickable-table']} */ ;
 /** @type {__VLS_StyleScopedClasses['mono']} */ ;
-/** @type {__VLS_StyleScopedClasses['mono']} */ ;
+/** @type {__VLS_StyleScopedClasses['workflow-count']} */ ;
 /** @type {__VLS_StyleScopedClasses['muted']} */ ;
 /** @type {__VLS_StyleScopedClasses['session-count']} */ ;
 var __VLS_dollars;
@@ -233,6 +256,7 @@ const __VLS_self = (await import('vue')).defineComponent({
         return {
             list: list,
             loading: loading,
+            agentWorkflowCount: agentWorkflowCount,
             loadList: loadList,
             goToDetail: goToDetail,
             createAgent: createAgent,

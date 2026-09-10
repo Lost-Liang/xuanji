@@ -22,6 +22,7 @@ nodes:
     type: agent
     name: 写测试
     agent_binding_ids: [test-engineer]
+    context: task
     write_key: results
 
   # 2. 开发（TDD Green 阶段）
@@ -29,6 +30,7 @@ nodes:
     type: agent
     name: 开发
     agent_binding_ids: [ruoyi-developer]
+    context: task
     write_key: results
 
   # 3. 测试验证
@@ -36,6 +38,7 @@ nodes:
     type: agent
     name: 测试验证
     agent_binding_ids: [tester]
+    context: task
     write_key: results
 
   # 4. 代码审查
@@ -43,6 +46,7 @@ nodes:
     type: agent
     name: 代码审查
     agent_binding_ids: [reviewer]
+    context: task
     write_key: results
 
   # 5. 代码修复（审查发现问题时进入）
@@ -50,6 +54,7 @@ nodes:
     type: agent
     name: 代码修复
     agent_binding_ids: [code-fixer]
+    context: task
     write_key: results
 
   # 6. 最终审查（人审 gate）

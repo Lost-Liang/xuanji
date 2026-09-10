@@ -16,9 +16,9 @@ export const inboxRouter: Router = Router();
  */
 inboxRouter.get('/pending', async (_req, res) => {
   try {
-    const questions = await db.inboxQuestion.findMany({
+    const questions = await db.inbox_questions.findMany({
       where: { status: 'pending' },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { created_at: 'asc' },
     });
     res.json(questions);
   } catch (err) {
@@ -51,12 +51,12 @@ inboxRouter.post('/:id/answer', async (req, res) => {
     }
 
     // 先更新数据库（幂等操作，即使 notify 失败也保留了人类回答记录）
-    const updated = await db.inboxQuestion.update({
+    const updated = await db.inbox_questions.update({
       where: { id },
       data: {
         answer,
         status: 'answered',
-        answeredAt: new Date(),
+        answered_at: new Date(),
       },
     });
 

@@ -77,7 +77,7 @@ async function main() {
     const promptContent = readPromptContent(def.id);
 
     // 检查是否已存在，已存在则跳过（保留用户修改）
-    const existing = await prisma.agentBinding.findUnique({
+    const existing = await prisma.agent_bindings.findUnique({
       where: { id: def.id },
     });
 
@@ -87,17 +87,17 @@ async function main() {
     }
 
     // 不存在才创建
-    const binding = await prisma.agentBinding.create({
+    const binding = await prisma.agent_bindings.create({
       data: {
         id: def.id,
-        agentId: def.name,
-        pluginId: 'ruoyi',
+        agent_id: def.name,
+        plugin_id: 'ruoyi',
         harness: 'claude',
-        skillId: def.skill,
+        skill_id: def.skill,
         model: def.model,
-        reasoningEffort: def.reasoningEffort,
+        reasoning_effort: def.reasoningEffort,
         triggers: def.triggers ? def.triggers : Prisma.JsonNull,
-        promptContent,
+        prompt_content: promptContent,
       },
     });
 

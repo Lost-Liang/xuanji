@@ -1,54 +1,35 @@
 /// <reference types="../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
-// core/web/src/views/Requirements.vue —— 需求列表页（V3 重构）
-// 卡片列表替代表格 + 概览统计 + 详情抽屉分层
+// views/Requirements.vue —— 需求列表页（V4 树形布局）
+// 顶部：创建框 + 概览统计 + 搜索工具栏
+// 主体：RequirementTreeView（全宽树 + 行操作，内部管理日志抽屉）
 import { ref, onMounted, computed } from 'vue';
-import { useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { api } from '../api/requirements';
-import RequirementLogDrawer from '../components/drawers/RequirementLogDrawer.vue';
+import { api as projectApi } from '../api/projects';
 import RequirementTreeView from '../components/RequirementTreeView.vue';
-const router = useRouter();
 const list = ref([]);
 const loading = ref(false);
 const newInput = ref('');
 const creating = ref(false);
 const searchText = ref('');
+// 项目选择
+const projects = ref([]);
+const selectedProjectId = ref('');
+const customPath = ref('');
+// 计算实际使用的路径
+const targetRepoPath = computed(() => {
+    if (selectedProjectId.value) {
+        const p = projects.value.find(x => x.id === selectedProjectId.value);
+        return p?.path || '';
+    }
+    return customPath.value.trim();
+});
 // 工作流选择
 const workflows = ref([]);
 const selectedWorkflowId = ref('requirement-decomposition');
-// 详情抽屉
-const drawerVisible = ref(false);
-const detail = ref(null);
-const detailLoading = ref(false);
-const logDrawerVisible = ref(false);
-// 状态映射
-function statusTagType(status) {
-    switch (status) {
-        case 'running': return 'warning';
-        case 'completed': return 'success';
-        case 'failed': return 'danger';
-        case 'cancelled':
-        case 'stopped': return 'info';
-        case 'paused': return 'info';
-        default: return 'info';
-    }
-}
-function statusText(status) {
-    const map = {
-        pending: '待执行', running: '执行中', completed: '已完成',
-        failed: '失败', stopped: '已停止', cancelled: '已取消',
-        paused: '已暂停', planned: '待执行',
-    };
-    return map[status || ''] || '待执行';
-}
 // 聚合状态
 function aggStatus(item) {
     return item.execution_status || item.status;
-}
-function formatTime(ts) {
-    if (!ts)
-        return '-';
-    return new Date(ts).toLocaleString('zh-CN', { hour12: false });
 }
 // 汇总统计
 const summary = computed(() => {
@@ -94,6 +75,15 @@ async function loadWorkflows() {
         console.error('加载工作流失败:', e);
     }
 }
+// 加载项目列表
+async function loadProjects() {
+    try {
+        projects.value = await projectApi.list();
+    }
+    catch (e) {
+        console.error('加载项目列表失败:', e);
+    }
+}
 // 创建需求
 async function createAndExecute() {
     const text = newInput.value.trim();
@@ -102,10 +92,16 @@ async function createAndExecute() {
     creating.value = true;
     try {
         const reqId = `req-${Date.now()}`;
+        const payload = {
+            id: reqId,
+            input_text: text,
+            workflow_id: selectedWorkflowId.value,
+            targetRepoPath: targetRepoPath.value || undefined,
+        };
         const cr = await fetch('/api/requirements', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: reqId, input_text: text, workflow_id: selectedWorkflowId.value }),
+            body: JSON.stringify(payload),
         });
         if (!cr.ok) {
             const e = await cr.json();
@@ -114,6 +110,8 @@ async function createAndExecute() {
         }
         await api.execute(reqId, text);
         newInput.value = '';
+        selectedProjectId.value = '';
+        customPath.value = '';
         ElMessage.success('已创建并执行');
         loadList();
     }
@@ -124,146 +122,17 @@ async function createAndExecute() {
         creating.value = false;
     }
 }
-// 打开详情
-async function openDetail(item) {
-    drawerVisible.value = true;
-    detail.value = null;
-    detailLoading.value = true;
-    try {
-        detail.value = await api.get(item.id);
-    }
-    catch (e) {
-        ElMessage.error(e?.message || '加载详情失败');
-    }
-    finally {
-        detailLoading.value = false;
-    }
-}
-// 停止执行
-async function stopRequirement() {
-    if (!detail.value)
-        return;
-    try {
-        await ElMessageBox.confirm('确定停止该需求的执行吗？此操作不可恢复。', '停止确认', { type: 'warning' });
-    }
-    catch {
-        return;
-    }
-    try {
-        await api.stop(detail.value.id);
-        ElMessage.success('已停止');
-        detail.value = await api.get(detail.value.id);
-        loadList();
-    }
-    catch (e) {
-        ElMessage.error(e?.message || '停止失败');
-    }
-}
-// Review gate 决策
-async function gateDecision(decision) {
-    if (!detail.value?.execution_id) {
-        ElMessage.warning('无关联执行，无法操作 gate');
-        return;
-    }
-    let comments;
-    if (decision === 'reject') {
-        try {
-            const { value } = await ElMessageBox.prompt('请输入驳回意见（将带回上游节点重做）', '驳回', {
-                confirmButtonText: '驳回', cancelButtonText: '取消', inputType: 'textarea', inputPlaceholder: '驳回意见...',
-            });
-            comments = value?.trim();
-            if (!comments) {
-                ElMessage.warning('驳回需填写意见');
-                return;
-            }
-        }
-        catch {
-            return;
-        }
-    }
-    try {
-        await api.gate(detail.value.execution_id, decision, comments);
-        ElMessage.success(decision === 'approve' ? '已通过' : '已驳回');
-        detail.value = await api.get(detail.value.id);
-        loadList();
-    }
-    catch (e) {
-        ElMessage.error(e?.message || 'gate 操作失败');
-    }
-}
-function openLog() {
-    logDrawerVisible.value = true;
-}
-function goToCanvas() {
-    if (!detail.value?.execution_id)
-        return;
-    router.push({ path: '/canvas', query: { execution_id: detail.value.execution_id } });
-}
-const hasSpec = computed(() => !!detail.value?.spec_content);
-// 删除需求
-async function deleteRequirement(item, event) {
-    event?.stopPropagation();
-    const status = aggStatus(item);
-    if (status === 'running') {
-        ElMessage.warning('需求正在执行中，请先停止后再删除');
-        return;
-    }
-    try {
-        await ElMessageBox.confirm('确定删除该需求吗？关联的任务和执行记录将被标记为已删除。', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
-    }
-    catch {
-        return;
-    }
-    try {
-        const res = await api.delete(item.id);
-        if (res.ok) {
-            ElMessage.success('已删除');
-            loadList();
-        }
-        else {
-            ElMessage.error(res.error || '删除失败');
-        }
-    }
-    catch (e) {
-        ElMessage.error(e?.message || '删除失败');
-    }
-}
-// 详情抽屉中删除
-async function deleteFromDetail() {
-    if (!detail.value)
-        return;
-    if (detail.value.execution?.status === 'running') {
-        ElMessage.warning('需求正在执行中，请先停止后再删除');
-        return;
-    }
-    try {
-        await ElMessageBox.confirm('确定删除该需求吗？关联的任务和执行记录将被标记为已删除。', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' });
-    }
-    catch {
-        return;
-    }
-    try {
-        const res = await api.delete(detail.value.id);
-        if (res.ok) {
-            ElMessage.success('已删除');
-            drawerVisible.value = false;
-            loadList();
-        }
-        else {
-            ElMessage.error(res.error || '删除失败');
-        }
-    }
-    catch (e) {
-        ElMessage.error(e?.message || '删除失败');
-    }
-}
-onMounted(() => { loadList(); loadWorkflows(); });
+onMounted(() => { loadList(); loadWorkflows(); loadProjects(); });
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['workflow-select']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-input']} */ ;
+/** @type {__VLS_StyleScopedClasses['project-select']} */ ;
+/** @type {__VLS_StyleScopedClasses['project-select']} */ ;
+/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
+/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['stat-card']} */ ;
@@ -284,72 +153,10 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['stat-value']} */ ;
 /** @type {__VLS_StyleScopedClasses['search-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-refresh']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['paused']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['completed']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['failed']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['completed']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['completed']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['failed']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['failed']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['paused']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['paused']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['pending']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['planned']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge-lg']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['completed']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['failed']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['paused']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-warning']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-danger']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-status']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-box']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['toolbar']} */ ;
 /** @type {__VLS_StyleScopedClasses['search-box']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-actions']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
 // CSS variable injection 
 // CSS variable injection end 
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -385,12 +192,39 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.textarea, __VLS_intrinsicEleme
     rows: "2",
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+    ...{ class: "workdir-input-row" },
+});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.select, __VLS_intrinsicElements.select)({
+    value: (__VLS_ctx.selectedProjectId),
+    ...{ class: "project-select" },
+    disabled: (__VLS_ctx.creating),
+});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
+    value: "",
+});
+for (const [p] of __VLS_getVForSourceType((__VLS_ctx.projects))) {
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
+        key: (p.id),
+        value: (p.id),
+    });
+    (p.name);
+}
+__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+    ...{ class: "input-separator" },
+});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+    value: (__VLS_ctx.customPath),
+    type: "text",
+    ...{ class: "workdir-input" },
+    placeholder: "手动输入路径",
+    disabled: (__VLS_ctx.creating || !!__VLS_ctx.selectedProjectId),
+});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "create-footer" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
     ...{ onClick: (__VLS_ctx.createAndExecute) },
     ...{ class: "create-btn" },
-    loading: (__VLS_ctx.creating),
     disabled: (!__VLS_ctx.newInput.trim()),
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
@@ -512,280 +346,33 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
 __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
     d: "M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
 });
-__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: "requirement-list" },
-});
-__VLS_asFunctionalDirective(__VLS_directives.vLoading)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.loading) }, null, null);
-if (!__VLS_ctx.filteredList.length && !__VLS_ctx.loading) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "empty-state" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
-        ...{ class: "hint" },
-    });
-}
-for (const [item] of __VLS_getVForSourceType((__VLS_ctx.filteredList))) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.article, __VLS_intrinsicElements.article)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.openDetail(item);
-            } },
-        key: (item.id),
-        ...{ class: "requirement-card" },
-        ...{ class: (__VLS_ctx.aggStatus(item)) },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "card-header" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "status-badge" },
-        ...{ class: (__VLS_ctx.aggStatus(item)) },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "status-icon" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "status-text" },
-    });
-    (__VLS_ctx.statusText(__VLS_ctx.aggStatus(item)));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "card-id" },
-    });
-    (item.id.slice(-12));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
-        ...{ class: "card-content" },
-    });
-    (item.input_text);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "card-footer" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "card-time" },
-    });
-    (__VLS_ctx.formatTime(item.created_at));
-    if (item.execution_status) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "card-exec-status" },
-        });
-        (__VLS_ctx.statusText(item.execution_status));
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.deleteRequirement(item, $event);
-            } },
-        ...{ class: "btn-delete-card" },
-        disabled: (__VLS_ctx.aggStatus(item) === 'running'),
-        title: "删除",
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
-        viewBox: "0 0 24 24",
-        fill: "none",
-        stroke: "currentColor",
-        'stroke-width': "2",
-        width: "14",
-        height: "14",
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
-        d: "M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2",
-    });
-}
-const __VLS_0 = {}.ElDrawer;
-/** @type {[typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, ]} */ ;
+/** @type {[typeof RequirementTreeView, ]} */ ;
 // @ts-ignore
-const __VLS_1 = __VLS_asFunctionalComponent(__VLS_0, new __VLS_0({
-    modelValue: (__VLS_ctx.drawerVisible),
-    title: "需求详情",
-    size: "600px",
-    direction: "rtl",
-    ...{ class: "detail-drawer" },
+const __VLS_0 = __VLS_asFunctionalComponent(RequirementTreeView, new RequirementTreeView({
+    ...{ 'onRefresh': {} },
+    requirements: (__VLS_ctx.filteredList),
 }));
-const __VLS_2 = __VLS_1({
-    modelValue: (__VLS_ctx.drawerVisible),
-    title: "需求详情",
-    size: "600px",
-    direction: "rtl",
-    ...{ class: "detail-drawer" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_1));
-__VLS_3.slots.default;
-if (__VLS_ctx.detail) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "drawer-content" },
-    });
-    __VLS_asFunctionalDirective(__VLS_directives.vLoading)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.detailLoading) }, null, null);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "detail-section status-section" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "status-badge-lg" },
-        ...{ class: (__VLS_ctx.detail.status) },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "status-icon" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "status-text" },
-    });
-    (__VLS_ctx.statusText(__VLS_ctx.detail.status));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
-        ...{ class: "detail-title" },
-    });
-    (__VLS_ctx.detail.input_text);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "detail-meta" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-id" },
-    });
-    (__VLS_ctx.detail.id);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-time" },
-    });
-    (__VLS_ctx.formatTime(__VLS_ctx.detail.created_at));
-    if (__VLS_ctx.detail.execution?.status) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "exec-status-row" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "exec-label" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "exec-value" },
-            ...{ class: (__VLS_ctx.detail.execution.status) },
-        });
-        (__VLS_ctx.statusText(__VLS_ctx.detail.execution.status));
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "detail-actions" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-        ...{ onClick: (__VLS_ctx.openLog) },
-        ...{ class: "btn btn-secondary" },
-    });
-    if (__VLS_ctx.detail.execution_id) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (__VLS_ctx.goToCanvas) },
-            ...{ class: "btn btn-primary" },
-        });
-    }
-    if (__VLS_ctx.detail.execution_id && __VLS_ctx.detail.execution?.status === 'running') {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (__VLS_ctx.stopRequirement) },
-            ...{ class: "btn btn-warning" },
-        });
-    }
-    if (__VLS_ctx.detail.execution_id && __VLS_ctx.detail.execution?.status === 'paused') {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.detail))
-                        return;
-                    if (!(__VLS_ctx.detail.execution_id && __VLS_ctx.detail.execution?.status === 'paused'))
-                        return;
-                    __VLS_ctx.gateDecision('approve');
-                } },
-            ...{ class: "btn btn-success" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.detail))
-                        return;
-                    if (!(__VLS_ctx.detail.execution_id && __VLS_ctx.detail.execution?.status === 'paused'))
-                        return;
-                    __VLS_ctx.gateDecision('reject');
-                } },
-            ...{ class: "btn btn-danger" },
-        });
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-        ...{ onClick: (__VLS_ctx.deleteFromDetail) },
-        ...{ class: "btn btn-delete" },
-        disabled: (__VLS_ctx.detail.execution?.status === 'running'),
-    });
-    if (__VLS_ctx.hasSpec) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-            ...{ class: "detail-section collapsible" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.details, __VLS_intrinsicElements.details)({});
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.summary, __VLS_intrinsicElements.summary)({
-            ...{ class: "section-title" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-            ...{ class: "spec-content" },
-        });
-        (__VLS_ctx.detail.spec_content);
-    }
-    if (__VLS_ctx.detail.execution_id) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-            ...{ class: "detail-section" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({
-            ...{ class: "section-header" },
-        });
-        /** @type {[typeof RequirementTreeView, ]} */ ;
-        // @ts-ignore
-        const __VLS_4 = __VLS_asFunctionalComponent(RequirementTreeView, new RequirementTreeView({
-            requirementId: (__VLS_ctx.detail.id),
-        }));
-        const __VLS_5 = __VLS_4({
-            requirementId: (__VLS_ctx.detail.id),
-        }, ...__VLS_functionalComponentArgsRest(__VLS_4));
-    }
-    if (__VLS_ctx.detail.session_refs.length > 0) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-            ...{ class: "detail-section collapsible" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.details, __VLS_intrinsicElements.details)({});
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.summary, __VLS_intrinsicElements.summary)({
-            ...{ class: "section-title" },
-        });
-        (__VLS_ctx.detail.session_refs.length);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "session-list" },
-        });
-        for (const [s] of __VLS_getVForSourceType((__VLS_ctx.detail.session_refs))) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                key: (s.id),
-                ...{ class: "session-item" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "session-meta" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "phase-name" },
-            });
-            (s.node_id);
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "session-status" },
-                ...{ class: (s.omnigent_status) },
-            });
-            (__VLS_ctx.statusText(s.omnigent_status));
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "session-iter" },
-            });
-            (s.iteration);
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.code, __VLS_intrinsicElements.code)({
-                ...{ class: "session-id" },
-            });
-            (s.omnigent_session_id);
-        }
-    }
-}
-var __VLS_3;
-/** @type {[typeof RequirementLogDrawer, ]} */ ;
-// @ts-ignore
-const __VLS_7 = __VLS_asFunctionalComponent(RequirementLogDrawer, new RequirementLogDrawer({
-    modelValue: (__VLS_ctx.logDrawerVisible),
-    requirementId: (__VLS_ctx.detail?.id || ''),
-}));
-const __VLS_8 = __VLS_7({
-    modelValue: (__VLS_ctx.logDrawerVisible),
-    requirementId: (__VLS_ctx.detail?.id || ''),
-}, ...__VLS_functionalComponentArgsRest(__VLS_7));
+const __VLS_1 = __VLS_0({
+    ...{ 'onRefresh': {} },
+    requirements: (__VLS_ctx.filteredList),
+}, ...__VLS_functionalComponentArgsRest(__VLS_0));
+let __VLS_3;
+let __VLS_4;
+let __VLS_5;
+const __VLS_6 = {
+    onRefresh: (__VLS_ctx.loadList)
+};
+var __VLS_2;
 /** @type {__VLS_StyleScopedClasses['requirements-page']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-section']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-box']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['workflow-select']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-input']} */ ;
+/** @type {__VLS_StyleScopedClasses['workdir-input-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['project-select']} */ ;
+/** @type {__VLS_StyleScopedClasses['input-separator']} */ ;
+/** @type {__VLS_StyleScopedClasses['workdir-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-footer']} */ ;
 /** @type {__VLS_StyleScopedClasses['create-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['dashboard']} */ ;
@@ -814,95 +401,24 @@ const __VLS_8 = __VLS_7({
 /** @type {__VLS_StyleScopedClasses['search-icon']} */ ;
 /** @type {__VLS_StyleScopedClasses['search-input']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-refresh']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-list']} */ ;
-/** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
-/** @type {__VLS_StyleScopedClasses['hint']} */ ;
-/** @type {__VLS_StyleScopedClasses['requirement-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-text']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-id']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-content']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-footer']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-time']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-exec-status']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-drawer']} */ ;
-/** @type {__VLS_StyleScopedClasses['drawer-content']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-badge-lg']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-text']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-meta']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-id']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-time']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-status-row']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['exec-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-actions']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-warning']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-success']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-danger']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-delete']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['spec-content']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['detail-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible']} */ ;
-/** @type {__VLS_StyleScopedClasses['section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-list']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-meta']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-name']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-status']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-iter']} */ ;
-/** @type {__VLS_StyleScopedClasses['session-id']} */ ;
 var __VLS_dollars;
 const __VLS_self = (await import('vue')).defineComponent({
     setup() {
         return {
-            RequirementLogDrawer: RequirementLogDrawer,
             RequirementTreeView: RequirementTreeView,
             list: list,
-            loading: loading,
             newInput: newInput,
             creating: creating,
             searchText: searchText,
+            projects: projects,
+            selectedProjectId: selectedProjectId,
+            customPath: customPath,
             workflows: workflows,
             selectedWorkflowId: selectedWorkflowId,
-            drawerVisible: drawerVisible,
-            detail: detail,
-            detailLoading: detailLoading,
-            logDrawerVisible: logDrawerVisible,
-            statusText: statusText,
-            aggStatus: aggStatus,
-            formatTime: formatTime,
             summary: summary,
             filteredList: filteredList,
             loadList: loadList,
             createAndExecute: createAndExecute,
-            openDetail: openDetail,
-            stopRequirement: stopRequirement,
-            gateDecision: gateDecision,
-            openLog: openLog,
-            goToCanvas: goToCanvas,
-            hasSpec: hasSpec,
-            deleteRequirement: deleteRequirement,
-            deleteFromDetail: deleteFromDetail,
         };
     },
 });

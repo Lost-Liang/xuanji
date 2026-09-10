@@ -20,14 +20,14 @@ export const executionsRouter: Router = Router();
 async function toExecutionListItem(e: any): Promise<any> {
   // 查询关联需求文本
   let requirementText: string | null = null;
-  if (e.subjectType === 'requirement' && e.subjectId) {
+  if (e.subject_type === 'requirement' && e.subject_id) {
     try {
-      const req = await db.requirement.findUnique({ where: { id: e.subjectId }, select: { title: true } });
+      const req = await db.requirements.findUnique({ where: { id: e.subject_id }, select: { title: true } });
       requirementText = req?.title ?? null;
     } catch { /* ignore */ }
-  } else if (e.requirementId) {
+  } else if (e.requirement_id) {
     try {
-      const req = await db.requirement.findUnique({ where: { id: e.requirementId }, select: { title: true } });
+      const req = await db.requirements.findUnique({ where: { id: e.requirement_id }, select: { title: true } });
       requirementText = req?.title ?? null;
     } catch { /* ignore */ }
   }
@@ -36,12 +36,12 @@ async function toExecutionListItem(e: any): Promise<any> {
   let taskCount = 0;
   let phaseCount = 0;
   try {
-    phaseCount = await db.phaseInstance.count({ where: { executionId: e.executionId } });
-    if (e.subjectType === 'requirement' && e.subjectId) {
+    phaseCount = await db.phase_instances.count({ where: { execution_id: e.execution_id } });
+    if (e.subject_type === 'requirement' && e.subject_id) {
       // 需求级执行：统计该需求下的任务数
-      taskCount = await db.task.count({
+      taskCount = await db.tasks.count({
         where: {
-          epic: { requirementId: e.subjectId },
+          epics: { requirement_id: e.subject_id },
         },
       });
     }
@@ -50,27 +50,27 @@ async function toExecutionListItem(e: any): Promise<any> {
   // 聚合 phase_nodes：{ phaseId: status }
   let phaseNodes: Record<string, string> = {};
   try {
-    const phases = await db.phaseInstance.findMany({
-      where: { executionId: e.executionId },
-      select: { phaseId: true, status: true },
+    const phases = await db.phase_instances.findMany({
+      where: { execution_id: e.execution_id },
+      select: { phase_id: true, status: true },
     });
     phaseNodes = phases.reduce((acc: Record<string, string>, p: any) => {
-      acc[p.phaseId] = p.status;
+      acc[p.phase_id] = p.status;
       return acc;
     }, {});
   } catch { /* ignore */ }
 
   return {
-    id: e.executionId,
+    id: e.execution_id,
     status: e.status,
-    graph_definition_id: e.graphDefinitionId ?? null,
-    thread_id: e.threadId ?? e.sessionId, // thread_id 优先，回退 sessionId
+    graph_definition_id: e.graph_definition_id ?? null,
+    thread_id: e.thread_id ?? e.session_id, // thread_id 优先，回退 session_id
     current_node_id: e.stage || null,
     phase_nodes: phaseNodes,
-    started_at: e.startedAt?.toISOString?.() ?? e.startedAt,
-    finished_at: e.completedAt?.toISOString?.() ?? e.completedAt,
-    subject_type: e.subjectType,
-    subject_id: e.subjectId,
+    started_at: e.started_at?.toISOString?.() ?? e.started_at,
+    finished_at: e.completed_at?.toISOString?.() ?? e.completed_at,
+    subject_type: e.subject_type,
+    subject_id: e.subject_id,
     parent_execution_id: null, // V4 暂不支持父子执行
     loop_counters: {},         // V4 暂无
     token_input: null,         // 占位
@@ -96,15 +96,15 @@ executionsRouter.get('/', async (req, res) => {
 
     const where: any = {};
     if (subject_type) {
-      where.subjectType = subject_type as string;
+      where.subject_type = subject_type as string;
     }
     if (requirement_id) {
-      where.requirementId = requirement_id as string;
+      where.requirement_id = requirement_id as string;
     }
 
-    const executions = await db.taskExecution.findMany({
+    const executions = await db.task_executions.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
       take: 50,
     });
 
@@ -156,9 +156,9 @@ executionsRouter.get('/:id/sub-executions', async (req, res) => {
  */
 executionsRouter.post('/:id/pause', async (req, res) => {
   try {
-    await db.taskExecution.update({
-      where: { executionId: req.params.id },
-      data: { controlStatus: 'pause_requested' },
+    await db.task_executions.update({
+      where: { execution_id: req.params.id },
+      data: { control_status: 'pause_requested' },
     });
     res.json({ ok: true });
   } catch (err) {
@@ -173,9 +173,9 @@ executionsRouter.post('/:id/pause', async (req, res) => {
  */
 executionsRouter.post('/:id/cancel', async (req, res) => {
   try {
-    await db.taskExecution.update({
-      where: { executionId: req.params.id },
-      data: { controlStatus: 'cancel_requested' },
+    await db.task_executions.update({
+      where: { execution_id: req.params.id },
+      data: { control_status: 'cancel_requested' },
     });
     res.json({ ok: true });
   } catch (err) {
@@ -191,9 +191,9 @@ executionsRouter.post('/:id/gate', async (req, res) => {
   try {
     const { decision, comments } = req.body;
     // 记录决策到 decisions 表
-    await db.decision.create({
+    await db.decisions.create({
       data: {
-        executionId: req.params.id,
+        execution_id: req.params.id,
         phase: 'gate',
         decision: decision || 'unknown',
         confidence: 100,
@@ -214,9 +214,9 @@ executionsRouter.post('/:id/gate', async (req, res) => {
  */
 executionsRouter.post('/:id/resume', async (req, res) => {
   try {
-    await db.taskExecution.update({
-      where: { executionId: req.params.id },
-      data: { controlStatus: 'resume_requested' },
+    await db.task_executions.update({
+      where: { execution_id: req.params.id },
+      data: { control_status: 'resume_requested' },
     });
     res.json({ ok: true });
   } catch (err) {
@@ -231,9 +231,9 @@ executionsRouter.post('/:id/resume', async (req, res) => {
  */
 executionsRouter.get('/:id/events', async (req, res) => {
   try {
-    const events = await db.conversationEvent.findMany({
-      where: { executionId: req.params.id },
-      orderBy: { createdAt: 'asc' },
+    const events = await db.conversation_events.findMany({
+      where: { execution_id: req.params.id },
+      orderBy: { created_at: 'asc' },
     });
 
     // 转换为前端期望的格式
@@ -247,8 +247,8 @@ executionsRouter.get('/:id/events', async (req, res) => {
     for (const e of events) {
       const payload = e.payload as Record<string, any>;
 
-      // 根据 eventType 决定返回格式
-      if (e.eventType === 'model_delta') {
+      // 根据 event_type 决定返回格式
+      if (e.event_type === 'model_delta') {
         // model_delta 来自 assistant 事件，payload 包含 message 字段
         let text = '';
         if (typeof payload?.message === 'string') {
@@ -267,48 +267,48 @@ executionsRouter.get('/:id/events', async (req, res) => {
             type: 'token',
             node_id: e.role || 'agent',
             text,
-            created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+            created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
           });
         }
-      } else if (e.eventType === 'tool_completed') {
+      } else if (e.event_type === 'tool_completed') {
         // 工具完成事件 - 标记阶段完成
         result.push({
           type: 'done',
           node_id: payload?.tool_name || e.role || 'tool',
           text: payload?.result || '',
-          created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+          created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
         });
-      } else if (e.eventType === 'final_output') {
+      } else if (e.event_type === 'final_output') {
         // 最终输出
         result.push({
           type: 'done',
           node_id: 'output',
           text: payload?.output || '',
-          created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+          created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
         });
-      } else if (e.eventType === 'error') {
+      } else if (e.event_type === 'error') {
         // 错误事件
         result.push({
           type: 'error',
           node_id: 'system',
           text: payload?.error || '未知错误',
-          created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+          created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
         });
-      } else if (e.eventType === 'inbox_ask') {
+      } else if (e.event_type === 'inbox_ask') {
         // 人机交互提问
         result.push({
           type: 'inbox_ask',
           node_id: 'agent',
           text: payload?.body || '',
-          created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+          created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
         });
-      } else if (e.eventType === 'inbox_answer') {
+      } else if (e.event_type === 'inbox_answer') {
         // 人机交互回答
         result.push({
           type: 'inbox_answer',
           node_id: 'human',
           text: payload?.answer || '',
-          created_at: e.createdAt?.toISOString?.() ?? String(e.createdAt),
+          created_at: e.created_at?.toISOString?.() ?? String(e.created_at),
         });
       }
       // model_started 事件不返回（没有实际内容）
@@ -342,13 +342,13 @@ executionsRouter.get('/:id/stream', async (req, res) => {
 
   // 获取数据库中最后一个事件的时间戳
   try {
-    const lastEvent = await db.conversationEvent.findFirst({
-      where: { executionId },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
+    const lastEvent = await db.conversation_events.findFirst({
+      where: { execution_id: executionId },
+      orderBy: { created_at: 'desc' },
+      select: { created_at: true },
     });
     if (lastEvent) {
-      lastEventAt = lastEvent.createdAt;
+      lastEventAt = lastEvent.created_at;
     }
   } catch {
     // 初始查询失败，继续运行
@@ -358,8 +358,8 @@ executionsRouter.get('/:id/stream', async (req, res) => {
   const pollInterval = setInterval(async () => {
     try {
       // 检查执行状态
-      const exec = await db.taskExecution.findUnique({
-        where: { executionId },
+      const exec = await db.task_executions.findUnique({
+        where: { execution_id: executionId },
         select: { status: true },
       });
 
@@ -377,22 +377,22 @@ executionsRouter.get('/:id/stream', async (req, res) => {
         // 不关闭连接，继续轮询等待恢复
       }
 
-      // 查询新事件（使用 createdAt 时间戳过滤，避免 UUID 字典序比较不可靠）
-      const whereClause: any = { executionId };
+      // 查询新事件（使用 created_at 时间戳过滤，避免 UUID 字典序比较不可靠）
+      const whereClause: any = { execution_id: executionId };
       if (lastEventAt) {
-        whereClause.createdAt = { gt: lastEventAt };
+        whereClause.created_at = { gt: lastEventAt };
       }
 
-      const newEvents = await db.conversationEvent.findMany({
+      const newEvents = await db.conversation_events.findMany({
         where: whereClause,
-        orderBy: { createdAt: 'asc' },
+        orderBy: { created_at: 'asc' },
       });
 
       for (const e of newEvents) {
         const payload = e.payload as Record<string, any>;
 
         // 转换为 SSE 消息格式
-        if (e.eventType === 'model_delta') {
+        if (e.event_type === 'model_delta') {
           // 提取文本内容
           let text = '';
           if (typeof payload?.message === 'string') {
@@ -414,26 +414,26 @@ executionsRouter.get('/:id/stream', async (req, res) => {
             };
             res.write(`data: ${JSON.stringify(msg)}\n\n`);
           }
-        } else if (e.eventType === 'tool_completed') {
+        } else if (e.event_type === 'tool_completed') {
           const msg = {
             type: 'done',
             node_id: payload?.tool_name || e.role || 'tool',
           };
           res.write(`data: ${JSON.stringify(msg)}\n\n`);
-        } else if (e.eventType === 'final_output') {
+        } else if (e.event_type === 'final_output') {
           const msg = {
             type: 'done',
             node_id: 'output',
           };
           res.write(`data: ${JSON.stringify(msg)}\n\n`);
-        } else if (e.eventType === 'error') {
+        } else if (e.event_type === 'error') {
           const msg = {
             type: 'error',
             node_id: 'system',
             text: payload?.error || '未知错误',
           };
           res.write(`data: ${JSON.stringify(msg)}\n\n`);
-        } else if (e.eventType === 'inbox_ask') {
+        } else if (e.event_type === 'inbox_ask') {
           // 人机交互提问，通知前端刷新
           const msg = {
             type: 'inbox_ask',
@@ -441,7 +441,7 @@ executionsRouter.get('/:id/stream', async (req, res) => {
             text: payload?.body || '',
           };
           res.write(`data: ${JSON.stringify(msg)}\n\n`);
-        } else if (e.eventType === 'inbox_answer') {
+        } else if (e.event_type === 'inbox_answer') {
           const msg = {
             type: 'inbox_answer',
             node_id: 'human',
@@ -452,8 +452,8 @@ executionsRouter.get('/:id/stream', async (req, res) => {
         // model_started 事件不推送（没有实际内容）
 
         // 更新最后事件时间戳
-        if (!lastEventAt || e.createdAt > lastEventAt) {
-          lastEventAt = e.createdAt;
+        if (!lastEventAt || e.created_at > lastEventAt) {
+          lastEventAt = e.created_at;
         }
       }
     } catch (err) {
@@ -479,21 +479,21 @@ executionsRouter.get('/:id/elicitations', async (req, res) => {
     // 禁用缓存，确保实时获取
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-    const questions = await db.inboxQuestion.findMany({
+    const questions = await db.inbox_questions.findMany({
       where: {
-        executionId: req.params.id,
+        execution_id: req.params.id,
         status: 'pending',
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { created_at: 'asc' },
     });
 
     // 转换为 LiveEventStream 期望的格式
     const result = questions.map((q: any) => ({
       id: q.id,
-      execution_id: q.executionId,
+      execution_id: q.execution_id,
       body: q.body,
       choices: q.choices,
-      created_at: q.createdAt?.toISOString?.() ?? null,
+      created_at: q.created_at?.toISOString?.() ?? null,
     }));
 
     res.json(result);
@@ -517,12 +517,12 @@ executionsRouter.post('/:id/elicitations/:questionId/reply', async (req, res) =>
     }
 
     // 更新问题状态
-    const updated = await db.inboxQuestion.update({
+    const updated = await db.inbox_questions.update({
       where: { id: questionId },
       data: {
         answer: typeof answer === 'string' ? answer : answer.content || JSON.stringify(answer),
         status: 'answered',
-        answeredAt: new Date(),
+        answered_at: new Date(),
       },
     });
 
@@ -548,14 +548,14 @@ executionsRouter.post('/:id/dialog', async (req, res) => {
     // 如果是跳过/结束对话
     if (action === 'skip') {
       // 找到该执行的所有 pending 问题并标记为 answered
-      await db.inboxQuestion.updateMany({
+      await db.inbox_questions.updateMany({
         where: {
-          executionId: req.params.id,
+          execution_id: req.params.id,
           status: 'pending',
         },
         data: {
           status: 'answered',
-          answeredAt: new Date(),
+          answered_at: new Date(),
           answer: '[用户跳过]',
         },
       });
@@ -566,21 +566,21 @@ executionsRouter.post('/:id/dialog', async (req, res) => {
     // 如果有消息，记录并通知
     if (message) {
       // 创建或更新问题记录
-      const existingQuestion = await db.inboxQuestion.findFirst({
+      const existingQuestion = await db.inbox_questions.findFirst({
         where: {
-          executionId: req.params.id,
+          execution_id: req.params.id,
           status: 'pending',
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { created_at: 'desc' },
       });
 
       if (existingQuestion) {
-        await db.inboxQuestion.update({
+        await db.inbox_questions.update({
           where: { id: existingQuestion.id },
           data: {
             answer: message,
             status: 'answered',
-            answeredAt: new Date(),
+            answered_at: new Date(),
           },
         });
 

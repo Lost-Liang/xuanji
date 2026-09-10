@@ -147,6 +147,22 @@ async function connectExecution() {
         else if (erow.subject_type === 'requirement' && erow.subject_id) {
             await buildCanvasFromRequirementTree(erow.subject_id);
         }
+        // 情况 3：任务级执行（无图定义），显示单个任务节点
+        else if (erow.subject_type === 'task') {
+            await buildCanvasFromTask(erow.subject_id, erow.subject_id);
+        }
+        // 情况 4：其他类型执行，无法构建画布
+        else {
+            console.warn('[canvas] 无法构建画布: 无图定义且非需求/任务类型执行');
+            // 显示占位节点
+            nodes.value = [{
+                    id: 'unknown',
+                    type: 'agent',
+                    position: { x: 200, y: 200 },
+                    data: { label: '未知执行类型', status: 'pending', agent_binding_ids: [] },
+                }];
+            edges.value = [];
+        }
         // 初始染色：回填已完成节点（phase_nodes）→ done；当前节点 → running/paused
         runtimePhases.value = new Map();
         // phase_nodes 是 { phaseId: status } 对象，不是数组
@@ -260,6 +276,56 @@ async function buildCanvasFromRequirementTree(requirementId) {
         console.error('[canvas] 构建需求树画布失败:', e);
     }
 }
+/**
+ * 从单个任务构建画布
+ *
+ * 显示单个任务节点，用于任务级执行
+ */
+async function buildCanvasFromTask(taskId, executionId) {
+    try {
+        // 查询任务详情获取标题
+        const taskRes = await fetch(`/api/tasks/${encodeURIComponent(executionId)}`);
+        let taskTitle = taskId;
+        let taskStatus = 'pending';
+        if (taskRes.ok) {
+            const task = await taskRes.json();
+            taskTitle = task.title || taskId;
+            taskStatus = task.status || 'pending';
+        }
+        // 映射任务状态到画布状态
+        const canvasStatus = taskStatus === 'completed' ? 'done'
+            : taskStatus === 'running' ? 'running'
+                : taskStatus === 'failed' ? 'failed'
+                    : taskStatus === 'paused' ? 'paused'
+                        : 'pending';
+        // 创建单个任务节点
+        nodes.value = [{
+                id: taskId,
+                type: 'agent',
+                position: { x: 200, y: 200 },
+                data: {
+                    label: taskTitle,
+                    status: canvasStatus,
+                    agent_binding_ids: [taskId],
+                },
+            }];
+        edges.value = [];
+        // 设置运行阶段状态
+        runtimePhases.value = new Map();
+        runtimePhases.value.set(taskId, canvasStatus);
+    }
+    catch (e) {
+        console.error('[canvas] 构建任务画布失败:', e);
+        // 显示占位节点
+        nodes.value = [{
+                id: taskId,
+                type: 'agent',
+                position: { x: 200, y: 200 },
+                data: { label: `任务: ${taskId}`, status: 'pending', agent_binding_ids: [] },
+            }];
+        edges.value = [];
+    }
+}
 async function pollExecution() {
     if (!executionId.value)
         return;
@@ -269,12 +335,11 @@ async function pollExecution() {
             return;
         const row = await r.json();
         rtMeta.value = { status: row.status, token_in: row.token_in ?? null, token_out: row.token_out ?? null, current_node_id: row.current_node_id, loop_counters: row.loop_counters || {} };
-        // 回填已完成节点（phase_outputs）→ done；跳过当前节点，由下方 status 规则染色（running/paused/failed）
-        // 修复：旧逻辑仅当节点原本无状态才标 done，已推进的 agent 节点若先被标 running 会永远卡 running
-        for (const nid of row.phase_nodes || []) {
-            if (nid === row.current_node_id)
-                continue;
-            runtimePhases.value.set(nid, 'done');
+        // phase_nodes 是 { phaseId: status } 对象，直接使用其状态值
+        if (row.phase_nodes && typeof row.phase_nodes === 'object') {
+            for (const [nid, status] of Object.entries(row.phase_nodes)) {
+                runtimePhases.value.set(nid, status);
+            }
         }
         // 若 execution 整体结束 → 全部标 done（未标的留原态）
         if (row.status === 'completed') {

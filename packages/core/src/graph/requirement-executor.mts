@@ -78,12 +78,12 @@ export async function executeRequirement(
         return;
       }
 
-      // 检查 controlStatus（暂停/取消请求）
-      const exec = await db.taskExecution.findUnique({
-        where: { executionId },
-        select: { controlStatus: true },
+      // 检查 control_status（暂停/取消请求）
+      const exec = await db.task_executions.findUnique({
+        where: { execution_id: executionId },
+        select: { control_status: true },
       });
-      if (exec?.controlStatus === 'cancel_requested') {
+      if (exec?.control_status === 'cancel_requested') {
         console.log(`[requirement-executor] 收到取消请求: ${executionId}`);
         abortController.abort();
         cancelled = true;
@@ -117,9 +117,9 @@ export async function executeRequirement(
         try {
           const mapped = mapAdapterEvent(event);
           await conversationStore.saveEvent({
-            executionId,
-            sessionId: currentSessionId ?? undefined,
-            eventType: mapped.eventType,
+            execution_id: executionId,
+            session_id: currentSessionId ?? undefined,
+            event_type: mapped.eventType,
             role: mapped.role,
             payload: mapped.payload,
           });
@@ -136,11 +136,11 @@ export async function executeRequirement(
       return;
     }
 
-    // 6. 保存 sessionId
+    // 6. 保存 session_id
     if (currentSessionId) {
-      await db.taskExecution.update({
-        where: { executionId },
-        data: { sessionId: currentSessionId },
+      await db.task_executions.update({
+        where: { execution_id: executionId },
+        data: { session_id: currentSessionId },
       });
     }
 
@@ -343,13 +343,13 @@ async function createTaskTree(
   targetRepoPath: string,
 ): Promise<void> {
   // 获取需求信息
-  const requirement = await db.requirement.findUnique({ where: { id: requirementId } });
+  const requirement = await db.requirements.findUnique({ where: { id: requirementId } });
   if (!requirement) {
     throw new Error(`需求不存在: ${requirementId}`);
   }
 
   // 更新需求描述为 spec
-  await db.requirement.update({
+  await db.requirements.update({
     where: { id: requirementId },
     data: { description: parsed.spec },
   });
@@ -358,10 +358,10 @@ async function createTaskTree(
 
   for (const epic of parsed.epics) {
     const epicId = randomUUID();
-    await db.epic.create({
+    await db.epics.create({
       data: {
         id: epicId,
-        requirementId,
+        requirement_id: requirementId,
         title: epic.title,
         description: epic.description || null,
         module: epic.module || null,
@@ -371,10 +371,10 @@ async function createTaskTree(
 
     for (const feature of epic.features) {
       const featureId = randomUUID();
-      await db.feature.create({
+      await db.features.create({
         data: {
           id: featureId,
-          epicId,
+          epic_id: epicId,
           title: feature.title,
           description: feature.description || null,
           status: 'pending',
@@ -383,16 +383,16 @@ async function createTaskTree(
 
       for (const us of feature.user_stories) {
         const userStoryId = randomUUID();
-        await db.userStory.create({
+        await db.user_stories.create({
           data: {
             id: userStoryId,
-            epicId,
-            featureId,
+            epic_id: epicId,
+            feature_id: featureId,
             title: us.title,
-            asA: us.as_a || null,
-            iWant: us.i_want || null,
-            soThat: us.so_that || null,
-            acceptanceText: us.acceptance_text || null,
+            as_a: us.as_a || null,
+            i_want: us.i_want || null,
+            so_that: us.so_that || null,
+            acceptance_text: us.acceptance_text || null,
             status: 'pending',
           },
         });
@@ -400,17 +400,17 @@ async function createTaskTree(
         for (const task of us.tasks) {
           taskSequence++;
           const taskId = randomUUID();
-          await db.task.create({
+          await db.tasks.create({
             data: {
               id: taskId,
-              userStoryId,
-              epicId,
+              user_story_id: userStoryId,
+              epic_id: epicId,
               title: task.title,
               description: task.description || null,
-              acceptanceCriteria: task.acceptance_criteria || null,
+              acceptance_criteria: task.acceptance_criteria || null,
               status: 'pending',
-              targetProjectId: requirement.targetProjectId,
-              targetRepoPath,
+              target_project_id: requirement.target_project_id,
+              target_repo_path: targetRepoPath,
               sequence: taskSequence,
             },
           });
@@ -421,11 +421,11 @@ async function createTaskTree(
             subjectId: taskId,
             taskId,
             requirementId,
-            targetProjectId: requirement.targetProjectId,
+            targetProjectId: requirement.target_project_id,
             targetRepoPath,
           });
 
-          console.log(`[requirement-executor] 创建任务执行: ${execution.executionId} → ${task.title}`);
+          console.log(`[requirement-executor] 创建任务执行: ${execution.execution_id} → ${task.title}`);
         }
       }
     }
@@ -444,11 +444,11 @@ function isRateLimitError(message: string): boolean {
 }
 
 async function getRetryCount(executionId: string): Promise<number> {
-  const exec = await db.taskExecution.findUnique({
-    where: { executionId },
-    select: { rateLimitCount: true },
+  const exec = await db.task_executions.findUnique({
+    where: { execution_id: executionId },
+    select: { rate_limit_count: true },
   });
-  return exec?.rateLimitCount ?? 0;
+  return exec?.rate_limit_count ?? 0;
 }
 
 /**

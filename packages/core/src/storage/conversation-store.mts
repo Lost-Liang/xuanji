@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.mjs';
-import type { ConversationEvent, Prisma } from '@prisma/client';
+import type { conversation_events, Prisma } from '@prisma/client';
 
 export const conversationStore = {
   /**
@@ -21,14 +21,14 @@ export const conversationStore = {
    * - error:           错误事件
    */
   async saveEvent(data: {
-    executionId?: string;
-    sessionId?: string;
-    turnIndex?: number;
-    eventType: string;
+    execution_id?: string;
+    session_id?: string;
+    turn_index?: number;
+    event_type: string;
     role?: string;
     payload: Prisma.InputJsonValue;
-  }): Promise<ConversationEvent> {
-    return db.conversationEvent.create({
+  }): Promise<conversation_events> {
+    return db.conversation_events.create({
       data: {
         id: randomUUID(),
         ...data,
@@ -39,20 +39,20 @@ export const conversationStore = {
   /**
    * 根据执行实例 ID 获取完整对话流
    */
-  async getByExecution(executionId: string): Promise<ConversationEvent[]> {
-    return db.conversationEvent.findMany({
-      where: { executionId },
-      orderBy: { createdAt: 'asc' },
+  async getByExecution(execution_id: string): Promise<conversation_events[]> {
+    return db.conversation_events.findMany({
+      where: { execution_id },
+      orderBy: { created_at: 'asc' },
     });
   },
 
   /**
    * 根据会话 ID 获取对话流（用于 --resume 恢复会话）
    */
-  async getBySession(sessionId: string): Promise<ConversationEvent[]> {
-    return db.conversationEvent.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'asc' },
+  async getBySession(session_id: string): Promise<conversation_events[]> {
+    return db.conversation_events.findMany({
+      where: { session_id },
+      orderBy: { created_at: 'asc' },
     });
   },
 };

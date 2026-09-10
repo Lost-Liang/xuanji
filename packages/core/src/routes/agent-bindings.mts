@@ -13,23 +13,23 @@ export const agentBindingsRouter: Router = Router();
 
 // GET / - 列表
 agentBindingsRouter.get('/', async (_req, res) => {
-  const bindings = await db.agentBinding.findMany({
-    orderBy: { createdAt: 'asc' },
+  const bindings = await db.agent_bindings.findMany({
+    orderBy: { created_at: 'asc' },
   });
 
   // 前端期望的字段名（camelCase）
   const result = bindings.map((b) => ({
     id: b.id,
-    plugin_id: b.pluginId,
-    agent_id: b.agentId,
+    plugin_id: b.plugin_id,
+    agent_id: b.agent_id,
     omnigent_agent_id: null, // 不再使用，前端兼容字段
     harness: b.harness,
-    skill_id: b.skillId,
-    prompt_content: b.promptContent,
+    skill_id: b.skill_id,
+    prompt_content: b.prompt_content,
     triggers: b.triggers,
     model: b.model,
-    reasoning_effort: b.reasoningEffort,
-    created_at: b.createdAt.toISOString(),
+    reasoning_effort: b.reasoning_effort,
+    created_at: b.created_at.toISOString(),
     session_count: 0, // 暂不统计，前端 ?? 0 兼容
   }));
 
@@ -40,7 +40,7 @@ agentBindingsRouter.get('/', async (_req, res) => {
 agentBindingsRouter.get('/:id', async (req, res) => {
   const { id } = req.params;
 
-  const binding = await db.agentBinding.findUnique({
+  const binding = await db.agent_bindings.findUnique({
     where: { id },
   });
 
@@ -50,22 +50,22 @@ agentBindingsRouter.get('/:id', async (req, res) => {
 
   res.json({
     id: binding.id,
-    plugin_id: binding.pluginId,
-    agent_id: binding.agentId,
+    plugin_id: binding.plugin_id,
+    agent_id: binding.agent_id,
     omnigent_agent_id: null,
     harness: binding.harness,
-    skill_id: binding.skillId,
-    prompt_content: binding.promptContent,
+    skill_id: binding.skill_id,
+    prompt_content: binding.prompt_content,
     triggers: binding.triggers,
     model: binding.model,
-    reasoning_effort: binding.reasoningEffort,
-    created_at: binding.createdAt.toISOString(),
+    reasoning_effort: binding.reasoning_effort,
+    created_at: binding.created_at.toISOString(),
     session_count: 0,
   });
 });
 
 // POST / - 创建
-agentBindingsRouter.post('/', async (req, res) => {
+agentBindingsRouter.post('/', async (req: Request, res) => {
   const {
     id,
     plugin_id,
@@ -76,42 +76,52 @@ agentBindingsRouter.post('/', async (req, res) => {
     triggers,
     model,
     reasoning_effort,
+  }: {
+    id?: string;
+    plugin_id?: string | null;
+    agent_id?: string;
+    harness?: string;
+    skill_id?: string | null;
+    prompt_content?: string;
+    triggers?: unknown;
+    model?: string | null;
+    reasoning_effort?: string | null;
   } = req.body;
 
   // id 缺省用 agent_id 或 uuid
   const bindingId = id || agent_id || crypto.randomUUID();
 
-  const binding = await db.agentBinding.create({
+  const binding = await db.agent_bindings.create({
     data: {
       id: bindingId,
-      pluginId: plugin_id || null,
-      agentId: agent_id || bindingId,
+      plugin_id: plugin_id || null,
+      agent_id: agent_id || bindingId,
       harness: harness || 'claude',
-      skillId: skill_id || null,
-      promptContent: prompt_content || '',
+      skill_id: skill_id || null,
+      prompt_content: prompt_content || '',
       triggers: triggers ? triggers : Prisma.JsonNull,
       model: model || null,
-      reasoningEffort: reasoning_effort || null,
+      reasoning_effort: reasoning_effort || null,
     },
   });
 
   res.status(201).json({
     id: binding.id,
-    plugin_id: binding.pluginId,
-    agent_id: binding.agentId,
+    plugin_id: binding.plugin_id,
+    agent_id: binding.agent_id,
     omnigent_agent_id: null,
     harness: binding.harness,
-    skill_id: binding.skillId,
-    prompt_content: binding.promptContent,
+    skill_id: binding.skill_id,
+    prompt_content: binding.prompt_content,
     triggers: binding.triggers,
     model: binding.model,
-    reasoning_effort: binding.reasoningEffort,
-    created_at: binding.createdAt.toISOString(),
+    reasoning_effort: binding.reasoning_effort,
+    created_at: binding.created_at.toISOString(),
   });
 });
 
 // PUT /:id - 更新
-agentBindingsRouter.put('/:id', async (req, res) => {
+agentBindingsRouter.put('/:id', async (req: Request, res) => {
   const { id } = req.params;
   const {
     plugin_id,
@@ -122,34 +132,43 @@ agentBindingsRouter.put('/:id', async (req, res) => {
     triggers,
     model,
     reasoning_effort,
+  }: {
+    plugin_id?: string | null;
+    agent_id?: string;
+    harness?: string;
+    skill_id?: string | null;
+    prompt_content?: string;
+    triggers?: unknown;
+    model?: string | null;
+    reasoning_effort?: string | null;
   } = req.body;
 
-  const binding = await db.agentBinding.update({
+  const binding = await db.agent_bindings.update({
     where: { id },
     data: {
-      pluginId: plugin_id,
-      agentId: agent_id,
+      plugin_id,
+      agent_id,
       harness,
-      skillId: skill_id,
-      promptContent: prompt_content,
+      skill_id,
+      prompt_content,
       triggers: triggers ? triggers : Prisma.JsonNull,
       model,
-      reasoningEffort: reasoning_effort,
+      reasoning_effort,
     },
   });
 
   res.json({
     id: binding.id,
-    plugin_id: binding.pluginId,
-    agent_id: binding.agentId,
+    plugin_id: binding.plugin_id,
+    agent_id: binding.agent_id,
     omnigent_agent_id: null,
     harness: binding.harness,
-    skill_id: binding.skillId,
-    prompt_content: binding.promptContent,
+    skill_id: binding.skill_id,
+    prompt_content: binding.prompt_content,
     triggers: binding.triggers,
     model: binding.model,
-    reasoning_effort: binding.reasoningEffort,
-    created_at: binding.createdAt.toISOString(),
+    reasoning_effort: binding.reasoning_effort,
+    created_at: binding.created_at.toISOString(),
   });
 });
 
@@ -157,7 +176,7 @@ agentBindingsRouter.put('/:id', async (req, res) => {
 agentBindingsRouter.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
-  await db.agentBinding.delete({
+  await db.agent_bindings.delete({
     where: { id },
   });
 

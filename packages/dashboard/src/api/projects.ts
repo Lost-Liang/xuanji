@@ -5,35 +5,34 @@ export interface Project {
   id: string
   name: string
   path: string
-  description: string | null
-  created_at: string
-  updated_at: string
+  description?: string
 }
 
 export const api = {
   async list(): Promise<Project[]> {
-    const r = await fetch(base)
-    return r.json()
+    const res = await fetch(base)
+    if (!res.ok) throw new Error(`Failed to list projects: ${res.statusText}`)
+    return res.json()
   },
 
-  async create(data: { name: string; path: string; description?: string }): Promise<Project> {
-    const r = await fetch(base, {
+  async get(id: string): Promise<Project> {
+    const res = await fetch(`${base}/${id}`)
+    if (!res.ok) throw new Error(`Failed to get project: ${res.statusText}`)
+    return res.json()
+  },
+
+  async create(data: Omit<Project, 'id'>): Promise<Project> {
+    const res = await fetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data)
     })
-    if (!r.ok) {
-      const err = await r.json()
-      throw new Error(err.error || '创建失败')
-    }
-    return r.json()
+    if (!res.ok) throw new Error(`Failed to create project: ${res.statusText}`)
+    return res.json()
   },
 
   async delete(id: string): Promise<void> {
-    const r = await fetch(`${base}/${id}`, { method: 'DELETE' })
-    if (!r.ok) {
-      const err = await r.json()
-      throw new Error(err.error || '删除失败')
-    }
-  },
+    const res = await fetch(`${base}/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`Failed to delete project: ${res.statusText}`)
+  }
 }

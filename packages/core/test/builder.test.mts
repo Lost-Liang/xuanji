@@ -42,9 +42,8 @@ describe('builder.mts 核心函数', () => {
       // 2. 映射为 GraphDef
       const graphDef = mapYamlToGraphDef(workflowDef);
       expect(graphDef.nodes.length).toBe(workflowDef.nodes.length);
-      // __end__ 边被过滤
-      const endEdges = workflowDef.edges.filter((e) => e.to === '__end__');
-      expect(graphDef.edges.length).toBe(workflowDef.edges.length - endEdges.length);
+      // __end__ 边在 GraphDef 中保留（LangGraph END 节点）
+      expect(graphDef.edges.length).toBe(workflowDef.edges.length);
 
       // 3. 构建可执行图
       const compiled = buildGraphFromDef(yamlContent);

@@ -79,11 +79,11 @@ internalRouter.post('/inbox-ask', async (req, res) => {
       const now = new Date();
 
       // 创建问题记录
-      await db.inboxQuestion.create({
+      await db.inbox_questions.create({
         data: {
           id: currentQuestionId,
-          executionId,
-          sessionId: null,
+          execution_id: executionId,
+          session_id: null,
           body: question,
           choices: choices ? choices : Prisma.JsonNull,
           status: 'pending',
@@ -94,11 +94,11 @@ internalRouter.post('/inbox-ask', async (req, res) => {
       });
 
       // 保存对话事件（用于 Dashboard 显示）
-      await db.conversationEvent.create({
+      await db.conversation_events.create({
         data: {
           id: randomUUID(),
-          executionId,
-          eventType: 'inbox_ask',
+          execution_id: executionId,
+          event_type: 'inbox_ask',
           payload: {
             questionId: currentQuestionId,
             body: question,
@@ -109,8 +109,8 @@ internalRouter.post('/inbox-ask', async (req, res) => {
       });
 
       // 更新执行状态为 waiting
-      await db.taskExecution.update({
-        where: { executionId },
+      await db.task_executions.update({
+        where: { execution_id: executionId },
         data: { status: 'waiting' },
       }).catch(() => {
         // 执行记录可能不存在，忽略错误
@@ -127,24 +127,24 @@ internalRouter.post('/inbox-ask', async (req, res) => {
     const result = await pollForAnswer(currentQuestionId, 30_000);
 
     if (result.status === 'answered' && result.answer) {
-      // 获取 executionId（如果之前没有）
+      // 获取 execution_id（如果之前没有）
       if (!execId) {
-        const q = await db.inboxQuestion.findUnique({
+        const q = await db.inbox_questions.findUnique({
           where: { id: currentQuestionId },
-          select: { executionId: true },
+          select: { execution_id: true },
         });
-        if (q?.executionId) {
-          execId = q.executionId;
+        if (q?.execution_id) {
+          execId = q.execution_id;
         }
       }
 
       if (execId) {
         // 记录回答事件
-        await db.conversationEvent.create({
+        await db.conversation_events.create({
           data: {
             id: randomUUID(),
-            executionId: execId,
-            eventType: 'inbox_answer',
+            execution_id: execId,
+            event_type: 'inbox_answer',
             payload: {
               questionId: currentQuestionId,
               answer: result.answer,
@@ -154,8 +154,8 @@ internalRouter.post('/inbox-ask', async (req, res) => {
         });
 
         // 恢复执行状态为 running
-        await db.taskExecution.update({
-          where: { executionId: execId },
+        await db.task_executions.update({
+          where: { execution_id: execId },
           data: { status: 'running' },
         }).catch(() => {
           // 执行记录可能不存在，忽略错误

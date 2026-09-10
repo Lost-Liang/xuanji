@@ -19,14 +19,14 @@ export async function recoverOrphanedQuestions(): Promise<void> {
   const timeoutThreshold = new Date(Date.now() - DEFAULT_TIMEOUT_MS);
 
   // 查找超时的 pending 问题
-  const orphans = await db.inboxQuestion.findMany({
+  const orphans = await db.inbox_questions.findMany({
     where: {
       status: 'pending',
       waitingSince: { lt: timeoutThreshold },
     },
     include: {
-      execution: {
-        select: { status: true, executionId: true },
+      task_executions: {
+        select: { status: true, execution_id: true },
       },
     },
   });
@@ -34,11 +34,11 @@ export async function recoverOrphanedQuestions(): Promise<void> {
   console.log(`[orphan-detection] 发现 ${orphans.length} 个孤儿问题`);
 
   for (const orphan of orphans) {
-    const exec = orphan.execution;
+    const exec = orphan.task_executions;
 
     if (!exec) {
       // 无关联执行，标记为 timeout
-      await db.inboxQuestion.update({
+      await db.inbox_questions.update({
         where: { id: orphan.id },
         data: { status: 'timeout' },
       });
@@ -48,22 +48,22 @@ export async function recoverOrphanedQuestions(): Promise<void> {
 
     if (exec.status === 'completed' || exec.status === 'failed' || exec.status === 'cancelled') {
       // 执行已完成但问题仍 pending，标记为 timeout
-      await db.inboxQuestion.update({
+      await db.inbox_questions.update({
         where: { id: orphan.id },
         data: { status: 'timeout' },
       });
       console.log(`[orphan-detection] 问题 ${orphan.id} 标记为 timeout（执行已${exec.status}）`);
     } else if (exec.status === 'running') {
       // 执行仍在运行但问题超时，更新执行状态为 waiting
-      if (!orphan.executionId) {
-        console.log(`[orphan-detection] 问题 ${orphan.id} 无 executionId，跳过`);
+      if (!orphan.execution_id) {
+        console.log(`[orphan-detection] 问题 ${orphan.id} 无 execution_id，跳过`);
         continue;
       }
-      await db.taskExecution.update({
-        where: { executionId: orphan.executionId },
+      await db.task_executions.update({
+        where: { execution_id: orphan.execution_id },
         data: { status: 'waiting' },
       });
-      console.log(`[orphan-detection] 执行 ${orphan.executionId} 状态更新为 waiting`);
+      console.log(`[orphan-detection] 执行 ${orphan.execution_id} 状态更新为 waiting`);
     }
   }
 

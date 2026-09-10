@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.mjs';
-import type { Book } from '@prisma/client';
+import type { books } from '@prisma/client';
 
 export const bookStore = {
   /**
@@ -15,9 +15,9 @@ export const bookStore = {
     author: string;
     publisher: string;
     category: string;
-    stockQuantity?: number;
-  }): Promise<Book> {
-    return db.book.create({
+    stock_quantity?: number;
+  }): Promise<books> {
+    return db.books.create({
       data: {
         id: randomUUID(),
         ...data,
@@ -28,40 +28,40 @@ export const bookStore = {
   /**
    * 根据 ID 查询图书
    */
-  async getById(id: string): Promise<Book | null> {
-    return db.book.findUnique({ where: { id } });
+  async getById(id: string): Promise<books | null> {
+    return db.books.findUnique({ where: { id } });
   },
 
   /**
    * 根据 ISBN 查询图书
    */
-  async getByIsbn(isbn: string): Promise<Book | null> {
-    return db.book.findUnique({ where: { isbn } });
+  async getByIsbn(isbn: string): Promise<books | null> {
+    return db.books.findUnique({ where: { isbn } });
   },
 
   /**
    * 列出所有图书
    */
-  async list(): Promise<Book[]> {
-    return db.book.findMany({
-      orderBy: { createdAt: 'desc' },
+  async list(): Promise<books[]> {
+    return db.books.findMany({
+      orderBy: { created_at: 'desc' },
     });
   },
 
   /**
    * 更新图书库存
    */
-  async updateStock(id: string, stockQuantity: number): Promise<Book> {
-    return db.book.update({
+  async updateStock(id: string, stockQuantity: number): Promise<books> {
+    return db.books.update({
       where: { id },
-      data: { stockQuantity },
+      data: { stock_quantity: stockQuantity },
     });
   },
 
   /**
    * 删除图书
    */
-  async delete(id: string): Promise<Book> {
-    return db.book.delete({ where: { id } });
+  async delete(id: string): Promise<books> {
+    return db.books.delete({ where: { id } });
   },
 };

@@ -56,12 +56,12 @@ workflowsRouter.get('/', async (_req, res) => {
     }
 
     // user（DB graph_definitions）
-    const userRows = await db.graphDefinition.findMany({
-      orderBy: { updatedAt: 'desc' },
+    const userRows = await db.graph_definitions.findMany({
+      orderBy: { updated_at: 'desc' },
     });
 
-    const user = userRows.map((row) => {
-      const def = row.definitionJson as any;
+    const user = userRows.map((row: { id: string; name: string; description: string | null; definition_json: unknown }) => {
+      const def = row.definition_json as Record<string, unknown> | null;
       return {
         id: row.id,
         name: row.name,
@@ -109,7 +109,7 @@ workflowsRouter.get('/:id', async (req, res) => {
     }
 
     // 再查 DB user
-    const row = await db.graphDefinition.findUnique({
+    const row = await db.graph_definitions.findUnique({
       where: { id },
     });
 
@@ -117,7 +117,7 @@ workflowsRouter.get('/:id', async (req, res) => {
       return res.status(404).json({ error: '工作流不存在' });
     }
 
-    const def = row.definitionJson as any;
+    const def = row.definition_json as Record<string, unknown> | null;
     res.json({
       id: row.id,
       name: row.name,
@@ -148,7 +148,7 @@ workflowsRouter.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Cannot delete preset workflow' });
     }
 
-    await db.graphDefinition.delete({
+    await db.graph_definitions.delete({
       where: { id },
     });
 

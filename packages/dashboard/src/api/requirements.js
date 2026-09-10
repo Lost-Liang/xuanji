@@ -37,4 +37,11 @@ export const api = {
         });
         return r.json();
     },
+    async confirmAll(requirementId) {
+        const r = await fetch(`${base}/${requirementId}/confirm-all-tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        return r.json();
+    },
 };

@@ -179,6 +179,22 @@ async function confirmTask(task, event) {
         ElMessage.error(e?.message || '确认失败');
     }
 }
+async function executeTask(task, event) {
+    event?.stopPropagation();
+    try {
+        const res = await api.execute(task.id);
+        if (res.ok) {
+            ElMessage.success('已开始执行');
+            loadList();
+        }
+        else {
+            ElMessage.error(res.error || '执行失败');
+        }
+    }
+    catch (e) {
+        ElMessage.error(e?.message || '执行失败');
+    }
+}
 // 删除任务
 async function deleteTask(task, event) {
     event?.stopPropagation();
@@ -660,6 +676,18 @@ for (const [group] of __VLS_getVForSourceType((__VLS_ctx.priorityGroups))) {
                     ...{ class: "action-btn primary" },
                 });
             }
+            if (group === 'pending') {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.groupedTasks[group]?.length))
+                                return;
+                            if (!(group === 'pending'))
+                                return;
+                            __VLS_ctx.executeTask(task, $event);
+                        } },
+                    ...{ class: "action-btn primary" },
+                });
+            }
             if (group === 'paused') {
                 __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
                     ...{ onClick: (...[$event]) => {
@@ -772,6 +800,18 @@ for (const [group] of __VLS_getVForSourceType((__VLS_ctx.normalGroups))) {
                     } },
                 ...{ class: "action-btn" },
             });
+            if (group === 'pending') {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.groupedTasks[group]?.length))
+                                return;
+                            if (!(group === 'pending'))
+                                return;
+                            __VLS_ctx.executeTask(task, $event);
+                        } },
+                    ...{ class: "action-btn primary" },
+                });
+            }
             __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
                 ...{ onClick: (...[$event]) => {
                         if (!(__VLS_ctx.groupedTasks[group]?.length))
@@ -870,6 +910,8 @@ const __VLS_4 = __VLS_3({}, ...__VLS_functionalComponentArgsRest(__VLS_3));
 /** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['primary']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['delete']} */ ;
 /** @type {__VLS_StyleScopedClasses['task-group']} */ ;
 /** @type {__VLS_StyleScopedClasses['collapsed']} */ ;
@@ -888,6 +930,8 @@ const __VLS_4 = __VLS_3({}, ...__VLS_functionalComponentArgsRest(__VLS_3));
 /** @type {__VLS_StyleScopedClasses['card-actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['delete']} */ ;
 /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
@@ -920,6 +964,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             resumeTask: resumeTask,
             retryTask: retryTask,
             confirmTask: confirmTask,
+            executeTask: executeTask,
             deleteTask: deleteTask,
         };
     },
