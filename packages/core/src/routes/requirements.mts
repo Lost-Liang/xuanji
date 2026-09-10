@@ -648,45 +648,14 @@ requirementsRouter.post('/:id/execute', async (req, res) => {
 
 /**
  * POST /api/requirements/:id/pause
- * 暂停需求下所有 running 任务
+ * 暂停需求下所有 running + pending 任务
+ *
+ * 之前的 bug：只处理 running，pending 任务留在调度队列被捡起，导致"暂停后又继续"。
  */
 requirementsRouter.post('/:id/pause', async (req, res) => {
   try {
-    const requirementId = req.params.id;
-
-    // 找到该需求下所有 running 状态的任务执行
-    const runningExecs = await db.task_executions.findMany({
-      where: {
-        requirement_id: requirementId,
-        status: 'running',
-      },
-      select: { execution_id: true },
-    });
-
-    if (runningExecs.length === 0) {
-      res.json({ ok: true, message: '无运行中的任务', paused_count: 0 });
-      return;
-    }
-
-    // 批量设置 control_status + 直接触发 abort
-    const { getAbortController } = await import('../graph/graph-runner.mjs');
-
-    for (const exec of runningExecs) {
-      // 1. 标记控制状态
-      await db.task_executions.update({
-        where: { execution_id: exec.execution_id },
-        data: { control_status: 'pause_requested' },
-      });
-
-      // 2. 直接触发中断
-      const abortController = getAbortController(exec.execution_id);
-      if (abortController && !abortController.signal.aborted) {
-        console.log(`[requirements] 暂停 API 直接触发 abort: ${exec.execution_id}`);
-        abortController.abort();
-      }
-    }
-
-    res.json({ ok: true, paused_count: runningExecs.length });
+    const count = await pauseExecutions({ requirement_id: req.params.id });
+    res.json({ ok: true, paused_count: count });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
   }
@@ -733,40 +702,12 @@ requirementsRouter.post('/epics/:id/execute', async (req, res) => {
 
 /**
  * POST /api/epics/:id/pause
- * 暂停该 Epic 下所有 running 任务
+ * 暂停该 Epic 下所有 running + pending 任务
  */
 requirementsRouter.post('/epics/:id/pause', async (req, res) => {
   try {
-    const epicId = req.params.id;
-
-    const runningExecs = await db.task_executions.findMany({
-      where: {
-        tasks: { epic_id: epicId },
-        status: 'running',
-      },
-      select: { execution_id: true },
-    });
-
-    if (runningExecs.length === 0) {
-      res.json({ ok: true, paused_count: 0 });
-      return;
-    }
-
-    const { getAbortController } = await import('../graph/graph-runner.mjs');
-
-    for (const exec of runningExecs) {
-      await db.task_executions.update({
-        where: { execution_id: exec.execution_id },
-        data: { control_status: 'pause_requested' },
-      });
-
-      const abortController = getAbortController(exec.execution_id);
-      if (abortController && !abortController.signal.aborted) {
-        abortController.abort();
-      }
-    }
-
-    res.json({ ok: true, paused_count: runningExecs.length });
+    const count = await pauseExecutions({ tasks: { epic_id: req.params.id } });
+    res.json({ ok: true, paused_count: count });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
   }
@@ -784,6 +725,51 @@ requirementsRouter.post('/epics/:id/resume', async (req, res) => {
     res.status(500).json({ error: '恢复失败', detail: (err as Error).message });
   }
 });
+
+/**
+ * 批量暂停执行：匹配 where 的执行按状态分类处理
+ * - running → 标记 pause_requested + 触发 abort（由 graph-runner 最终落 status=paused）
+ * - pending → 直接改 status='paused'，避免调度器继续拾取
+ *
+ * 之前的 bug：只处理 running，pending 任务留在队列里被调度器捡起，导致"暂停后又继续"。
+ * 返回成功处理的总任务数。
+ */
+async function pauseExecutions(where: Record<string, any>): Promise<number> {
+  const active = await db.task_executions.findMany({
+    where: {
+      ...where,
+      status: { in: ['running', 'pending'] },
+    },
+    select: { execution_id: true, status: true },
+  });
+
+  if (active.length === 0) return 0;
+
+  const { getAbortController } = await import('../graph/graph-runner.mjs');
+
+  for (const exec of active) {
+    if (exec.status === 'running') {
+      // running：标记 pause_requested，graph-runner 的 catch 块会据此把 status 落为 paused
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { control_status: 'pause_requested' },
+      });
+      const abortController = getAbortController(exec.execution_id);
+      if (abortController && !abortController.signal.aborted) {
+        console.log(`[requirements] 暂停 API 直接触发 abort: ${exec.execution_id}`);
+        abortController.abort();
+      }
+    } else if (exec.status === 'pending') {
+      // pending：直接改状态为 paused，让调度器 acquireLease CAS 不再命中
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { status: 'paused', control_status: 'paused' },
+      });
+    }
+  }
+
+  return active.length;
+}
 
 /**
  * 批量恢复执行：将 paused/failed/stopped/cancelled 重置为 pending，交由调度器拾取
@@ -951,42 +937,14 @@ requirementsRouter.post('/features/:id/execute', async (req, res) => {
 
 /**
  * POST /api/features/:id/pause
- * 暂停该 Feature 下所有 running 任务
+ * 暂停该 Feature 下所有 running + pending 任务
  */
 requirementsRouter.post('/features/:id/pause', async (req, res) => {
   try {
-    const featureId = req.params.id;
-
-    const runningExecs = await db.task_executions.findMany({
-      where: {
-        tasks: {
-          user_stories: { feature_id: featureId },
-        },
-        status: 'running',
-      },
-      select: { execution_id: true },
+    const count = await pauseExecutions({
+      tasks: { user_stories: { feature_id: req.params.id } },
     });
-
-    if (runningExecs.length === 0) {
-      res.json({ ok: true, paused_count: 0 });
-      return;
-    }
-
-    const { getAbortController } = await import('../graph/graph-runner.mjs');
-
-    for (const exec of runningExecs) {
-      await db.task_executions.update({
-        where: { execution_id: exec.execution_id },
-        data: { control_status: 'pause_requested' },
-      });
-
-      const abortController = getAbortController(exec.execution_id);
-      if (abortController && !abortController.signal.aborted) {
-        abortController.abort();
-      }
-    }
-
-    res.json({ ok: true, paused_count: runningExecs.length });
+    res.json({ ok: true, paused_count: count });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
   }
@@ -1079,40 +1037,12 @@ requirementsRouter.post('/user-stories/:id/execute', async (req, res) => {
 
 /**
  * POST /api/user-stories/:id/pause
- * 暂停该 UserStory 下所有 running 任务
+ * 暂停该 UserStory 下所有 running + pending 任务
  */
 requirementsRouter.post('/user-stories/:id/pause', async (req, res) => {
   try {
-    const userStoryId = req.params.id;
-
-    const runningExecs = await db.task_executions.findMany({
-      where: {
-        tasks: { user_story_id: userStoryId },
-        status: 'running',
-      },
-      select: { execution_id: true },
-    });
-
-    if (runningExecs.length === 0) {
-      res.json({ ok: true, paused_count: 0 });
-      return;
-    }
-
-    const { getAbortController } = await import('../graph/graph-runner.mjs');
-
-    for (const exec of runningExecs) {
-      await db.task_executions.update({
-        where: { execution_id: exec.execution_id },
-        data: { control_status: 'pause_requested' },
-      });
-
-      const abortController = getAbortController(exec.execution_id);
-      if (abortController && !abortController.signal.aborted) {
-        abortController.abort();
-      }
-    }
-
-    res.json({ ok: true, paused_count: runningExecs.length });
+    const count = await pauseExecutions({ tasks: { user_story_id: req.params.id } });
+    res.json({ ok: true, paused_count: count });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
   }
