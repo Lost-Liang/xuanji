@@ -223,7 +223,7 @@ function hasDraftTasks(tree: RequirementTree): boolean {
         <span class="status-chip" :class="statusClass(req.execution_status || req.status)">
           {{ statusLabel(req.execution_status || req.status) }}
         </span>
-        <span class="created-at">{{ new Date(req.created_at).toLocaleDateString() }}</span>
+        <span class="created-at">{{ req.created_at ? new Date(req.created_at).toLocaleDateString() : '' }}</span>
         <div class="actions" @click.stop>
           <el-button v-if="canExecute(req)" size="small" type="primary" @click="executeRequirement(req.id)">执行</el-button>
           <el-button v-if="req.execution_status === 'running' || req.execution_status === 'pending'" size="small" type="warning" @click="stopRequirement(req.id)">停止</el-button>
