@@ -124,9 +124,29 @@ export async function workerNode(
   }
 
   // ── M2.2: 工作流检测 ─────────────────────────────────────────────────────────
-  // 如果执行已有 graph_definition_id，说明正在由 graphRunner 处理，跳过
+  // 如果执行已有 graph_definition_id，说明之前已派发过工作流
+  // 但如果状态仍是 pending，说明上次派发未成功（如进程中断），需要重新派发
   if (execution.graph_definition_id) {
-    console.log(`[worker-graph] 执行已有工作流 ${execution.graph_definition_id}，跳过调度`);
+    if (execution.status === 'pending') {
+      // 重新派发给 graphRunner
+      console.log(`[worker-graph] 执行有工作流 ${execution.graph_definition_id} 但仍 pending，重新派发`);
+      try {
+        await graphRunner.startExecution({
+          executionId,
+          flowId: execution.graph_definition_id,
+          input: '',
+          task: taskId ? await taskStore.getById(taskId) : undefined,
+        });
+        return { status: 'completed' };
+      } catch (err) {
+        const errorMsg = (err as Error).message || '工作流重新派发失败';
+        console.error(`[worker-graph] graphRunner 重新派发失败:`, err);
+        await executionStore.fail(executionId, errorMsg);
+        return { status: 'failed', error: errorMsg };
+      }
+    }
+    // 非 pending 状态，说明已在执行中，跳过
+    console.log(`[worker-graph] 执行已有工作流 ${execution.graph_definition_id}，状态 ${execution.status}，跳过调度`);
     return { status: 'idle' };
   }
 
