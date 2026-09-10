@@ -129,6 +129,16 @@ async function stopRequirement(reqId: string) {
   }
 }
 
+async function pauseRequirement(reqId: string) {
+  try {
+    const res = await reqApi.pauseRequirement(reqId)
+    ElMessage.success(`已暂停 ${res.paused_count} 个任务`)
+    emit('refresh')
+  } catch (e) {
+    ElMessage.error('暂停失败')
+  }
+}
+
 async function confirmAllTasks(reqId: string) {
   try {
     const res = await reqApi.confirmAll(reqId)
@@ -188,6 +198,108 @@ async function deleteTask(execId: string) {
   }
 }
 
+// Actions —— Epic 级
+async function executeEpic(epicId: string) {
+  try {
+    const res = await reqApi.executeEpic(epicId)
+    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('启动失败')
+  }
+}
+
+async function pauseEpic(epicId: string) {
+  try {
+    const res = await reqApi.pauseEpic(epicId)
+    ElMessage.success(`已暂停 ${res.paused_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('暂停失败')
+  }
+}
+
+async function deleteEpic(epicId: string) {
+  try {
+    await ElMessageBox.confirm('确定删除该史诗？所有关联任务将被删除。', '删除确认', {
+      type: 'warning',
+    })
+    await reqApi.deleteEpic(epicId)
+    ElMessage.success('已删除')
+    await loadAllTrees()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
+}
+
+// Actions —— Feature 级
+async function executeFeature(featureId: string) {
+  try {
+    const res = await reqApi.executeFeature(featureId)
+    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('启动失败')
+  }
+}
+
+async function pauseFeature(featureId: string) {
+  try {
+    const res = await reqApi.pauseFeature(featureId)
+    ElMessage.success(`已暂停 ${res.paused_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('暂停失败')
+  }
+}
+
+async function deleteFeature(featureId: string) {
+  try {
+    await ElMessageBox.confirm('确定删除该特性？所有关联任务将被删除。', '删除确认', {
+      type: 'warning',
+    })
+    await reqApi.deleteFeature(featureId)
+    ElMessage.success('已删除')
+    await loadAllTrees()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
+}
+
+// Actions —— UserStory 级
+async function executeUserStory(userStoryId: string) {
+  try {
+    const res = await reqApi.executeUserStory(userStoryId)
+    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('启动失败')
+  }
+}
+
+async function pauseUserStory(userStoryId: string) {
+  try {
+    const res = await reqApi.pauseUserStory(userStoryId)
+    ElMessage.success(`已暂停 ${res.paused_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('暂停失败')
+  }
+}
+
+async function deleteUserStory(userStoryId: string) {
+  try {
+    await ElMessageBox.confirm('确定删除该用户故事？所有关联任务将被删除。', '删除确认', {
+      type: 'warning',
+    })
+    await reqApi.deleteUserStory(userStoryId)
+    ElMessage.success('已删除')
+    await loadAllTrees()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
+}
+
 // 判断是否有 draft 任务（用于显示"确认任务"按钮）
 function hasDraftTasks(tree: RequirementTree): boolean {
   for (const epic of tree.epics) {
@@ -226,7 +338,7 @@ function hasDraftTasks(tree: RequirementTree): boolean {
         <span class="created-at">{{ req.created_at ? new Date(req.created_at).toLocaleDateString() : '' }}</span>
         <div class="actions" @click.stop>
           <el-button v-if="canExecute(req)" size="small" type="primary" @click="executeRequirement(req.id)">执行</el-button>
-          <el-button v-if="req.execution_status === 'running' || req.execution_status === 'pending'" size="small" type="warning" @click="stopRequirement(req.id)">停止</el-button>
+          <el-button v-if="req.execution_status === 'running'" size="small" type="warning" @click="pauseRequirement(req.id)">暂停</el-button>
           <el-button v-if="treeData.get(req.id) && hasDraftTasks(treeData.get(req.id)!)" size="small" type="primary" @click="confirmAllTasks(req.id)">确认任务</el-button>
           <el-button size="small" @click="openLogDrawer(req.id)">日志</el-button>
           <el-button v-if="req.execution_id" size="small" @click="router.push(`/canvas?execution_id=${req.execution_id}`)">画布</el-button>
@@ -248,6 +360,11 @@ function hasDraftTasks(tree: RequirementTree): boolean {
             <span class="title">{{ epic.title }}</span>
             <span class="status-chip" :class="statusClass(epic.status)">{{ statusLabel(epic.status) }}</span>
             <span v-if="epic.module" class="module-tag">{{ epic.module }}</span>
+            <div class="actions" @click.stop>
+              <el-button v-if="epic.status === 'pending' || epic.status === 'planned'" size="small" type="primary" @click="executeEpic(epic.id)">执行</el-button>
+              <el-button v-if="epic.status === 'running'" size="small" type="warning" @click="pauseEpic(epic.id)">暂停</el-button>
+              <el-button size="small" type="danger" @click="deleteEpic(epic.id)">删除</el-button>
+            </div>
           </div>
 
           <template v-if="isExpanded(epic.id)">
@@ -262,6 +379,11 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                 <span class="level-badge feature">特性</span>
                 <span class="title">{{ feature.title }}</span>
                 <span class="status-chip" :class="statusClass(feature.status)">{{ statusLabel(feature.status) }}</span>
+                <div class="actions" @click.stop>
+                  <el-button v-if="feature.status === 'pending' || feature.status === 'planned'" size="small" type="primary" @click="executeFeature(feature.id)">执行</el-button>
+                  <el-button v-if="feature.status === 'running'" size="small" type="warning" @click="pauseFeature(feature.id)">暂停</el-button>
+                  <el-button size="small" type="danger" @click="deleteFeature(feature.id)">删除</el-button>
+                </div>
               </div>
 
               <template v-if="isExpanded(feature.id)">
@@ -277,6 +399,11 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                     <span class="title">{{ story.title }}</span>
                     <span class="priority-tag">{{ story.priority }}</span>
                     <span class="status-chip" :class="statusClass(story.status)">{{ statusLabel(story.status) }}</span>
+                    <div class="actions" @click.stop>
+                      <el-button v-if="story.status === 'pending' || story.status === 'planned'" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
+                      <el-button v-if="story.status === 'running'" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                      <el-button size="small" type="danger" @click="deleteUserStory(story.id)">删除</el-button>
+                    </div>
                   </div>
 
                   <template v-if="isExpanded(story.id)">
@@ -315,6 +442,11 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                 <span class="title">{{ story.title }}</span>
                 <span class="priority-tag">{{ story.priority }}</span>
                 <span class="status-chip" :class="statusClass(story.status)">{{ statusLabel(story.status) }}</span>
+                <div class="actions" @click.stop>
+                  <el-button v-if="story.status === 'pending' || story.status === 'planned'" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
+                  <el-button v-if="story.status === 'running'" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                  <el-button size="small" type="danger" @click="deleteUserStory(story.id)">删除</el-button>
+                </div>
               </div>
 
               <template v-if="isExpanded(story.id)">

@@ -152,14 +152,26 @@ executionsRouter.get('/:id/sub-executions', async (req, res) => {
 /**
  * POST /api/executions/:id/pause
  * 请求暂停执行
- * 将 controlStatus 设置为 'pause_requested'，由 worker 轮询检测并响应
+ * 立即触发 abort 信号，并标记 control_status 供 catch 块判断
  */
 executionsRouter.post('/:id/pause', async (req, res) => {
   try {
+    const executionId = req.params.id;
+
+    // 1. 标记控制状态（catch 块会检查这个值决定是 pause 还是 fail）
     await db.task_executions.update({
-      where: { execution_id: req.params.id },
+      where: { execution_id: executionId },
       data: { control_status: 'pause_requested' },
     });
+
+    // 2. 立即触发中断（不再等待心跳循环）
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+    const abortController = getAbortController(executionId);
+    if (abortController && !abortController.signal.aborted) {
+      console.log(`[executions] 暂停 API 直接触发 abort: ${executionId}`);
+      abortController.abort();
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: '暂停执行失败', detail: (err as Error).message });
@@ -169,14 +181,26 @@ executionsRouter.post('/:id/pause', async (req, res) => {
 /**
  * POST /api/executions/:id/cancel
  * 请求取消执行
- * 将 controlStatus 设置为 'cancel_requested'，由 worker 轮询检测并响应
+ * 立即触发 abort 信号，并标记 control_status 供 catch 块判断
  */
 executionsRouter.post('/:id/cancel', async (req, res) => {
   try {
+    const executionId = req.params.id;
+
+    // 1. 标记控制状态（catch 块会检查这个值决定是 cancel 还是 fail）
     await db.task_executions.update({
-      where: { execution_id: req.params.id },
+      where: { execution_id: executionId },
       data: { control_status: 'cancel_requested' },
     });
+
+    // 2. 立即触发中断（不再等待心跳循环）
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+    const abortController = getAbortController(executionId);
+    if (abortController && !abortController.signal.aborted) {
+      console.log(`[executions] 取消 API 直接触发 abort: ${executionId}`);
+      abortController.abort();
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: '取消执行失败', detail: (err as Error).message });

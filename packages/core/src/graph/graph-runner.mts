@@ -175,6 +175,7 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
   // 5. 启动心跳循环（修复 A2: 使用 renewHeartbeat 续约，更新 heartbeat_at）
   // 修复 A4: 创建 AbortController，支持取消响应
   let cancelled = false;
+  let paused = false;
   const abortController = new AbortController();
 
   // 维护 executionId → AbortController 映射，供外部查询
@@ -199,6 +200,10 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
         console.log(`[graph-runner] 收到取消请求，触发 AbortSignal: ${executionId}`);
         cancelled = true;
         abortController.abort();  // A4: 触发取消信号
+      } else if (exec?.control_status === 'pause_requested') {
+        console.log(`[graph-runner] 收到暂停请求: ${executionId}`);
+        paused = true;
+        abortController.abort();  // 中断当前执行
       }
     } catch (err) {
       console.error(`[graph-runner] 心跳循环出错:`, err);
@@ -270,6 +275,31 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
         },
       });
 
+      return;
+    }
+
+    // 检查是否为暂停/取消导致的 abort
+    // 从数据库读取 control_status，因为 API 直接触发 abort 时本地变量不会设置
+    const execState = await db.task_executions.findUnique({
+      where: { execution_id: executionId },
+      select: { control_status: true },
+    });
+
+    if (execState?.control_status === 'pause_requested' || paused) {
+      console.log(`[graph-runner] 执行已暂停: ${executionId}`);
+      await db.task_executions.update({
+        where: { execution_id: executionId },
+        data: {
+          status: 'paused',
+          control_status: 'paused',
+        },
+      });
+      return;
+    }
+
+    if (execState?.control_status === 'cancel_requested' || cancelled) {
+      console.log(`[graph-runner] 执行已取消: ${executionId}`);
+      await executionStore.fail(executionId, '执行已被用户取消');
       return;
     }
 

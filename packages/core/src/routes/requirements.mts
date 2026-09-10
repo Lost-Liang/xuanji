@@ -570,3 +570,426 @@ requirementsRouter.post('/:id/execute', async (req, res) => {
     res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });
   }
 });
+
+/**
+ * POST /api/requirements/:id/pause
+ * 暂停需求下所有 running 任务
+ */
+requirementsRouter.post('/:id/pause', async (req, res) => {
+  try {
+    const requirementId = req.params.id;
+
+    // 找到该需求下所有 running 状态的任务执行
+    const runningExecs = await db.task_executions.findMany({
+      where: {
+        requirement_id: requirementId,
+        status: 'running',
+      },
+      select: { execution_id: true },
+    });
+
+    if (runningExecs.length === 0) {
+      res.json({ ok: true, message: '无运行中的任务', paused_count: 0 });
+      return;
+    }
+
+    // 批量设置 control_status + 直接触发 abort
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+
+    for (const exec of runningExecs) {
+      // 1. 标记控制状态
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { control_status: 'pause_requested' },
+      });
+
+      // 2. 直接触发中断
+      const abortController = getAbortController(exec.execution_id);
+      if (abortController && !abortController.signal.aborted) {
+        console.log(`[requirements] 暂停 API 直接触发 abort: ${exec.execution_id}`);
+        abortController.abort();
+      }
+    }
+
+    res.json({ ok: true, paused_count: runningExecs.length });
+  } catch (err) {
+    res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+// =============================================================================
+// Epic 级操作 API
+// =============================================================================
+
+/**
+ * POST /api/epics/:id/execute
+ * 执行该 Epic 下所有 pending 任务
+ */
+requirementsRouter.post('/epics/:id/execute', async (req, res) => {
+  try {
+    const epicId = req.params.id;
+
+    // 找到该 epic 下所有 pending 状态的 task_executions
+    const executions = await db.task_executions.findMany({
+      where: {
+        tasks: { epic_id: epicId },
+        status: 'pending',
+      },
+      include: {
+        tasks: { select: { id: true } },
+      },
+    });
+
+    if (executions.length === 0) {
+      res.json({ ok: true, message: '无待执行任务', started_count: 0 });
+      return;
+    }
+
+    // 逐个启动执行
+    let startedCount = 0;
+    for (const exec of executions) {
+      try {
+        await graphRunner.startExecution({
+          executionId: exec.execution_id,
+          flowId: 'ruoyi-dev-flow',
+          input: '',
+          task: exec.tasks ?? undefined,
+        });
+        startedCount++;
+      } catch (err) {
+        console.error(`[epics] 启动执行失败: ${exec.execution_id}`, err);
+      }
+    }
+
+    res.json({ ok: true, started_count: startedCount });
+  } catch (err) {
+    res.status(500).json({ error: '执行失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/epics/:id/pause
+ * 暂停该 Epic 下所有 running 任务
+ */
+requirementsRouter.post('/epics/:id/pause', async (req, res) => {
+  try {
+    const epicId = req.params.id;
+
+    const runningExecs = await db.task_executions.findMany({
+      where: {
+        tasks: { epic_id: epicId },
+        status: 'running',
+      },
+      select: { execution_id: true },
+    });
+
+    if (runningExecs.length === 0) {
+      res.json({ ok: true, paused_count: 0 });
+      return;
+    }
+
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+
+    for (const exec of runningExecs) {
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { control_status: 'pause_requested' },
+      });
+
+      const abortController = getAbortController(exec.execution_id);
+      if (abortController && !abortController.signal.aborted) {
+        abortController.abort();
+      }
+    }
+
+    res.json({ ok: true, paused_count: runningExecs.length });
+  } catch (err) {
+    res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * DELETE /api/epics/:id
+ * 删除 Epic 及其子内容
+ */
+requirementsRouter.delete('/epics/:id', async (req, res) => {
+  try {
+    const epicId = req.params.id;
+
+    // 级联删除
+    // 1. 删除关联的 TaskExecutions
+    await db.task_executions.deleteMany({
+      where: { tasks: { epic_id: epicId } },
+    });
+
+    // 2. 删除关联的 Tasks
+    await db.tasks.deleteMany({
+      where: { epic_id: epicId },
+    });
+
+    // 3. 删除关联的 UserStories
+    await db.user_stories.deleteMany({
+      where: {
+        OR: [
+          { epic_id: epicId },
+          { features: { epic_id: epicId } },
+        ],
+      },
+    });
+
+    // 4. 删除关联的 Features
+    await db.features.deleteMany({
+      where: { epic_id: epicId },
+    });
+
+    // 5. 删除 Epic 本身
+    await db.epics.delete({ where: { id: epicId } });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: '删除失败', detail: (err as Error).message });
+  }
+});
+
+// =============================================================================
+// Feature 级操作 API
+// =============================================================================
+
+/**
+ * POST /api/features/:id/execute
+ * 执行该 Feature 下所有 pending 任务
+ */
+requirementsRouter.post('/features/:id/execute', async (req, res) => {
+  try {
+    const featureId = req.params.id;
+
+    // Feature 通过 UserStory 关联任务：tasks.user_story_id → user_stories.feature_id
+    const executions = await db.task_executions.findMany({
+      where: {
+        tasks: {
+          user_stories: { feature_id: featureId },
+        },
+        status: 'pending',
+      },
+      include: {
+        tasks: { select: { id: true } },
+      },
+    });
+
+    if (executions.length === 0) {
+      res.json({ ok: true, started_count: 0 });
+      return;
+    }
+
+    let startedCount = 0;
+    for (const exec of executions) {
+      try {
+        await graphRunner.startExecution({
+          executionId: exec.execution_id,
+          flowId: 'ruoyi-dev-flow',
+          input: '',
+          task: exec.tasks ?? undefined,
+        });
+        startedCount++;
+      } catch (err) {
+        console.error(`[features] 启动执行失败: ${exec.execution_id}`, err);
+      }
+    }
+
+    res.json({ ok: true, started_count: startedCount });
+  } catch (err) {
+    res.status(500).json({ error: '执行失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/features/:id/pause
+ * 暂停该 Feature 下所有 running 任务
+ */
+requirementsRouter.post('/features/:id/pause', async (req, res) => {
+  try {
+    const featureId = req.params.id;
+
+    const runningExecs = await db.task_executions.findMany({
+      where: {
+        tasks: {
+          user_stories: { feature_id: featureId },
+        },
+        status: 'running',
+      },
+      select: { execution_id: true },
+    });
+
+    if (runningExecs.length === 0) {
+      res.json({ ok: true, paused_count: 0 });
+      return;
+    }
+
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+
+    for (const exec of runningExecs) {
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { control_status: 'pause_requested' },
+      });
+
+      const abortController = getAbortController(exec.execution_id);
+      if (abortController && !abortController.signal.aborted) {
+        abortController.abort();
+      }
+    }
+
+    res.json({ ok: true, paused_count: runningExecs.length });
+  } catch (err) {
+    res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * DELETE /api/features/:id
+ * 删除 Feature 及其子内容
+ */
+requirementsRouter.delete('/features/:id', async (req, res) => {
+  try {
+    const featureId = req.params.id;
+
+    // 级联删除
+    await db.task_executions.deleteMany({
+      where: {
+        tasks: {
+          user_stories: { feature_id: featureId },
+        },
+      },
+    });
+
+    await db.tasks.deleteMany({
+      where: {
+        user_stories: { feature_id: featureId },
+      },
+    });
+
+    await db.user_stories.deleteMany({
+      where: { feature_id: featureId },
+    });
+
+    await db.features.delete({ where: { id: featureId } });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: '删除失败', detail: (err as Error).message });
+  }
+});
+
+// =============================================================================
+// UserStory 级操作 API
+// =============================================================================
+
+/**
+ * POST /api/user-stories/:id/execute
+ * 执行该 UserStory 下所有 pending 任务
+ */
+requirementsRouter.post('/user-stories/:id/execute', async (req, res) => {
+  try {
+    const userStoryId = req.params.id;
+
+    const executions = await db.task_executions.findMany({
+      where: {
+        tasks: { user_story_id: userStoryId },
+        status: 'pending',
+      },
+      include: {
+        tasks: { select: { id: true } },
+      },
+    });
+
+    if (executions.length === 0) {
+      res.json({ ok: true, started_count: 0 });
+      return;
+    }
+
+    let startedCount = 0;
+    for (const exec of executions) {
+      try {
+        await graphRunner.startExecution({
+          executionId: exec.execution_id,
+          flowId: 'ruoyi-dev-flow',
+          input: '',
+          task: exec.tasks ?? undefined,
+        });
+        startedCount++;
+      } catch (err) {
+        console.error(`[user-stories] 启动执行失败: ${exec.execution_id}`, err);
+      }
+    }
+
+    res.json({ ok: true, started_count: startedCount });
+  } catch (err) {
+    res.status(500).json({ error: '执行失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/user-stories/:id/pause
+ * 暂停该 UserStory 下所有 running 任务
+ */
+requirementsRouter.post('/user-stories/:id/pause', async (req, res) => {
+  try {
+    const userStoryId = req.params.id;
+
+    const runningExecs = await db.task_executions.findMany({
+      where: {
+        tasks: { user_story_id: userStoryId },
+        status: 'running',
+      },
+      select: { execution_id: true },
+    });
+
+    if (runningExecs.length === 0) {
+      res.json({ ok: true, paused_count: 0 });
+      return;
+    }
+
+    const { getAbortController } = await import('../graph/graph-runner.mjs');
+
+    for (const exec of runningExecs) {
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { control_status: 'pause_requested' },
+      });
+
+      const abortController = getAbortController(exec.execution_id);
+      if (abortController && !abortController.signal.aborted) {
+        abortController.abort();
+      }
+    }
+
+    res.json({ ok: true, paused_count: runningExecs.length });
+  } catch (err) {
+    res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * DELETE /api/user-stories/:id
+ * 删除 UserStory 及其子内容
+ */
+requirementsRouter.delete('/user-stories/:id', async (req, res) => {
+  try {
+    const userStoryId = req.params.id;
+
+    // 级联删除
+    await db.task_executions.deleteMany({
+      where: { tasks: { user_story_id: userStoryId } },
+    });
+
+    await db.tasks.deleteMany({
+      where: { user_story_id: userStoryId },
+    });
+
+    await db.user_stories.delete({ where: { id: userStoryId } });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: '删除失败', detail: (err as Error).message });
+  }
+});
