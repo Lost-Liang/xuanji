@@ -121,4 +121,11 @@ export const api = {
     })
     return r.json()
   },
+  async confirmAll(requirementId: string): Promise<{ok: boolean, confirmed_count: number, message: string}> {
+    const r = await fetch(`${base}/${requirementId}/confirm-all-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    return r.json()
+  },
 }
