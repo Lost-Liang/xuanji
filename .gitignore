@@ -21,3 +21,8 @@ coverage/
 
 # Temp files
 task_output.json
+
+# Dashboard build artifacts (compiled .js next to .ts sources)
+packages/dashboard/src/**/*.js
+packages/dashboard/src/**/*.vue.js
+packages/core/.claude/
