@@ -21,7 +21,6 @@ tasksRouter.get('/', async (req, res) => {
     // 构建查询条件
     const where: any = {
       task_id: { not: null },  // 只返回任务级执行，排除需求级执行
-      status: { not: 'cancelled' },  // 排除已取消的任务（需求删除时会级联取消）
     };
     if (requirementId) {
       where.requirement_id = requirementId as string;
