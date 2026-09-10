@@ -40,7 +40,16 @@ export interface RequirementDetail {
 }
 
 export interface RequirementTree {
-  requirement: { id: string; input_text: string; status: string; execution_id: string | null }
+  requirement: {
+    id: string
+    input_text: string
+    status: string
+    rollup_status?: string | null
+    can_execute?: boolean
+    can_pause?: boolean
+    can_resume?: boolean
+    execution_id: string | null
+  }
   epics: EpicNode[]
 }
 
@@ -50,6 +59,9 @@ export interface EpicNode {
   description: string | null
   module: string | null
   status: string
+  can_execute?: boolean
+  can_pause?: boolean
+  can_resume?: boolean
   features: FeatureNode[]
   orphan_user_stories: UserStoryNode[]
 }
@@ -59,6 +71,9 @@ export interface FeatureNode {
   title: string
   description: string | null
   status: string
+  can_execute?: boolean
+  can_pause?: boolean
+  can_resume?: boolean
   user_stories: UserStoryNode[]
 }
 
@@ -71,6 +86,9 @@ export interface UserStoryNode {
   priority: string
   acceptance_text: string | null
   status: string
+  can_execute?: boolean
+  can_pause?: boolean
+  can_resume?: boolean
   tasks: TaskNode[]
 }
 
@@ -80,6 +98,7 @@ export interface TaskNode {
   description: string | null
   task_type: string | null
   status: string
+  control_status?: string | null
   execution_id: string | null
   estimated_hours: number | null
 }
@@ -135,13 +154,23 @@ export const api = {
     return r.json()
   },
 
+  // Requirement 级恢复
+  async resumeRequirement(id: string): Promise<{ok: boolean, resumed_count: number}> {
+    const r = await fetch(`${base}/${id}/resume`, { method: 'POST' })
+    return r.json()
+  },
+
   // Epic 级操作
-  async executeEpic(epicId: string): Promise<{ok: boolean, started_count: number}> {
+  async executeEpic(epicId: string): Promise<{ok: boolean, started_count: number, message?: string}> {
     const r = await fetch(`${base}/epics/${epicId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseEpic(epicId: string): Promise<{ok: boolean, paused_count: number}> {
     const r = await fetch(`${base}/epics/${epicId}/pause`, { method: 'POST' })
+    return r.json()
+  },
+  async resumeEpic(epicId: string): Promise<{ok: boolean, resumed_count: number}> {
+    const r = await fetch(`${base}/epics/${epicId}/resume`, { method: 'POST' })
     return r.json()
   },
   async deleteEpic(epicId: string): Promise<{ok: boolean}> {
@@ -150,12 +179,16 @@ export const api = {
   },
 
   // Feature 级操作
-  async executeFeature(featureId: string): Promise<{ok: boolean, started_count: number}> {
+  async executeFeature(featureId: string): Promise<{ok: boolean, started_count: number, message?: string}> {
     const r = await fetch(`${base}/features/${featureId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseFeature(featureId: string): Promise<{ok: boolean, paused_count: number}> {
     const r = await fetch(`${base}/features/${featureId}/pause`, { method: 'POST' })
+    return r.json()
+  },
+  async resumeFeature(featureId: string): Promise<{ok: boolean, resumed_count: number}> {
+    const r = await fetch(`${base}/features/${featureId}/resume`, { method: 'POST' })
     return r.json()
   },
   async deleteFeature(featureId: string): Promise<{ok: boolean}> {
@@ -164,12 +197,16 @@ export const api = {
   },
 
   // UserStory 级操作
-  async executeUserStory(userStoryId: string): Promise<{ok: boolean, started_count: number}> {
+  async executeUserStory(userStoryId: string): Promise<{ok: boolean, started_count: number, message?: string}> {
     const r = await fetch(`${base}/user-stories/${userStoryId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseUserStory(userStoryId: string): Promise<{ok: boolean, paused_count: number}> {
     const r = await fetch(`${base}/user-stories/${userStoryId}/pause`, { method: 'POST' })
+    return r.json()
+  },
+  async resumeUserStory(userStoryId: string): Promise<{ok: boolean, resumed_count: number}> {
+    const r = await fetch(`${base}/user-stories/${userStoryId}/resume`, { method: 'POST' })
     return r.json()
   },
   async deleteUserStory(userStoryId: string): Promise<{ok: boolean}> {

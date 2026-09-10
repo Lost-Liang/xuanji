@@ -234,15 +234,41 @@ executionsRouter.post('/:id/gate', async (req, res) => {
 /**
  * POST /api/executions/:id/resume
  * 请求恢复执行
- * 将 controlStatus 设置为 'resume_requested'，M1 接图续跑
+ * 将 paused/failed/stopped 的执行重置为 pending，交由调度器统一拾取
  */
 executionsRouter.post('/:id/resume', async (req, res) => {
   try {
-    await db.task_executions.update({
-      where: { execution_id: req.params.id },
-      data: { control_status: 'resume_requested' },
+    const executionId = req.params.id;
+
+    const exec = await db.task_executions.findUnique({
+      where: { execution_id: executionId },
+      select: { status: true },
     });
-    res.json({ ok: true });
+
+    if (!exec) {
+      res.status(404).json({ error: '执行不存在' });
+      return;
+    }
+
+    if (!['paused', 'failed', 'stopped', 'cancelled'].includes(exec.status)) {
+      res.json({ ok: true, message: `当前状态 ${exec.status} 无需恢复`, status: exec.status });
+      return;
+    }
+
+    // 重置为 pending，清空租约，交由调度器拾取
+    await db.task_executions.update({
+      where: { execution_id: executionId },
+      data: {
+        status: 'pending',
+        control_status: 'idle',
+        worker_id: null,
+        lease_token: null,
+        lease_expires_at: null,
+        retry_at: null,
+      },
+    });
+
+    res.json({ ok: true, status: 'pending' });
   } catch (err) {
     res.status(500).json({ error: '恢复执行失败', detail: (err as Error).message });
   }

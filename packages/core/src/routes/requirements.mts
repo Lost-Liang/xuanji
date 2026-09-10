@@ -387,66 +387,127 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
       include: { tasks: true },
     });
 
+    // 查询该需求下所有任务的执行实例，取每个 task 最新的一条
+    const executions = await db.task_executions.findMany({
+      where: { requirement_id: requirementId, task_id: { not: null } },
+      orderBy: { created_at: 'desc' },
+    });
+    const latestByTask = new Map<string, any>();
+    for (const exec of executions) {
+      if (exec.task_id && !latestByTask.has(exec.task_id)) {
+        latestByTask.set(exec.task_id, exec);
+      }
+    }
+
+    // 将 task 映射为带真实执行状态的节点
+    const mapTask = (t: any) => {
+      const exec = latestByTask.get(t.id);
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        task_type: null,
+        status: exec ? exec.status : t.status,
+        control_status: exec ? exec.control_status : null,
+        execution_id: exec ? exec.execution_id : null,
+        estimated_hours: null,
+      };
+    };
+
+    // 汇总子任务状态为父级状态
+    const rollup = (taskNodes: any[]): string => {
+      if (taskNodes.length === 0) return 'pending';
+      const ss = taskNodes.map((t: any) => t.status);
+      if (ss.some((s: string) => s === 'running' || s === 'rate_limited')) return 'running';
+      if (ss.some((s: string) => s === 'waiting')) return 'waiting';
+      if (ss.some((s: string) => s === 'paused')) return 'paused';
+      if (ss.some((s: string) => s === 'failed')) return 'failed';
+      if (ss.every((s: string) => s === 'completed')) return 'completed';
+      if (ss.every((s: string) => s === 'draft')) return 'draft';
+      return 'pending';
+    };
+
+    // 判断父级下是否有可执行/可暂停/可恢复的任务
+    // 可执行：仅 draft/pending（后端 execute 接口只接受这两种，failed 等需走 resume）
+    const hasExecutable = (taskNodes: any[]) =>
+      taskNodes.some((t: any) => t.status === 'pending' || t.status === 'draft');
+    const hasRunning = (taskNodes: any[]) =>
+      taskNodes.some((t: any) => t.status === 'running' || t.status === 'rate_limited');
+    // 可恢复：与 resumeExecutions 接受的状态集保持一致
+    const hasPaused = (taskNodes: any[]) =>
+      taskNodes.some((t: any) => t.status === 'paused' || t.status === 'failed'
+        || t.status === 'stopped' || t.status === 'cancelled');
+
+    const mapStory = (us: any) => {
+      const taskNodes = us.tasks.map(mapTask);
+      return {
+        id: us.id,
+        title: us.title,
+        as_a: us.as_a,
+        i_want: us.i_want,
+        so_that: us.so_that,
+        priority: us.priority,
+        acceptance_text: us.acceptance_text,
+        status: rollup(taskNodes),
+        can_execute: hasExecutable(taskNodes),
+        can_pause: hasRunning(taskNodes),
+        can_resume: hasPaused(taskNodes),
+        tasks: taskNodes,
+      };
+    };
+
+    // 需求级汇总：把该需求下所有任务（含孤立故事）拉平后 rollup
+    const reqTaskNodes = epics.flatMap((e: any) => [
+      ...e.features.flatMap((f: any) =>
+        f.user_stories.flatMap((us: any) => us.tasks.map(mapTask))),
+      ...orphanUserStories
+        .filter((us: any) => us.epic_id === e.id)
+        .flatMap((us: any) => us.tasks.map(mapTask)),
+    ]);
+
     res.json({
       requirement: {
         id: requirement.id,
         input_text: requirement.title,
         status: requirement.status,
+        rollup_status: reqTaskNodes.length > 0 ? rollup(reqTaskNodes) : null,
+        can_execute: hasExecutable(reqTaskNodes),
+        can_pause: hasRunning(reqTaskNodes),
+        can_resume: hasPaused(reqTaskNodes),
         execution_id: null,
       },
-      epics: epics.map((e: any) => ({
-        id: e.id,
-        title: e.title,
-        description: e.description,
-        module: e.module,
-        status: e.status,
-        features: e.features.map((f: any) => ({
-          id: f.id,
-          title: f.title,
-          description: f.description,
-          status: f.status,
-          user_stories: f.user_stories.map((us: any) => ({
-            id: us.id,
-            title: us.title,
-            as_a: us.as_a,
-            i_want: us.i_want,
-            so_that: us.so_that,
-            priority: us.priority,
-            acceptance_text: us.acceptance_text,
-            status: us.status,
-            tasks: us.tasks.map((t: any) => ({
-              id: t.id,
-              title: t.title,
-              description: t.description,
-              task_type: null,
-              status: t.status,
-              execution_id: null,
-              estimated_hours: null,
-            })),
-          })),
-        })),
-        orphan_user_stories: orphanUserStories
-          .filter((us: any) => us.epic_id === e.id)
-          .map((us: any) => ({
-            id: us.id,
-            title: us.title,
-            as_a: us.as_a,
-            i_want: us.i_want,
-            so_that: us.so_that,
-            priority: us.priority,
-            acceptance_text: us.acceptance_text,
-            status: us.status,
-            tasks: us.tasks.map((t: any) => ({
-              id: t.id,
-              title: t.title,
-              description: t.description,
-              task_type: null,
-              status: t.status,
-              execution_id: null,
-              estimated_hours: null,
-            })),
-          })),
-      })),
+      epics: epics.map((e: any) => {
+        const orphanNodes = orphanUserStories.filter((us: any) => us.epic_id === e.id);
+        const allStories = [
+          ...e.features.flatMap((f: any) => f.user_stories),
+          ...orphanNodes,
+        ];
+        const allTasks = allStories.flatMap((us: any) => us.tasks.map(mapTask));
+        return {
+          id: e.id,
+          title: e.title,
+          description: e.description,
+          module: e.module,
+          status: rollup(allTasks),
+          can_execute: hasExecutable(allTasks),
+          can_pause: hasRunning(allTasks),
+          can_resume: hasPaused(allTasks),
+          features: e.features.map((f: any) => {
+            const fTasks = f.user_stories.flatMap((us: any) => us.tasks.map(mapTask));
+            return {
+              id: f.id,
+              title: f.title,
+              description: f.description,
+              status: rollup(fTasks),
+              can_execute: hasExecutable(fTasks),
+              can_pause: hasRunning(fTasks),
+              can_resume: hasPaused(fTasks),
+              user_stories: f.user_stories.map(mapStory),
+            };
+          }),
+          orphan_user_stories: orphanNodes.map(mapStory),
+        };
+      }),
     });
   } catch (err) {
     res.status(500).json({ error: '查询需求树失败', detail: (err as Error).message });
@@ -631,6 +692,19 @@ requirementsRouter.post('/:id/pause', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/requirements/:id/resume
+ * 恢复需求下所有已暂停/失败/停止的任务
+ */
+requirementsRouter.post('/:id/resume', async (req, res) => {
+  try {
+    const count = await resumeExecutions({ requirement_id: req.params.id });
+    res.json({ ok: true, resumed_count: count });
+  } catch (err) {
+    res.status(500).json({ error: '恢复失败', detail: (err as Error).message });
+  }
+});
+
 // =============================================================================
 // Epic 级操作 API
 // =============================================================================
@@ -643,46 +717,15 @@ requirementsRouter.post('/epics/:id/execute', async (req, res) => {
   try {
     const epicId = req.params.id;
 
-    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
-    const executions = await db.task_executions.findMany({
-      where: {
-        tasks: { epic_id: epicId },
-        status: { in: ['draft', 'pending'] },
-      },
-      include: {
-        tasks: { select: { id: true } },
-      },
+    // 仅做状态转换（draft/pending → pending），实际启动交给调度器，
+    // 避免绕过 MAX_CONCURRENT 并发控制
+    const count = await enqueueExecutions({ tasks: { epic_id: epicId } });
+
+    res.json({
+      ok: true,
+      started_count: count,
+      message: count === 0 ? '无待执行任务' : `已将 ${count} 个任务加入调度队列`,
     });
-
-    if (executions.length === 0) {
-      res.json({ ok: true, message: '无待执行任务', started_count: 0 });
-      return;
-    }
-
-    let startedCount = 0;
-    for (const exec of executions) {
-      try {
-        // 如果是 draft，先确认
-        if (exec.status === 'draft') {
-          await db.task_executions.update({
-            where: { execution_id: exec.execution_id },
-            data: { status: 'pending' },
-          });
-        }
-
-        await graphRunner.startExecution({
-          executionId: exec.execution_id,
-          flowId: 'ruoyi-dev-flow',
-          input: '',
-          task: exec.tasks ?? undefined,
-        });
-        startedCount++;
-      } catch (err) {
-        console.error(`[epics] 启动执行失败: ${exec.execution_id}`, err);
-      }
-    }
-
-    res.json({ ok: true, started_count: startedCount });
   } catch (err) {
     res.status(500).json({ error: '执行失败', detail: (err as Error).message });
   }
@@ -728,6 +771,68 @@ requirementsRouter.post('/epics/:id/pause', async (req, res) => {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
   }
 });
+
+/**
+ * POST /api/epics/:id/resume
+ * 恢复该 Epic 下所有已暂停/失败/停止的任务
+ */
+requirementsRouter.post('/epics/:id/resume', async (req, res) => {
+  try {
+    const count = await resumeExecutions({ tasks: { epic_id: req.params.id } });
+    res.json({ ok: true, resumed_count: count });
+  } catch (err) {
+    res.status(500).json({ error: '恢复失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * 批量恢复执行：将 paused/failed/stopped/cancelled 重置为 pending，交由调度器拾取
+ * 返回恢复的任务数
+ */
+async function resumeExecutions(where: Record<string, any>): Promise<number> {
+  const result = await db.task_executions.updateMany({
+    where: {
+      ...where,
+      status: { in: ['paused', 'failed', 'stopped', 'cancelled'] },
+    },
+    data: {
+      status: 'pending',
+      control_status: 'idle',
+      worker_id: null,
+      lease_token: null,
+      lease_expires_at: null,
+      retry_at: null,
+    },
+  });
+  return result.count;
+}
+
+/**
+ * 批量入队执行：将 draft/pending 统一置为 pending，交回调度器拾取
+ *
+ * 与 resumeExecutions 的区别：入队只处理 draft/pending（可执行态），
+ * 恢复处理 paused/failed/stopped/cancelled（中断态）。
+ *
+ * 路由层不做实际启动 —— 并发控制由 scheduler-controller 统一负责，
+ * 直接调用 graphRunner.startExecution 会绕过 MAX_CONCURRENT 限制。
+ */
+async function enqueueExecutions(where: Record<string, any>): Promise<number> {
+  const result = await db.task_executions.updateMany({
+    where: {
+      ...where,
+      status: { in: ['draft', 'pending'] },
+    },
+    data: {
+      status: 'pending',
+      control_status: 'idle',
+      worker_id: null,
+      lease_token: null,
+      lease_expires_at: null,
+      retry_at: null,
+    },
+  });
+  return result.count;
+}
 
 /**
  * 级联清理与 executionIds 关联的所有表（外键顺序删除）
@@ -829,48 +934,16 @@ requirementsRouter.post('/features/:id/execute', async (req, res) => {
     const featureId = req.params.id;
 
     // Feature 通过 UserStory 关联任务：tasks.user_story_id → user_stories.feature_id
-    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
-    const executions = await db.task_executions.findMany({
-      where: {
-        tasks: {
-          user_stories: { feature_id: featureId },
-        },
-        status: { in: ['draft', 'pending'] },
-      },
-      include: {
-        tasks: { select: { id: true } },
-      },
+    // 仅做状态转换（draft/pending → pending），实际启动交给调度器
+    const count = await enqueueExecutions({
+      tasks: { user_stories: { feature_id: featureId } },
     });
 
-    if (executions.length === 0) {
-      res.json({ ok: true, started_count: 0 });
-      return;
-    }
-
-    let startedCount = 0;
-    for (const exec of executions) {
-      try {
-        // 如果是 draft，先确认
-        if (exec.status === 'draft') {
-          await db.task_executions.update({
-            where: { execution_id: exec.execution_id },
-            data: { status: 'pending' },
-          });
-        }
-
-        await graphRunner.startExecution({
-          executionId: exec.execution_id,
-          flowId: 'ruoyi-dev-flow',
-          input: '',
-          task: exec.tasks ?? undefined,
-        });
-        startedCount++;
-      } catch (err) {
-        console.error(`[features] 启动执行失败: ${exec.execution_id}`, err);
-      }
-    }
-
-    res.json({ ok: true, started_count: startedCount });
+    res.json({
+      ok: true,
+      started_count: count,
+      message: count === 0 ? '无待执行任务' : `已将 ${count} 个任务加入调度队列`,
+    });
   } catch (err) {
     res.status(500).json({ error: '执行失败', detail: (err as Error).message });
   }
@@ -916,6 +989,21 @@ requirementsRouter.post('/features/:id/pause', async (req, res) => {
     res.json({ ok: true, paused_count: runningExecs.length });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/features/:id/resume
+ * 恢复该 Feature 下所有已暂停/失败/停止的任务
+ */
+requirementsRouter.post('/features/:id/resume', async (req, res) => {
+  try {
+    const count = await resumeExecutions({
+      tasks: { user_stories: { feature_id: req.params.id } },
+    });
+    res.json({ ok: true, resumed_count: count });
+  } catch (err) {
+    res.status(500).json({ error: '恢复失败', detail: (err as Error).message });
   }
 });
 
@@ -976,46 +1064,14 @@ requirementsRouter.post('/user-stories/:id/execute', async (req, res) => {
   try {
     const userStoryId = req.params.id;
 
-    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
-    const executions = await db.task_executions.findMany({
-      where: {
-        tasks: { user_story_id: userStoryId },
-        status: { in: ['draft', 'pending'] },
-      },
-      include: {
-        tasks: { select: { id: true } },
-      },
+    // 仅做状态转换（draft/pending → pending），实际启动交给调度器
+    const count = await enqueueExecutions({ tasks: { user_story_id: userStoryId } });
+
+    res.json({
+      ok: true,
+      started_count: count,
+      message: count === 0 ? '无待执行任务' : `已将 ${count} 个任务加入调度队列`,
     });
-
-    if (executions.length === 0) {
-      res.json({ ok: true, started_count: 0 });
-      return;
-    }
-
-    let startedCount = 0;
-    for (const exec of executions) {
-      try {
-        // 如果是 draft，先确认
-        if (exec.status === 'draft') {
-          await db.task_executions.update({
-            where: { execution_id: exec.execution_id },
-            data: { status: 'pending' },
-          });
-        }
-
-        await graphRunner.startExecution({
-          executionId: exec.execution_id,
-          flowId: 'ruoyi-dev-flow',
-          input: '',
-          task: exec.tasks ?? undefined,
-        });
-        startedCount++;
-      } catch (err) {
-        console.error(`[user-stories] 启动执行失败: ${exec.execution_id}`, err);
-      }
-    }
-
-    res.json({ ok: true, started_count: startedCount });
   } catch (err) {
     res.status(500).json({ error: '执行失败', detail: (err as Error).message });
   }
@@ -1059,6 +1115,19 @@ requirementsRouter.post('/user-stories/:id/pause', async (req, res) => {
     res.json({ ok: true, paused_count: runningExecs.length });
   } catch (err) {
     res.status(500).json({ error: '暂停失败', detail: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/user-stories/:id/resume
+ * 恢复该 UserStory 下所有已暂停/失败/停止的任务
+ */
+requirementsRouter.post('/user-stories/:id/resume', async (req, res) => {
+  try {
+    const count = await resumeExecutions({ tasks: { user_story_id: req.params.id } });
+    res.json({ ok: true, resumed_count: count });
+  } catch (err) {
+    res.status(500).json({ error: '恢复失败', detail: (err as Error).message });
   }
 });
 

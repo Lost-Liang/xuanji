@@ -99,13 +99,34 @@ function canExecute(req: RequirementListItem): boolean {
   return !s || s === 'draft' || s === 'pending' || s === 'failed' || s === 'cancelled' || s === 'stopped'
 }
 
-// 行交互：任务跳转、其他展开/折叠
-function handleRowClick(level: string, node: any) {
-  if (level === 'task' && node.execution_id) {
-    router.push(`/tasks/${node.execution_id}`)
-  } else {
-    toggle(node.id)
+// 需求行状态：优先使用树汇总状态（真实反映子任务执行情况），无树数据时回退到需求级执行状态
+function reqStatus(req: RequirementListItem): string {
+  const rollup = treeData.value.get(req.id)?.requirement?.rollup_status
+  return rollup || req.execution_status || req.status
+}
+
+function reqCanPause(req: RequirementListItem): boolean {
+  const t = treeData.value.get(req.id)
+  if (!t) return req.execution_status === 'running'
+  return t.requirement?.can_pause === true
+}
+
+function reqCanResume(req: RequirementListItem): boolean {
+  return treeData.value.get(req.id)?.requirement?.can_resume === true
+}
+
+// 点击任务行 → 进入任务详情
+function openTask(task: TaskNode) {
+  if (!task.execution_id) {
+    ElMessage.info('该任务尚未创建执行实例')
+    return
   }
+  router.push(`/tasks/${task.execution_id}`)
+}
+
+// 行交互：需求行展开/折叠（任务行单独走 openTask）
+function handleRowClick(_level: string, node: any) {
+  toggle(node.id)
 }
 
 // Actions —— 需求级
@@ -134,8 +155,20 @@ async function pauseRequirement(reqId: string) {
     const res = await reqApi.pauseRequirement(reqId)
     ElMessage.success(`已暂停 ${res.paused_count} 个任务`)
     emit('refresh')
+    await loadAllTrees()
   } catch (e) {
     ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeRequirement(reqId: string) {
+  try {
+    const res = await reqApi.resumeRequirement(reqId)
+    ElMessage.success(`已恢复 ${res.resumed_count} 个任务`)
+    emit('refresh')
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('恢复失败')
   }
 }
 
@@ -185,6 +218,26 @@ async function executeTask(execId: string) {
   }
 }
 
+async function pauseTask(execId: string) {
+  try {
+    await taskApi.pause(execId)
+    ElMessage.success('已暂停')
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeTask(execId: string) {
+  try {
+    await taskApi.resume(execId)
+    ElMessage.success('已恢复')
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('恢复失败')
+  }
+}
+
 async function deleteTask(execId: string) {
   try {
     await ElMessageBox.confirm('确定删除该任务？', '删除确认', {
@@ -202,7 +255,7 @@ async function deleteTask(execId: string) {
 async function executeEpic(epicId: string) {
   try {
     const res = await reqApi.executeEpic(epicId)
-    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    ElMessage.success(res.message || `已入队 ${res.started_count} 个任务`)
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('启动失败')
@@ -216,6 +269,16 @@ async function pauseEpic(epicId: string) {
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeEpic(epicId: string) {
+  try {
+    const res = await reqApi.resumeEpic(epicId)
+    ElMessage.success(`已恢复 ${res.resumed_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('恢复失败')
   }
 }
 
@@ -236,7 +299,7 @@ async function deleteEpic(epicId: string) {
 async function executeFeature(featureId: string) {
   try {
     const res = await reqApi.executeFeature(featureId)
-    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    ElMessage.success(res.message || `已入队 ${res.started_count} 个任务`)
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('启动失败')
@@ -250,6 +313,16 @@ async function pauseFeature(featureId: string) {
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeFeature(featureId: string) {
+  try {
+    const res = await reqApi.resumeFeature(featureId)
+    ElMessage.success(`已恢复 ${res.resumed_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('恢复失败')
   }
 }
 
@@ -270,7 +343,7 @@ async function deleteFeature(featureId: string) {
 async function executeUserStory(userStoryId: string) {
   try {
     const res = await reqApi.executeUserStory(userStoryId)
-    ElMessage.success(`已启动 ${res.started_count} 个任务`)
+    ElMessage.success(res.message || `已入队 ${res.started_count} 个任务`)
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('启动失败')
@@ -284,6 +357,16 @@ async function pauseUserStory(userStoryId: string) {
     await loadAllTrees()
   } catch (e) {
     ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeUserStory(userStoryId: string) {
+  try {
+    const res = await reqApi.resumeUserStory(userStoryId)
+    ElMessage.success(`已恢复 ${res.resumed_count} 个任务`)
+    await loadAllTrees()
+  } catch (e) {
+    ElMessage.error('恢复失败')
   }
 }
 
@@ -326,19 +409,20 @@ function hasDraftTasks(tree: RequirementTree): boolean {
       <!-- 需求行 -->
       <div
         class="tree-row level-requirement"
-        :class="{ 'is-running': (req.execution_status || req.status) === 'running' }"
+        :class="{ 'is-running': reqStatus(req) === 'running' }"
         @click="handleRowClick('requirement', req)"
       >
         <span class="toggle-icon">{{ isExpanded(req.id) ? '▼' : '▶' }}</span>
         <span class="level-badge requirement">需求</span>
         <span class="title">{{ req.input_text }}</span>
-        <span class="status-chip" :class="statusClass(req.execution_status || req.status)">
-          {{ statusLabel(req.execution_status || req.status) }}
+        <span class="status-chip" :class="statusClass(reqStatus(req))">
+          {{ statusLabel(reqStatus(req)) }}
         </span>
         <span class="created-at">{{ req.created_at ? new Date(req.created_at).toLocaleDateString() : '' }}</span>
         <div class="actions" @click.stop>
           <el-button v-if="canExecute(req)" size="small" type="primary" @click="executeRequirement(req.id)">执行</el-button>
-          <el-button v-if="req.execution_status === 'running'" size="small" type="warning" @click="pauseRequirement(req.id)">暂停</el-button>
+          <el-button v-if="reqCanPause(req)" size="small" type="warning" @click="pauseRequirement(req.id)">暂停</el-button>
+          <el-button v-if="reqCanResume(req)" size="small" type="success" @click="resumeRequirement(req.id)">继续</el-button>
           <el-button v-if="treeData.get(req.id) && hasDraftTasks(treeData.get(req.id)!)" size="small" type="primary" @click="confirmAllTasks(req.id)">确认任务</el-button>
           <el-button size="small" @click="openLogDrawer(req.id)">日志</el-button>
           <el-button v-if="req.execution_id" size="small" @click="router.push(`/canvas?execution_id=${req.execution_id}`)">画布</el-button>
@@ -361,8 +445,9 @@ function hasDraftTasks(tree: RequirementTree): boolean {
             <span class="status-chip" :class="statusClass(epic.status)">{{ statusLabel(epic.status) }}</span>
             <span v-if="epic.module" class="module-tag">{{ epic.module }}</span>
             <div class="actions" @click.stop>
-              <el-button v-if="epic.status === 'pending' || epic.status === 'planned'" size="small" type="primary" @click="executeEpic(epic.id)">执行</el-button>
-              <el-button v-if="epic.status === 'running'" size="small" type="warning" @click="pauseEpic(epic.id)">暂停</el-button>
+              <el-button v-if="epic.can_execute" size="small" type="primary" @click="executeEpic(epic.id)">执行</el-button>
+              <el-button v-if="epic.can_pause" size="small" type="warning" @click="pauseEpic(epic.id)">暂停</el-button>
+              <el-button v-if="epic.can_resume" size="small" type="success" @click="resumeEpic(epic.id)">继续</el-button>
               <el-button size="small" type="danger" @click="deleteEpic(epic.id)">删除</el-button>
             </div>
           </div>
@@ -380,8 +465,9 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                 <span class="title">{{ feature.title }}</span>
                 <span class="status-chip" :class="statusClass(feature.status)">{{ statusLabel(feature.status) }}</span>
                 <div class="actions" @click.stop>
-                  <el-button v-if="feature.status === 'pending' || feature.status === 'planned'" size="small" type="primary" @click="executeFeature(feature.id)">执行</el-button>
-                  <el-button v-if="feature.status === 'running'" size="small" type="warning" @click="pauseFeature(feature.id)">暂停</el-button>
+                  <el-button v-if="feature.can_execute" size="small" type="primary" @click="executeFeature(feature.id)">执行</el-button>
+                  <el-button v-if="feature.can_pause" size="small" type="warning" @click="pauseFeature(feature.id)">暂停</el-button>
+                  <el-button v-if="feature.can_resume" size="small" type="success" @click="resumeFeature(feature.id)">继续</el-button>
                   <el-button size="small" type="danger" @click="deleteFeature(feature.id)">删除</el-button>
                 </div>
               </div>
@@ -400,8 +486,9 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                     <span class="priority-tag">{{ story.priority }}</span>
                     <span class="status-chip" :class="statusClass(story.status)">{{ statusLabel(story.status) }}</span>
                     <div class="actions" @click.stop>
-                      <el-button v-if="story.status === 'pending' || story.status === 'planned'" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
-                      <el-button v-if="story.status === 'running'" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                      <el-button v-if="story.can_execute" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
+                      <el-button v-if="story.can_pause" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                      <el-button v-if="story.can_resume" size="small" type="success" @click="resumeUserStory(story.id)">继续</el-button>
                       <el-button size="small" type="danger" @click="deleteUserStory(story.id)">删除</el-button>
                     </div>
                   </div>
@@ -409,8 +496,8 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                   <template v-if="isExpanded(story.id)">
                     <div v-for="task in story.tasks" :key="task.id"
                       class="tree-row level-task"
-                      :class="{ 'is-running': task.status === 'running' }"
-                      @click="handleRowClick('task', task)"
+                      :class="{ 'is-running': task.status === 'running' || task.status === 'rate_limited' }"
+                      @click="openTask(task)"
                     >
                       <span class="toggle-icon" style="padding-left: 80px"></span>
                       <span class="level-badge task">任务</span>
@@ -420,6 +507,8 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                       <div class="actions" @click.stop>
                         <el-button v-if="task.status === 'draft'" size="small" type="primary" @click="confirmTask(task.execution_id!)">确认</el-button>
                         <el-button v-if="task.status === 'pending'" size="small" type="primary" @click="executeTask(task.execution_id!)">执行</el-button>
+                        <el-button v-if="task.status === 'running' || task.status === 'rate_limited'" size="small" type="warning" @click="pauseTask(task.execution_id!)">暂停</el-button>
+                        <el-button v-if="task.status === 'paused' || task.status === 'failed' || task.status === 'stopped' || task.status === 'cancelled'" size="small" type="success" @click="resumeTask(task.execution_id!)">继续</el-button>
                         <el-button v-if="task.execution_id" size="small" @click="openTaskLogDrawer(task.execution_id)">日志</el-button>
                         <el-button v-if="task.status !== 'running' && task.execution_id" size="small" type="danger" @click="deleteTask(task.execution_id)">删除</el-button>
                       </div>
@@ -443,8 +532,9 @@ function hasDraftTasks(tree: RequirementTree): boolean {
                 <span class="priority-tag">{{ story.priority }}</span>
                 <span class="status-chip" :class="statusClass(story.status)">{{ statusLabel(story.status) }}</span>
                 <div class="actions" @click.stop>
-                  <el-button v-if="story.status === 'pending' || story.status === 'planned'" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
-                  <el-button v-if="story.status === 'running'" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                  <el-button v-if="story.can_execute" size="small" type="primary" @click="executeUserStory(story.id)">执行</el-button>
+                  <el-button v-if="story.can_pause" size="small" type="warning" @click="pauseUserStory(story.id)">暂停</el-button>
+                  <el-button v-if="story.can_resume" size="small" type="success" @click="resumeUserStory(story.id)">继续</el-button>
                   <el-button size="small" type="danger" @click="deleteUserStory(story.id)">删除</el-button>
                 </div>
               </div>
@@ -452,8 +542,8 @@ function hasDraftTasks(tree: RequirementTree): boolean {
               <template v-if="isExpanded(story.id)">
                 <div v-for="task in story.tasks" :key="task.id"
                   class="tree-row level-task"
-                  :class="{ 'is-running': task.status === 'running' }"
-                  @click="handleRowClick('task', task)"
+                  :class="{ 'is-running': task.status === 'running' || task.status === 'rate_limited' }"
+                  @click="openTask(task)"
                 >
                   <span class="toggle-icon" style="padding-left: 60px"></span>
                   <span class="level-badge task">任务</span>
