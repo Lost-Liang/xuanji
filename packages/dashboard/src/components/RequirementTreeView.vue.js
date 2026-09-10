@@ -110,6 +110,16 @@ async function stopRequirement(reqId) {
         ElMessage.error('停止失败');
     }
 }
+async function pauseRequirement(reqId) {
+    try {
+        const res = await reqApi.pauseRequirement(reqId);
+        ElMessage.success(`已暂停 ${res.paused_count} 个任务`);
+        emit('refresh');
+    }
+    catch (e) {
+        ElMessage.error('暂停失败');
+    }
+}
 async function confirmAllTasks(reqId) {
     try {
         const res = await reqApi.confirmAll(reqId);
@@ -163,6 +173,111 @@ async function deleteTask(execId) {
             type: 'warning',
         });
         await taskApi.delete(execId);
+        ElMessage.success('已删除');
+        await loadAllTrees();
+    }
+    catch (e) {
+        if (e !== 'cancel')
+            ElMessage.error('删除失败');
+    }
+}
+// Actions —— Epic 级
+async function executeEpic(epicId) {
+    try {
+        const res = await reqApi.executeEpic(epicId);
+        ElMessage.success(`已启动 ${res.started_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('启动失败');
+    }
+}
+async function pauseEpic(epicId) {
+    try {
+        const res = await reqApi.pauseEpic(epicId);
+        ElMessage.success(`已暂停 ${res.paused_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('暂停失败');
+    }
+}
+async function deleteEpic(epicId) {
+    try {
+        await ElMessageBox.confirm('确定删除该史诗？所有关联任务将被删除。', '删除确认', {
+            type: 'warning',
+        });
+        await reqApi.deleteEpic(epicId);
+        ElMessage.success('已删除');
+        await loadAllTrees();
+    }
+    catch (e) {
+        if (e !== 'cancel')
+            ElMessage.error('删除失败');
+    }
+}
+// Actions —— Feature 级
+async function executeFeature(featureId) {
+    try {
+        const res = await reqApi.executeFeature(featureId);
+        ElMessage.success(`已启动 ${res.started_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('启动失败');
+    }
+}
+async function pauseFeature(featureId) {
+    try {
+        const res = await reqApi.pauseFeature(featureId);
+        ElMessage.success(`已暂停 ${res.paused_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('暂停失败');
+    }
+}
+async function deleteFeature(featureId) {
+    try {
+        await ElMessageBox.confirm('确定删除该特性？所有关联任务将被删除。', '删除确认', {
+            type: 'warning',
+        });
+        await reqApi.deleteFeature(featureId);
+        ElMessage.success('已删除');
+        await loadAllTrees();
+    }
+    catch (e) {
+        if (e !== 'cancel')
+            ElMessage.error('删除失败');
+    }
+}
+// Actions —— UserStory 级
+async function executeUserStory(userStoryId) {
+    try {
+        const res = await reqApi.executeUserStory(userStoryId);
+        ElMessage.success(`已启动 ${res.started_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('启动失败');
+    }
+}
+async function pauseUserStory(userStoryId) {
+    try {
+        const res = await reqApi.pauseUserStory(userStoryId);
+        ElMessage.success(`已暂停 ${res.paused_count} 个任务`);
+        await loadAllTrees();
+    }
+    catch (e) {
+        ElMessage.error('暂停失败');
+    }
+}
+async function deleteUserStory(userStoryId) {
+    try {
+        await ElMessageBox.confirm('确定删除该用户故事？所有关联任务将被删除。', '删除确认', {
+            type: 'warning',
+        });
+        await reqApi.deleteUserStory(userStoryId);
         ElMessage.success('已删除');
         await loadAllTrees();
     }
@@ -282,7 +397,7 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
         __VLS_3.slots.default;
         var __VLS_3;
     }
-    if (req.execution_status === 'running' || req.execution_status === 'pending') {
+    if (req.execution_status === 'running') {
         const __VLS_8 = {}.ElButton;
         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
         // @ts-ignore
@@ -301,9 +416,9 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
         let __VLS_14;
         const __VLS_15 = {
             onClick: (...[$event]) => {
-                if (!(req.execution_status === 'running' || req.execution_status === 'pending'))
+                if (!(req.execution_status === 'running'))
                     return;
-                __VLS_ctx.stopRequirement(req.id);
+                __VLS_ctx.pauseRequirement(req.id);
             }
         };
         __VLS_11.slots.default;
@@ -440,6 +555,93 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                 });
                 (epic.module);
             }
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ onClick: () => { } },
+                ...{ class: "actions" },
+            });
+            if (epic.status === 'pending' || epic.status === 'planned') {
+                const __VLS_48 = {}.ElButton;
+                /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                // @ts-ignore
+                const __VLS_49 = __VLS_asFunctionalComponent(__VLS_48, new __VLS_48({
+                    ...{ 'onClick': {} },
+                    size: "small",
+                    type: "primary",
+                }));
+                const __VLS_50 = __VLS_49({
+                    ...{ 'onClick': {} },
+                    size: "small",
+                    type: "primary",
+                }, ...__VLS_functionalComponentArgsRest(__VLS_49));
+                let __VLS_52;
+                let __VLS_53;
+                let __VLS_54;
+                const __VLS_55 = {
+                    onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                            return;
+                        if (!(epic.status === 'pending' || epic.status === 'planned'))
+                            return;
+                        __VLS_ctx.executeEpic(epic.id);
+                    }
+                };
+                __VLS_51.slots.default;
+                var __VLS_51;
+            }
+            if (epic.status === 'running') {
+                const __VLS_56 = {}.ElButton;
+                /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                // @ts-ignore
+                const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
+                    ...{ 'onClick': {} },
+                    size: "small",
+                    type: "warning",
+                }));
+                const __VLS_58 = __VLS_57({
+                    ...{ 'onClick': {} },
+                    size: "small",
+                    type: "warning",
+                }, ...__VLS_functionalComponentArgsRest(__VLS_57));
+                let __VLS_60;
+                let __VLS_61;
+                let __VLS_62;
+                const __VLS_63 = {
+                    onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                            return;
+                        if (!(epic.status === 'running'))
+                            return;
+                        __VLS_ctx.pauseEpic(epic.id);
+                    }
+                };
+                __VLS_59.slots.default;
+                var __VLS_59;
+            }
+            const __VLS_64 = {}.ElButton;
+            /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+            // @ts-ignore
+            const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({
+                ...{ 'onClick': {} },
+                size: "small",
+                type: "danger",
+            }));
+            const __VLS_66 = __VLS_65({
+                ...{ 'onClick': {} },
+                size: "small",
+                type: "danger",
+            }, ...__VLS_functionalComponentArgsRest(__VLS_65));
+            let __VLS_68;
+            let __VLS_69;
+            let __VLS_70;
+            const __VLS_71 = {
+                onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                        return;
+                    __VLS_ctx.deleteEpic(epic.id);
+                }
+            };
+            __VLS_67.slots.default;
+            var __VLS_67;
             if (__VLS_ctx.isExpanded(epic.id)) {
                 for (const [feature] of __VLS_getVForSourceType((epic.features))) {
                     (feature.id);
@@ -471,6 +673,99 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                         ...{ class: (__VLS_ctx.statusClass(feature.status)) },
                     });
                     (__VLS_ctx.statusLabel(feature.status));
+                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                        ...{ onClick: () => { } },
+                        ...{ class: "actions" },
+                    });
+                    if (feature.status === 'pending' || feature.status === 'planned') {
+                        const __VLS_72 = {}.ElButton;
+                        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                        // @ts-ignore
+                        const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "primary",
+                        }));
+                        const __VLS_74 = __VLS_73({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "primary",
+                        }, ...__VLS_functionalComponentArgsRest(__VLS_73));
+                        let __VLS_76;
+                        let __VLS_77;
+                        let __VLS_78;
+                        const __VLS_79 = {
+                            onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                    return;
+                                if (!(__VLS_ctx.isExpanded(epic.id)))
+                                    return;
+                                if (!(feature.status === 'pending' || feature.status === 'planned'))
+                                    return;
+                                __VLS_ctx.executeFeature(feature.id);
+                            }
+                        };
+                        __VLS_75.slots.default;
+                        var __VLS_75;
+                    }
+                    if (feature.status === 'running') {
+                        const __VLS_80 = {}.ElButton;
+                        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                        // @ts-ignore
+                        const __VLS_81 = __VLS_asFunctionalComponent(__VLS_80, new __VLS_80({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "warning",
+                        }));
+                        const __VLS_82 = __VLS_81({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "warning",
+                        }, ...__VLS_functionalComponentArgsRest(__VLS_81));
+                        let __VLS_84;
+                        let __VLS_85;
+                        let __VLS_86;
+                        const __VLS_87 = {
+                            onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                    return;
+                                if (!(__VLS_ctx.isExpanded(epic.id)))
+                                    return;
+                                if (!(feature.status === 'running'))
+                                    return;
+                                __VLS_ctx.pauseFeature(feature.id);
+                            }
+                        };
+                        __VLS_83.slots.default;
+                        var __VLS_83;
+                    }
+                    const __VLS_88 = {}.ElButton;
+                    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                    // @ts-ignore
+                    const __VLS_89 = __VLS_asFunctionalComponent(__VLS_88, new __VLS_88({
+                        ...{ 'onClick': {} },
+                        size: "small",
+                        type: "danger",
+                    }));
+                    const __VLS_90 = __VLS_89({
+                        ...{ 'onClick': {} },
+                        size: "small",
+                        type: "danger",
+                    }, ...__VLS_functionalComponentArgsRest(__VLS_89));
+                    let __VLS_92;
+                    let __VLS_93;
+                    let __VLS_94;
+                    const __VLS_95 = {
+                        onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                return;
+                            if (!(__VLS_ctx.isExpanded(epic.id)))
+                                return;
+                            __VLS_ctx.deleteFeature(feature.id);
+                        }
+                    };
+                    __VLS_91.slots.default;
+                    var __VLS_91;
                     if (__VLS_ctx.isExpanded(feature.id)) {
                         for (const [story] of __VLS_getVForSourceType((feature.user_stories))) {
                             (story.id);
@@ -508,6 +803,105 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                 ...{ class: (__VLS_ctx.statusClass(story.status)) },
                             });
                             (__VLS_ctx.statusLabel(story.status));
+                            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                                ...{ onClick: () => { } },
+                                ...{ class: "actions" },
+                            });
+                            if (story.status === 'pending' || story.status === 'planned') {
+                                const __VLS_96 = {}.ElButton;
+                                /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                                // @ts-ignore
+                                const __VLS_97 = __VLS_asFunctionalComponent(__VLS_96, new __VLS_96({
+                                    ...{ 'onClick': {} },
+                                    size: "small",
+                                    type: "primary",
+                                }));
+                                const __VLS_98 = __VLS_97({
+                                    ...{ 'onClick': {} },
+                                    size: "small",
+                                    type: "primary",
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_97));
+                                let __VLS_100;
+                                let __VLS_101;
+                                let __VLS_102;
+                                const __VLS_103 = {
+                                    onClick: (...[$event]) => {
+                                        if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                            return;
+                                        if (!(__VLS_ctx.isExpanded(epic.id)))
+                                            return;
+                                        if (!(__VLS_ctx.isExpanded(feature.id)))
+                                            return;
+                                        if (!(story.status === 'pending' || story.status === 'planned'))
+                                            return;
+                                        __VLS_ctx.executeUserStory(story.id);
+                                    }
+                                };
+                                __VLS_99.slots.default;
+                                var __VLS_99;
+                            }
+                            if (story.status === 'running') {
+                                const __VLS_104 = {}.ElButton;
+                                /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                                // @ts-ignore
+                                const __VLS_105 = __VLS_asFunctionalComponent(__VLS_104, new __VLS_104({
+                                    ...{ 'onClick': {} },
+                                    size: "small",
+                                    type: "warning",
+                                }));
+                                const __VLS_106 = __VLS_105({
+                                    ...{ 'onClick': {} },
+                                    size: "small",
+                                    type: "warning",
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_105));
+                                let __VLS_108;
+                                let __VLS_109;
+                                let __VLS_110;
+                                const __VLS_111 = {
+                                    onClick: (...[$event]) => {
+                                        if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                            return;
+                                        if (!(__VLS_ctx.isExpanded(epic.id)))
+                                            return;
+                                        if (!(__VLS_ctx.isExpanded(feature.id)))
+                                            return;
+                                        if (!(story.status === 'running'))
+                                            return;
+                                        __VLS_ctx.pauseUserStory(story.id);
+                                    }
+                                };
+                                __VLS_107.slots.default;
+                                var __VLS_107;
+                            }
+                            const __VLS_112 = {}.ElButton;
+                            /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                            // @ts-ignore
+                            const __VLS_113 = __VLS_asFunctionalComponent(__VLS_112, new __VLS_112({
+                                ...{ 'onClick': {} },
+                                size: "small",
+                                type: "danger",
+                            }));
+                            const __VLS_114 = __VLS_113({
+                                ...{ 'onClick': {} },
+                                size: "small",
+                                type: "danger",
+                            }, ...__VLS_functionalComponentArgsRest(__VLS_113));
+                            let __VLS_116;
+                            let __VLS_117;
+                            let __VLS_118;
+                            const __VLS_119 = {
+                                onClick: (...[$event]) => {
+                                    if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                        return;
+                                    if (!(__VLS_ctx.isExpanded(epic.id)))
+                                        return;
+                                    if (!(__VLS_ctx.isExpanded(feature.id)))
+                                        return;
+                                    __VLS_ctx.deleteUserStory(story.id);
+                                }
+                            };
+                            __VLS_115.slots.default;
+                            var __VLS_115;
                             if (__VLS_ctx.isExpanded(story.id)) {
                                 for (const [task] of __VLS_getVForSourceType((story.tasks))) {
                                     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -553,23 +947,23 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                         ...{ class: "actions" },
                                     });
                                     if (task.status === 'draft') {
-                                        const __VLS_48 = {}.ElButton;
+                                        const __VLS_120 = {}.ElButton;
                                         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                         // @ts-ignore
-                                        const __VLS_49 = __VLS_asFunctionalComponent(__VLS_48, new __VLS_48({
+                                        const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "primary",
                                         }));
-                                        const __VLS_50 = __VLS_49({
+                                        const __VLS_122 = __VLS_121({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "primary",
-                                        }, ...__VLS_functionalComponentArgsRest(__VLS_49));
-                                        let __VLS_52;
-                                        let __VLS_53;
-                                        let __VLS_54;
-                                        const __VLS_55 = {
+                                        }, ...__VLS_functionalComponentArgsRest(__VLS_121));
+                                        let __VLS_124;
+                                        let __VLS_125;
+                                        let __VLS_126;
+                                        const __VLS_127 = {
                                             onClick: (...[$event]) => {
                                                 if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                                     return;
@@ -584,27 +978,27 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                                 __VLS_ctx.confirmTask(task.execution_id);
                                             }
                                         };
-                                        __VLS_51.slots.default;
-                                        var __VLS_51;
+                                        __VLS_123.slots.default;
+                                        var __VLS_123;
                                     }
                                     if (task.status === 'pending') {
-                                        const __VLS_56 = {}.ElButton;
+                                        const __VLS_128 = {}.ElButton;
                                         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                         // @ts-ignore
-                                        const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
+                                        const __VLS_129 = __VLS_asFunctionalComponent(__VLS_128, new __VLS_128({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "primary",
                                         }));
-                                        const __VLS_58 = __VLS_57({
+                                        const __VLS_130 = __VLS_129({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "primary",
-                                        }, ...__VLS_functionalComponentArgsRest(__VLS_57));
-                                        let __VLS_60;
-                                        let __VLS_61;
-                                        let __VLS_62;
-                                        const __VLS_63 = {
+                                        }, ...__VLS_functionalComponentArgsRest(__VLS_129));
+                                        let __VLS_132;
+                                        let __VLS_133;
+                                        let __VLS_134;
+                                        const __VLS_135 = {
                                             onClick: (...[$event]) => {
                                                 if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                                     return;
@@ -619,25 +1013,25 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                                 __VLS_ctx.executeTask(task.execution_id);
                                             }
                                         };
-                                        __VLS_59.slots.default;
-                                        var __VLS_59;
+                                        __VLS_131.slots.default;
+                                        var __VLS_131;
                                     }
                                     if (task.execution_id) {
-                                        const __VLS_64 = {}.ElButton;
+                                        const __VLS_136 = {}.ElButton;
                                         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                         // @ts-ignore
-                                        const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({
+                                        const __VLS_137 = __VLS_asFunctionalComponent(__VLS_136, new __VLS_136({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                         }));
-                                        const __VLS_66 = __VLS_65({
+                                        const __VLS_138 = __VLS_137({
                                             ...{ 'onClick': {} },
                                             size: "small",
-                                        }, ...__VLS_functionalComponentArgsRest(__VLS_65));
-                                        let __VLS_68;
-                                        let __VLS_69;
-                                        let __VLS_70;
-                                        const __VLS_71 = {
+                                        }, ...__VLS_functionalComponentArgsRest(__VLS_137));
+                                        let __VLS_140;
+                                        let __VLS_141;
+                                        let __VLS_142;
+                                        const __VLS_143 = {
                                             onClick: (...[$event]) => {
                                                 if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                                     return;
@@ -652,27 +1046,27 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                                 __VLS_ctx.openTaskLogDrawer(task.execution_id);
                                             }
                                         };
-                                        __VLS_67.slots.default;
-                                        var __VLS_67;
+                                        __VLS_139.slots.default;
+                                        var __VLS_139;
                                     }
                                     if (task.status !== 'running' && task.execution_id) {
-                                        const __VLS_72 = {}.ElButton;
+                                        const __VLS_144 = {}.ElButton;
                                         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                         // @ts-ignore
-                                        const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
+                                        const __VLS_145 = __VLS_asFunctionalComponent(__VLS_144, new __VLS_144({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "danger",
                                         }));
-                                        const __VLS_74 = __VLS_73({
+                                        const __VLS_146 = __VLS_145({
                                             ...{ 'onClick': {} },
                                             size: "small",
                                             type: "danger",
-                                        }, ...__VLS_functionalComponentArgsRest(__VLS_73));
-                                        let __VLS_76;
-                                        let __VLS_77;
-                                        let __VLS_78;
-                                        const __VLS_79 = {
+                                        }, ...__VLS_functionalComponentArgsRest(__VLS_145));
+                                        let __VLS_148;
+                                        let __VLS_149;
+                                        let __VLS_150;
+                                        const __VLS_151 = {
                                             onClick: (...[$event]) => {
                                                 if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                                     return;
@@ -687,8 +1081,8 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                                 __VLS_ctx.deleteTask(task.execution_id);
                                             }
                                         };
-                                        __VLS_75.slots.default;
-                                        var __VLS_75;
+                                        __VLS_147.slots.default;
+                                        var __VLS_147;
                                     }
                                 }
                                 if (story.tasks.length === 0) {
@@ -734,6 +1128,99 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                         ...{ class: (__VLS_ctx.statusClass(story.status)) },
                     });
                     (__VLS_ctx.statusLabel(story.status));
+                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                        ...{ onClick: () => { } },
+                        ...{ class: "actions" },
+                    });
+                    if (story.status === 'pending' || story.status === 'planned') {
+                        const __VLS_152 = {}.ElButton;
+                        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                        // @ts-ignore
+                        const __VLS_153 = __VLS_asFunctionalComponent(__VLS_152, new __VLS_152({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "primary",
+                        }));
+                        const __VLS_154 = __VLS_153({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "primary",
+                        }, ...__VLS_functionalComponentArgsRest(__VLS_153));
+                        let __VLS_156;
+                        let __VLS_157;
+                        let __VLS_158;
+                        const __VLS_159 = {
+                            onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                    return;
+                                if (!(__VLS_ctx.isExpanded(epic.id)))
+                                    return;
+                                if (!(story.status === 'pending' || story.status === 'planned'))
+                                    return;
+                                __VLS_ctx.executeUserStory(story.id);
+                            }
+                        };
+                        __VLS_155.slots.default;
+                        var __VLS_155;
+                    }
+                    if (story.status === 'running') {
+                        const __VLS_160 = {}.ElButton;
+                        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                        // @ts-ignore
+                        const __VLS_161 = __VLS_asFunctionalComponent(__VLS_160, new __VLS_160({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "warning",
+                        }));
+                        const __VLS_162 = __VLS_161({
+                            ...{ 'onClick': {} },
+                            size: "small",
+                            type: "warning",
+                        }, ...__VLS_functionalComponentArgsRest(__VLS_161));
+                        let __VLS_164;
+                        let __VLS_165;
+                        let __VLS_166;
+                        const __VLS_167 = {
+                            onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                    return;
+                                if (!(__VLS_ctx.isExpanded(epic.id)))
+                                    return;
+                                if (!(story.status === 'running'))
+                                    return;
+                                __VLS_ctx.pauseUserStory(story.id);
+                            }
+                        };
+                        __VLS_163.slots.default;
+                        var __VLS_163;
+                    }
+                    const __VLS_168 = {}.ElButton;
+                    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+                    // @ts-ignore
+                    const __VLS_169 = __VLS_asFunctionalComponent(__VLS_168, new __VLS_168({
+                        ...{ 'onClick': {} },
+                        size: "small",
+                        type: "danger",
+                    }));
+                    const __VLS_170 = __VLS_169({
+                        ...{ 'onClick': {} },
+                        size: "small",
+                        type: "danger",
+                    }, ...__VLS_functionalComponentArgsRest(__VLS_169));
+                    let __VLS_172;
+                    let __VLS_173;
+                    let __VLS_174;
+                    const __VLS_175 = {
+                        onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
+                                return;
+                            if (!(__VLS_ctx.isExpanded(epic.id)))
+                                return;
+                            __VLS_ctx.deleteUserStory(story.id);
+                        }
+                    };
+                    __VLS_171.slots.default;
+                    var __VLS_171;
                     if (__VLS_ctx.isExpanded(story.id)) {
                         for (const [task] of __VLS_getVForSourceType((story.tasks))) {
                             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -777,23 +1264,23 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                 ...{ class: "actions" },
                             });
                             if (task.status === 'draft') {
-                                const __VLS_80 = {}.ElButton;
+                                const __VLS_176 = {}.ElButton;
                                 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                 // @ts-ignore
-                                const __VLS_81 = __VLS_asFunctionalComponent(__VLS_80, new __VLS_80({
+                                const __VLS_177 = __VLS_asFunctionalComponent(__VLS_176, new __VLS_176({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "primary",
                                 }));
-                                const __VLS_82 = __VLS_81({
+                                const __VLS_178 = __VLS_177({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "primary",
-                                }, ...__VLS_functionalComponentArgsRest(__VLS_81));
-                                let __VLS_84;
-                                let __VLS_85;
-                                let __VLS_86;
-                                const __VLS_87 = {
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_177));
+                                let __VLS_180;
+                                let __VLS_181;
+                                let __VLS_182;
+                                const __VLS_183 = {
                                     onClick: (...[$event]) => {
                                         if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                             return;
@@ -806,27 +1293,27 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                         __VLS_ctx.confirmTask(task.execution_id);
                                     }
                                 };
-                                __VLS_83.slots.default;
-                                var __VLS_83;
+                                __VLS_179.slots.default;
+                                var __VLS_179;
                             }
                             if (task.status === 'pending') {
-                                const __VLS_88 = {}.ElButton;
+                                const __VLS_184 = {}.ElButton;
                                 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                 // @ts-ignore
-                                const __VLS_89 = __VLS_asFunctionalComponent(__VLS_88, new __VLS_88({
+                                const __VLS_185 = __VLS_asFunctionalComponent(__VLS_184, new __VLS_184({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "primary",
                                 }));
-                                const __VLS_90 = __VLS_89({
+                                const __VLS_186 = __VLS_185({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "primary",
-                                }, ...__VLS_functionalComponentArgsRest(__VLS_89));
-                                let __VLS_92;
-                                let __VLS_93;
-                                let __VLS_94;
-                                const __VLS_95 = {
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_185));
+                                let __VLS_188;
+                                let __VLS_189;
+                                let __VLS_190;
+                                const __VLS_191 = {
                                     onClick: (...[$event]) => {
                                         if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                             return;
@@ -839,25 +1326,25 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                         __VLS_ctx.executeTask(task.execution_id);
                                     }
                                 };
-                                __VLS_91.slots.default;
-                                var __VLS_91;
+                                __VLS_187.slots.default;
+                                var __VLS_187;
                             }
                             if (task.execution_id) {
-                                const __VLS_96 = {}.ElButton;
+                                const __VLS_192 = {}.ElButton;
                                 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                 // @ts-ignore
-                                const __VLS_97 = __VLS_asFunctionalComponent(__VLS_96, new __VLS_96({
+                                const __VLS_193 = __VLS_asFunctionalComponent(__VLS_192, new __VLS_192({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                 }));
-                                const __VLS_98 = __VLS_97({
+                                const __VLS_194 = __VLS_193({
                                     ...{ 'onClick': {} },
                                     size: "small",
-                                }, ...__VLS_functionalComponentArgsRest(__VLS_97));
-                                let __VLS_100;
-                                let __VLS_101;
-                                let __VLS_102;
-                                const __VLS_103 = {
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_193));
+                                let __VLS_196;
+                                let __VLS_197;
+                                let __VLS_198;
+                                const __VLS_199 = {
                                     onClick: (...[$event]) => {
                                         if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                             return;
@@ -870,27 +1357,27 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                         __VLS_ctx.openTaskLogDrawer(task.execution_id);
                                     }
                                 };
-                                __VLS_99.slots.default;
-                                var __VLS_99;
+                                __VLS_195.slots.default;
+                                var __VLS_195;
                             }
                             if (task.status !== 'running' && task.execution_id) {
-                                const __VLS_104 = {}.ElButton;
+                                const __VLS_200 = {}.ElButton;
                                 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
                                 // @ts-ignore
-                                const __VLS_105 = __VLS_asFunctionalComponent(__VLS_104, new __VLS_104({
+                                const __VLS_201 = __VLS_asFunctionalComponent(__VLS_200, new __VLS_200({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "danger",
                                 }));
-                                const __VLS_106 = __VLS_105({
+                                const __VLS_202 = __VLS_201({
                                     ...{ 'onClick': {} },
                                     size: "small",
                                     type: "danger",
-                                }, ...__VLS_functionalComponentArgsRest(__VLS_105));
-                                let __VLS_108;
-                                let __VLS_109;
-                                let __VLS_110;
-                                const __VLS_111 = {
+                                }, ...__VLS_functionalComponentArgsRest(__VLS_201));
+                                let __VLS_204;
+                                let __VLS_205;
+                                let __VLS_206;
+                                const __VLS_207 = {
                                     onClick: (...[$event]) => {
                                         if (!(__VLS_ctx.isExpanded(req.id) && __VLS_ctx.treeData.has(req.id)))
                                             return;
@@ -903,8 +1390,8 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
                                         __VLS_ctx.deleteTask(task.execution_id);
                                     }
                                 };
-                                __VLS_107.slots.default;
-                                var __VLS_107;
+                                __VLS_203.slots.default;
+                                var __VLS_203;
                             }
                         }
                     }
@@ -915,18 +1402,18 @@ for (const [req] of __VLS_getVForSourceType((__VLS_ctx.requirements))) {
 }
 /** @type {[typeof RequirementLogDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_112 = __VLS_asFunctionalComponent(RequirementLogDrawer, new RequirementLogDrawer({
+const __VLS_208 = __VLS_asFunctionalComponent(RequirementLogDrawer, new RequirementLogDrawer({
     modelValue: (__VLS_ctx.logDrawerVisible),
     requirementId: (__VLS_ctx.logDrawerReqId),
 }));
-const __VLS_113 = __VLS_112({
+const __VLS_209 = __VLS_208({
     modelValue: (__VLS_ctx.logDrawerVisible),
     requirementId: (__VLS_ctx.logDrawerReqId),
-}, ...__VLS_functionalComponentArgsRest(__VLS_112));
+}, ...__VLS_functionalComponentArgsRest(__VLS_208));
 /** @type {[typeof LogDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_115 = __VLS_asFunctionalComponent(LogDrawer, new LogDrawer({}));
-const __VLS_116 = __VLS_115({}, ...__VLS_functionalComponentArgsRest(__VLS_115));
+const __VLS_211 = __VLS_asFunctionalComponent(LogDrawer, new LogDrawer({}));
+const __VLS_212 = __VLS_211({}, ...__VLS_functionalComponentArgsRest(__VLS_211));
 /** @type {__VLS_StyleScopedClasses['req-tree']} */ ;
 /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
 /** @type {__VLS_StyleScopedClasses['tree-row']} */ ;
@@ -946,6 +1433,7 @@ const __VLS_116 = __VLS_115({}, ...__VLS_functionalComponentArgsRest(__VLS_115))
 /** @type {__VLS_StyleScopedClasses['title']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-chip']} */ ;
 /** @type {__VLS_StyleScopedClasses['module-tag']} */ ;
+/** @type {__VLS_StyleScopedClasses['actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['tree-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['level-feature']} */ ;
 /** @type {__VLS_StyleScopedClasses['toggle-icon']} */ ;
@@ -953,6 +1441,7 @@ const __VLS_116 = __VLS_115({}, ...__VLS_functionalComponentArgsRest(__VLS_115))
 /** @type {__VLS_StyleScopedClasses['feature']} */ ;
 /** @type {__VLS_StyleScopedClasses['title']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-chip']} */ ;
+/** @type {__VLS_StyleScopedClasses['actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['tree-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['level-story']} */ ;
 /** @type {__VLS_StyleScopedClasses['toggle-icon']} */ ;
@@ -961,6 +1450,7 @@ const __VLS_116 = __VLS_115({}, ...__VLS_functionalComponentArgsRest(__VLS_115))
 /** @type {__VLS_StyleScopedClasses['title']} */ ;
 /** @type {__VLS_StyleScopedClasses['priority-tag']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-chip']} */ ;
+/** @type {__VLS_StyleScopedClasses['actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['tree-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['level-task']} */ ;
 /** @type {__VLS_StyleScopedClasses['toggle-icon']} */ ;
@@ -980,6 +1470,7 @@ const __VLS_116 = __VLS_115({}, ...__VLS_functionalComponentArgsRest(__VLS_115))
 /** @type {__VLS_StyleScopedClasses['title']} */ ;
 /** @type {__VLS_StyleScopedClasses['priority-tag']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-chip']} */ ;
+/** @type {__VLS_StyleScopedClasses['actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['tree-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['level-task']} */ ;
 /** @type {__VLS_StyleScopedClasses['toggle-icon']} */ ;
@@ -1009,12 +1500,21 @@ const __VLS_self = (await import('vue')).defineComponent({
             canExecute: canExecute,
             handleRowClick: handleRowClick,
             executeRequirement: executeRequirement,
-            stopRequirement: stopRequirement,
+            pauseRequirement: pauseRequirement,
             confirmAllTasks: confirmAllTasks,
             deleteRequirement: deleteRequirement,
             confirmTask: confirmTask,
             executeTask: executeTask,
             deleteTask: deleteTask,
+            executeEpic: executeEpic,
+            pauseEpic: pauseEpic,
+            deleteEpic: deleteEpic,
+            executeFeature: executeFeature,
+            pauseFeature: pauseFeature,
+            deleteFeature: deleteFeature,
+            executeUserStory: executeUserStory,
+            pauseUserStory: pauseUserStory,
+            deleteUserStory: deleteUserStory,
             hasDraftTasks: hasDraftTasks,
         };
     },

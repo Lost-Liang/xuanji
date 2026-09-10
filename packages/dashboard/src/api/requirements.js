@@ -44,4 +44,48 @@ export const api = {
         });
         return r.json();
     },
+    // Requirement 级暂停
+    async pauseRequirement(id) {
+        const r = await fetch(`${base}/${id}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    // Epic 级操作
+    async executeEpic(epicId) {
+        const r = await fetch(`${base}/epics/${epicId}/execute`, { method: 'POST' });
+        return r.json();
+    },
+    async pauseEpic(epicId) {
+        const r = await fetch(`${base}/epics/${epicId}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    async deleteEpic(epicId) {
+        const r = await fetch(`${base}/epics/${epicId}`, { method: 'DELETE' });
+        return r.json();
+    },
+    // Feature 级操作
+    async executeFeature(featureId) {
+        const r = await fetch(`${base}/features/${featureId}/execute`, { method: 'POST' });
+        return r.json();
+    },
+    async pauseFeature(featureId) {
+        const r = await fetch(`${base}/features/${featureId}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    async deleteFeature(featureId) {
+        const r = await fetch(`${base}/features/${featureId}`, { method: 'DELETE' });
+        return r.json();
+    },
+    // UserStory 级操作
+    async executeUserStory(userStoryId) {
+        const r = await fetch(`${base}/user-stories/${userStoryId}/execute`, { method: 'POST' });
+        return r.json();
+    },
+    async pauseUserStory(userStoryId) {
+        const r = await fetch(`${base}/user-stories/${userStoryId}/pause`, { method: 'POST' });
+        return r.json();
+    },
+    async deleteUserStory(userStoryId) {
+        const r = await fetch(`${base}/user-stories/${userStoryId}`, { method: 'DELETE' });
+        return r.json();
+    },
 };

@@ -137,43 +137,43 @@ export const api = {
 
   // Epic 级操作
   async executeEpic(epicId: string): Promise<{ok: boolean, started_count: number}> {
-    const r = await fetch(`/api/epics/${epicId}/execute`, { method: 'POST' })
+    const r = await fetch(`${base}/epics/${epicId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseEpic(epicId: string): Promise<{ok: boolean, paused_count: number}> {
-    const r = await fetch(`/api/epics/${epicId}/pause`, { method: 'POST' })
+    const r = await fetch(`${base}/epics/${epicId}/pause`, { method: 'POST' })
     return r.json()
   },
   async deleteEpic(epicId: string): Promise<{ok: boolean}> {
-    const r = await fetch(`/api/epics/${epicId}`, { method: 'DELETE' })
+    const r = await fetch(`${base}/epics/${epicId}`, { method: 'DELETE' })
     return r.json()
   },
 
   // Feature 级操作
   async executeFeature(featureId: string): Promise<{ok: boolean, started_count: number}> {
-    const r = await fetch(`/api/features/${featureId}/execute`, { method: 'POST' })
+    const r = await fetch(`${base}/features/${featureId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseFeature(featureId: string): Promise<{ok: boolean, paused_count: number}> {
-    const r = await fetch(`/api/features/${featureId}/pause`, { method: 'POST' })
+    const r = await fetch(`${base}/features/${featureId}/pause`, { method: 'POST' })
     return r.json()
   },
   async deleteFeature(featureId: string): Promise<{ok: boolean}> {
-    const r = await fetch(`/api/features/${featureId}`, { method: 'DELETE' })
+    const r = await fetch(`${base}/features/${featureId}`, { method: 'DELETE' })
     return r.json()
   },
 
   // UserStory 级操作
   async executeUserStory(userStoryId: string): Promise<{ok: boolean, started_count: number}> {
-    const r = await fetch(`/api/user-stories/${userStoryId}/execute`, { method: 'POST' })
+    const r = await fetch(`${base}/user-stories/${userStoryId}/execute`, { method: 'POST' })
     return r.json()
   },
   async pauseUserStory(userStoryId: string): Promise<{ok: boolean, paused_count: number}> {
-    const r = await fetch(`/api/user-stories/${userStoryId}/pause`, { method: 'POST' })
+    const r = await fetch(`${base}/user-stories/${userStoryId}/pause`, { method: 'POST' })
     return r.json()
   },
   async deleteUserStory(userStoryId: string): Promise<{ok: boolean}> {
-    const r = await fetch(`/api/user-stories/${userStoryId}`, { method: 'DELETE' })
+    const r = await fetch(`${base}/user-stories/${userStoryId}`, { method: 'DELETE' })
     return r.json()
   },
 }

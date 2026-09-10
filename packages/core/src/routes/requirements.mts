@@ -622,18 +622,18 @@ requirementsRouter.post('/:id/pause', async (req, res) => {
 // =============================================================================
 
 /**
- * POST /api/epics/:id/execute
+ * POST /api/requirements/epics/:id/execute
  * 执行该 Epic 下所有 pending 任务
  */
 requirementsRouter.post('/epics/:id/execute', async (req, res) => {
   try {
     const epicId = req.params.id;
 
-    // 找到该 epic 下所有 pending 状态的 task_executions
+    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
     const executions = await db.task_executions.findMany({
       where: {
         tasks: { epic_id: epicId },
-        status: 'pending',
+        status: { in: ['draft', 'pending'] },
       },
       include: {
         tasks: { select: { id: true } },
@@ -645,10 +645,17 @@ requirementsRouter.post('/epics/:id/execute', async (req, res) => {
       return;
     }
 
-    // 逐个启动执行
     let startedCount = 0;
     for (const exec of executions) {
       try {
+        // 如果是 draft，先确认
+        if (exec.status === 'draft') {
+          await db.task_executions.update({
+            where: { execution_id: exec.execution_id },
+            data: { status: 'pending' },
+          });
+        }
+
         await graphRunner.startExecution({
           executionId: exec.execution_id,
           flowId: 'ruoyi-dev-flow',
@@ -764,12 +771,13 @@ requirementsRouter.post('/features/:id/execute', async (req, res) => {
     const featureId = req.params.id;
 
     // Feature 通过 UserStory 关联任务：tasks.user_story_id → user_stories.feature_id
+    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
     const executions = await db.task_executions.findMany({
       where: {
         tasks: {
           user_stories: { feature_id: featureId },
         },
-        status: 'pending',
+        status: { in: ['draft', 'pending'] },
       },
       include: {
         tasks: { select: { id: true } },
@@ -784,6 +792,14 @@ requirementsRouter.post('/features/:id/execute', async (req, res) => {
     let startedCount = 0;
     for (const exec of executions) {
       try {
+        // 如果是 draft，先确认
+        if (exec.status === 'draft') {
+          await db.task_executions.update({
+            where: { execution_id: exec.execution_id },
+            data: { status: 'pending' },
+          });
+        }
+
         await graphRunner.startExecution({
           executionId: exec.execution_id,
           flowId: 'ruoyi-dev-flow',
@@ -892,10 +908,11 @@ requirementsRouter.post('/user-stories/:id/execute', async (req, res) => {
   try {
     const userStoryId = req.params.id;
 
+    // 查找 draft 或 pending 状态的执行（draft 会自动确认后执行）
     const executions = await db.task_executions.findMany({
       where: {
         tasks: { user_story_id: userStoryId },
-        status: 'pending',
+        status: { in: ['draft', 'pending'] },
       },
       include: {
         tasks: { select: { id: true } },
@@ -910,6 +927,14 @@ requirementsRouter.post('/user-stories/:id/execute', async (req, res) => {
     let startedCount = 0;
     for (const exec of executions) {
       try {
+        // 如果是 draft，先确认
+        if (exec.status === 'draft') {
+          await db.task_executions.update({
+            where: { execution_id: exec.execution_id },
+            data: { status: 'pending' },
+          });
+        }
+
         await graphRunner.startExecution({
           executionId: exec.execution_id,
           flowId: 'ruoyi-dev-flow',
