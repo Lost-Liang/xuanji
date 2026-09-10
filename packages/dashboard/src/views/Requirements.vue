@@ -382,48 +382,8 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
       </button>
     </div>
 
-    <!-- 需求卡片列表 -->
-    <div class="requirement-list" v-loading="loading">
-      <div v-if="!filteredList.length && !loading" class="empty-state">
-        <p>暂无需求</p>
-        <p class="hint">在上方输入框中描述需求，创建并执行</p>
-      </div>
-
-      <article
-        v-for="item in filteredList"
-        :key="item.id"
-        class="requirement-card"
-        :class="aggStatus(item)"
-        @click="openDetail(item)"
-      >
-        <div class="card-header">
-          <div class="status-badge" :class="aggStatus(item)">
-            <span class="status-icon"></span>
-            <span class="status-text">{{ statusText(aggStatus(item)) }}</span>
-          </div>
-          <span class="card-id">{{ item.id.slice(-12) }}</span>
-        </div>
-
-        <p class="card-content">{{ item.input_text }}</p>
-
-        <div class="card-footer">
-          <span class="card-time">{{ formatTime(item.created_at) }}</span>
-          <span v-if="item.execution_status" class="card-exec-status">
-            执行: {{ statusText(item.execution_status) }}
-          </span>
-          <button
-            class="btn-delete-card"
-            @click="deleteRequirement(item, $event)"
-            :disabled="aggStatus(item) === 'running'"
-            title="删除"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-          </button>
-        </div>
-      </article>
-    </div>
+    <!-- 需求树形视图（V4 重写：全宽树 + 行操作） -->
+    <RequirementTreeView :requirements="filteredList" @refresh="loadList" />
 
     <!-- 详情抽屉 -->
     <el-drawer
@@ -477,12 +437,6 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
             <summary class="section-title">需求规格</summary>
             <pre class="spec-content">{{ detail.spec_content }}</pre>
           </details>
-        </section>
-
-        <!-- 需求结构树 -->
-        <section class="detail-section" v-if="detail.execution_id">
-          <h3 class="section-header">分解结构</h3>
-          <RequirementTreeView :requirement-id="detail.id" />
         </section>
 
         <!-- Session 记录（折叠） -->
