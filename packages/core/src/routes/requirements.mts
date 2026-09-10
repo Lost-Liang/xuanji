@@ -247,18 +247,53 @@ requirementsRouter.delete('/:id', async (req, res) => {
       return;
     }
 
-    // 级联标记关联执行为 cancelled
-    await db.task_executions.updateMany({
+    // 级联删除：删除整个分解树和关联执行
+    // 1. 删除所有关联的 TaskExecutions（需求级 + 任务级）
+    await db.task_executions.deleteMany({
       where: {
         OR: [
           { subject_type: 'requirement', subject_id: requirementId },
           { requirement_id: requirementId },
         ],
       },
-      data: { status: 'cancelled' },
     });
 
-    // 删除需求本身
+    // 2. 删除所有关联的 Tasks（通过 Epic 层级联）
+    await db.tasks.deleteMany({
+      where: {
+        epic: {
+          requirement_id: requirementId,
+        },
+      },
+    });
+
+    // 3. 删除所有关联的 UserStories
+    await db.user_stories.deleteMany({
+      where: {
+        OR: [
+          { epic: { requirement_id: requirementId } },
+          { feature: { epic: { requirement_id: requirementId } } },
+        ],
+      },
+    });
+
+    // 4. 删除所有关联的 Features
+    await db.features.deleteMany({
+      where: {
+        epic: {
+          requirement_id: requirementId,
+        },
+      },
+    });
+
+    // 5. 删除所有关联的 Epics
+    await db.epics.deleteMany({
+      where: {
+        requirement_id: requirementId,
+      },
+    });
+
+    // 6. 删除需求本身
     await db.requirements.delete({ where: { id: requirementId } });
     res.json({ ok: true });
   } catch (err) {
