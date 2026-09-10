@@ -79,8 +79,8 @@ function buildAgentPrompt(
   const parts: string[] = [];
 
   // 1. 角色指令（来自 binding.prompt_content）
-  if (binding?.promptContent) {
-    parts.push(binding.promptContent);
+  if (binding?.prompt_content) {
+    parts.push(binding.prompt_content);
   }
 
   // 2. 技能内容（来自 skill_id 的 SKILL.md）
@@ -227,14 +227,14 @@ export function makeAgentNode(opts: {
 
     // 读取技能内容
     let skillContent: string | null = null;
-    if (selectedBinding?.skillId) {
+    if (selectedBinding?.skill_id) {
       try {
-        const raw = readSkillContent(selectedBinding.skillId);
+        const raw = readSkillContent(selectedBinding.skill_id);
         if (raw) {
           skillContent = extractSkillBody(raw, 6000);
         }
       } catch (e) {
-        console.warn(`[agent-node] 读取 skill 失败: ${selectedBinding.skillId}`, e);
+        console.warn(`[agent-node] 读取 skill 失败: ${selectedBinding.skill_id}`, e);
       }
     }
 
@@ -276,27 +276,27 @@ export function makeAgentNode(opts: {
 
     if (execId) {
       // 查找已有的 phase instance（幂等续跑）
-      const existing = await db.phaseInstance.findFirst({
+      const existing = await db.phase_instances.findFirst({
         where: {
-          executionId: execId,
-          phaseId: opts.nodeId,
+          execution_id: execId,
+          phase_id: opts.nodeId,
           attempt: iteration + 1,
         },
       });
 
       if (existing) {
-        phaseInstance = { id: existing.id, sessionId: existing.sessionId };
+        phaseInstance = { id: existing.id, sessionId: existing.session_id };
       } else {
         // 创建新的 phase instance
-        const newPhase = await db.phaseInstance.create({
+        const newPhase = await db.phase_instances.create({
           data: {
             id: randomUUID(),
-            executionId: execId,
-            phaseId: opts.nodeId,
-            taskId: task?.id ?? null,
+            execution_id: execId,
+            phase_id: opts.nodeId,
+            task_id: task?.id ?? null,
             attempt: iteration + 1,
             status: 'running',
-            startedAt: new Date(),
+            started_at: new Date(),
           },
         });
         phaseInstance = { id: newPhase.id, sessionId: null };
@@ -321,6 +321,9 @@ export function makeAgentNode(opts: {
     let output = '';
     let currentSessionId: string | null = null;
 
+    // A4: 从 config 中提取 AbortSignal（由 graph-runner 传入）
+    const abortSignal = config?.signal as AbortSignal | undefined;
+
     // 超时保护
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error(`Agent 执行超时（${RUN_TIMEOUT_MS}ms）`)), RUN_TIMEOUT_MS);
@@ -334,6 +337,8 @@ export function makeAgentNode(opts: {
         model,                             // 从 binding.model 读取
         // 执行实例 ID —— 用于 MCP 配置（inbox_ask 工具）
         executionId: execId,
+        // A4: 传入 AbortSignal，支持取消响应
+        abortSignal,
         // 如果有 sessionId，尝试恢复会话
         resume: existingSessionId
           ? { providerConversationId: existingSessionId, input: promptText }
@@ -346,9 +351,9 @@ export function makeAgentNode(opts: {
 
             // 更新 phase instance 的 sessionId
             if (phaseInstance) {
-              await db.phaseInstance.update({
+              await db.phase_instances.update({
                 where: { id: phaseInstance.id },
-                data: { sessionId: event.sessionId },
+                data: { session_id: event.sessionId },
               });
               phaseInstance.sessionId = event.sessionId;
             }
@@ -357,9 +362,9 @@ export function makeAgentNode(opts: {
           // 映射并保存对话事件
           const mapped = mapAdapterEvent(event);
           await conversationStore.saveEvent({
-            executionId: execId,
-            sessionId: currentSessionId ?? undefined,
-            eventType: mapped.eventType,
+            execution_id: execId,
+            session_id: currentSessionId ?? undefined,
+            event_type: mapped.eventType,
             role: mapped.role,
             payload: mapped.payload,
           });
@@ -387,9 +392,9 @@ export function makeAgentNode(opts: {
       if (result.sessionInfo?.providerConversationId) {
         currentSessionId = result.sessionInfo.providerConversationId;
         if (phaseInstance && phaseInstance.sessionId !== currentSessionId) {
-          await db.phaseInstance.update({
+          await db.phase_instances.update({
             where: { id: phaseInstance.id },
-            data: { sessionId: currentSessionId },
+            data: { session_id: currentSessionId },
           });
         }
       }
@@ -399,9 +404,9 @@ export function makeAgentNode(opts: {
         const errorMsg = result.error || 'Agent 执行失败，无输出';
 
         if (phaseInstance) {
-          await db.phaseInstance.update({
+          await db.phase_instances.update({
             where: { id: phaseInstance.id },
-            data: { status: 'failed', errorMessage: errorMsg, completedAt: new Date() },
+            data: { status: 'failed', error_message: errorMsg, completed_at: new Date() },
           });
         }
 
@@ -415,9 +420,9 @@ export function makeAgentNode(opts: {
       // 超时错误
       if (err instanceof Error && err.message.includes('超时')) {
         if (phaseInstance) {
-          await db.phaseInstance.update({
+          await db.phase_instances.update({
             where: { id: phaseInstance.id },
-            data: { status: 'failed', errorMessage: err.message, completedAt: new Date() },
+            data: { status: 'failed', error_message: err.message, completed_at: new Date() },
           });
         }
         if (opts.isSubgraph && execId) {
@@ -432,22 +437,22 @@ export function makeAgentNode(opts: {
 
     // ── 保存阶段产出物 ───────────────────────────────────────────────────────
     if (phaseInstance) {
-      await db.phaseOutput.create({
+      await db.phase_outputs.create({
         data: {
-          phaseInstanceId: phaseInstance.id,
+          phase_instance_id: phaseInstance.id,
           key: opts.writeKey,
           value: output,
         },
       });
 
       // 标记 phase instance 完成
-      await db.phaseInstance.update({
+      await db.phase_instances.update({
         where: { id: phaseInstance.id },
         data: {
           status: 'completed',
-          resultContent: output,
-          sessionId: currentSessionId,
-          completedAt: new Date(),
+          result_content: output,
+          session_id: currentSessionId,
+          completed_at: new Date(),
         },
       });
     }
@@ -493,14 +498,14 @@ async function updateSubgraphExec(
   nodeId?: string,
 ): Promise<void> {
   try {
-    await db.taskExecution.update({
-      where: { executionId: execId },
+    await db.task_executions.update({
+      where: { execution_id: execId },
       data: {
         status,
         ...(nodeId ? { stage: nodeId } : {}),
-        ...(status === 'running' ? { startedAt: new Date() } : {}),
+        ...(status === 'running' ? { started_at: new Date() } : {}),
         ...((status === 'completed' || status === 'failed')
-          ? { completedAt: new Date() }
+          ? { completed_at: new Date() }
           : {}),
       },
     });

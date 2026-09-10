@@ -91,26 +91,26 @@ function toDetail(r: any): any {
 async function attachExecution(item: any, requirementId: string) {
   try {
     // 只查询 requirement 级执行（需求管理页面只显示需求级执行 ID）
-    const exec = await db.taskExecution.findFirst({
+    const exec = await db.task_executions.findFirst({
       where: {
-        subjectType: 'requirement',
-        subjectId: requirementId,
+        subject_type: 'requirement',
+        subject_id: requirementId,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
     });
     if (exec) {
-      item.execution_id = exec.executionId;
+      item.execution_id = exec.execution_id;
       item.execution_status = exec.status;
-      item.execution_thread_id = exec.sessionId;
+      item.execution_thread_id = exec.session_id;
       if (item.execution !== undefined) {
         item.execution = {
-          id: exec.executionId,
+          id: exec.execution_id,
           status: exec.status,
           provider: exec.provider,
-          session_id: exec.sessionId,
-          created_at: exec.createdAt,
-          started_at: exec.startedAt,
-          completed_at: exec.completedAt,
+          session_id: exec.session_id,
+          created_at: exec.created_at,
+          started_at: exec.started_at,
+          completed_at: exec.completed_at,
         };
       }
     }
@@ -160,16 +160,16 @@ requirementsRouter.get('/:id', async (req, res) => {
 
     // 查询关联 session（phaseInstances）
     try {
-      const phases = await db.phaseInstance.findMany({
-        where: { requirementId: r.id },
-        orderBy: { createdAt: 'desc' },
+      const phases = await db.phase_instances.findMany({
+        where: { requirement_id: r.id },
+        orderBy: { created_at: 'desc' },
       });
       detail.session_refs = phases.map((p: any, idx: number) => ({
         id: p.id,
-        node_id: p.phaseId,
+        node_id: p.phase_id,
         iteration: p.attempt,
-        role: p.agentUsed ?? 'unknown',
-        omnigent_session_id: p.sessionId ?? '',
+        role: p.agent_used ?? 'unknown',
+        omnigent_session_id: p.session_id ?? '',
         omnigent_status: p.status,
       }));
     } catch {
@@ -199,19 +199,20 @@ requirementsRouter.post('/', async (req, res) => {
 
     // targetProjectId / targetRepoPath：Dashboard 可能不传，使用默认值
     const targetProjectId = body.targetProjectId || body.target_project_id || 'default';
-    const targetRepoPath = body.targetRepoPath || body.target_repo_path || process.cwd();
+    // 支持 project_path 作为 targetRepoPath 的别名（E2E 测试用）
+    const targetRepoPath = body.targetRepoPath || body.target_repo_path || body.project_path || process.cwd();
 
     // workflow_id：默认 'requirement-decomposition'
     const workflowId = body.workflow_id || body.workflowId || 'requirement-decomposition';
 
-    const requirement = await db.requirement.create({
+    const requirement = await db.requirements.create({
       data: {
         id,
         title,
         description: body.description || null,
-        targetProjectId,
-        targetRepoPath,
-        workflowId,
+        target_project_id: targetProjectId,
+        target_repo_path: targetRepoPath,
+        workflow_id: workflowId,
         status: 'pending',
       },
     });
@@ -247,18 +248,18 @@ requirementsRouter.delete('/:id', async (req, res) => {
     }
 
     // 级联标记关联执行为 cancelled
-    await db.taskExecution.updateMany({
+    await db.task_executions.updateMany({
       where: {
         OR: [
-          { subjectType: 'requirement', subjectId: requirementId },
-          { requirementId },
+          { subject_type: 'requirement', subject_id: requirementId },
+          { requirement_id: requirementId },
         ],
       },
       data: { status: 'cancelled' },
     });
 
     // 删除需求本身
-    await db.requirement.delete({ where: { id: requirementId } });
+    await db.requirements.delete({ where: { id: requirementId } });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: '删除需求失败', detail: (err as Error).message });
@@ -274,21 +275,21 @@ requirementsRouter.post('/:id/stop', async (req, res) => {
     const requirementId = req.params.id;
 
     // 找到关联的执行实例
-    const exec = await db.taskExecution.findFirst({
+    const exec = await db.task_executions.findFirst({
       where: {
         OR: [
-          { subjectType: 'requirement', subjectId: requirementId },
-          { requirementId },
+          { subject_type: 'requirement', subject_id: requirementId },
+          { requirement_id: requirementId },
         ],
         status: { in: ['pending', 'running'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
     });
 
     if (exec) {
-      await db.taskExecution.update({
-        where: { executionId: exec.executionId },
-        data: { status: 'cancelled', controlStatus: 'stop_requested' },
+      await db.task_executions.update({
+        where: { execution_id: exec.execution_id },
+        data: { status: 'cancelled', control_status: 'stop_requested' },
       });
     }
 
@@ -313,12 +314,12 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
     }
 
     // 查询 epics
-    const epics = await db.epic.findMany({
-      where: { requirementId },
+    const epics = await db.epics.findMany({
+      where: { requirement_id: requirementId },
       include: {
         features: {
           include: {
-            userStories: {
+            user_stories: {
               include: {
                 tasks: true,
               },
@@ -329,10 +330,10 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
     });
 
     // 查询孤立的 user stories（不属于任何 feature）
-    const orphanUserStories = await db.userStory.findMany({
+    const orphanUserStories = await db.user_stories.findMany({
       where: {
-        epic: { requirementId },
-        featureId: null,
+        epics: { requirement_id: requirementId },
+        feature_id: null,
       },
       include: { tasks: true },
     });
@@ -355,14 +356,14 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
           title: f.title,
           description: f.description,
           status: f.status,
-          user_stories: f.userStories.map((us: any) => ({
+          user_stories: f.user_stories.map((us: any) => ({
             id: us.id,
             title: us.title,
-            as_a: us.asA,
-            i_want: us.iWant,
-            so_that: us.soThat,
+            as_a: us.as_a,
+            i_want: us.i_want,
+            so_that: us.so_that,
             priority: us.priority,
-            acceptance_text: us.acceptanceText,
+            acceptance_text: us.acceptance_text,
             status: us.status,
             tasks: us.tasks.map((t: any) => ({
               id: t.id,
@@ -376,15 +377,15 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
           })),
         })),
         orphan_user_stories: orphanUserStories
-          .filter((us: any) => us.epicId === e.id)
+          .filter((us: any) => us.epic_id === e.id)
           .map((us: any) => ({
             id: us.id,
             title: us.title,
-            as_a: us.asA,
-            i_want: us.iWant,
-            so_that: us.soThat,
+            as_a: us.as_a,
+            i_want: us.i_want,
+            so_that: us.so_that,
             priority: us.priority,
-            acceptance_text: us.acceptanceText,
+            acceptance_text: us.acceptance_text,
             status: us.status,
             tasks: us.tasks.map((t: any) => ({
               id: t.id,
@@ -412,9 +413,9 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
       const requirementId = req.params.id;
 
       // 查找该需求下所有 draft 状态的 TaskExecution
-      const result = await db.taskExecution.updateMany({
+      const result = await db.task_executions.updateMany({
         where: {
-          requirementId,
+          requirement_id: requirementId,
           status: 'draft',
         },
         data: { status: 'pending' },
@@ -432,9 +433,13 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
 
   /**
    * POST /api/requirements/:id/execute
-   * 触发需求执行
+   * 创建需求执行实例（长期方案）
    *
-   * 使用 graphRunner 按 requirement-decomposition 工作流执行
+   * 职责：
+   * 1. 创建执行实例（status='draft'）
+   * 2. 返回执行 ID，由用户在 Dashboard 手动触发
+   *
+   * 注意：创建后保持 draft 状态，需要手动调用 POST /api/executions/:id/execute 触发执行。
    */
 requirementsRouter.post('/:id/execute', async (req, res) => {
   try {
@@ -446,48 +451,23 @@ requirementsRouter.post('/:id/execute', async (req, res) => {
       return;
     }
 
-    // 获取工作流 ID（默认 requirement-decomposition）
-    const workflowId = requirement.workflowId || 'requirement-decomposition';
-
-    // 创建执行实例
+    // 创建执行实例（status='draft'，不自动触发）
     const execution = await executionStore.create({
       subjectType: 'requirement',
       subjectId: requirementId,
-      targetProjectId: requirement.targetProjectId,
-      targetRepoPath: requirement.targetRepoPath,
+      targetProjectId: requirement.target_project_id,
+      targetRepoPath: requirement.target_repo_path,
     });
 
-    const executionId = execution.executionId;
-
-    // 异步启动流程执行（不阻塞响应）
-    setImmediate(async () => {
-      try {
-        console.log(`[requirements] 开始执行需求 ${requirementId}，流程: ${workflowId}`);
-
-        // 使用 graphRunner 执行工作流
-        await graphRunner.startExecution({
-          executionId,
-          flowId: workflowId,
-          input: requirement.title,
-          requirementId,
-        });
-
-        // 更新需求状态
-        await requirementStore.updateStatus(requirementId, 'running');
-        console.log(`[requirements] 需求 ${requirementId} 执行完成`);
-      } catch (err) {
-        console.error(`[requirements] 执行需求 ${requirementId} 出错:`, err);
-        await executionStore.fail(executionId, (err as Error).message);
-        await requirementStore.updateStatus(requirementId, 'failed');
-      }
-    });
+    const executionId = execution.execution_id;
 
     res.json({
       success: true,
       executionId,
-      message: '执行已启动',
+      message: '需求执行实例已创建（status=draft），请在 Dashboard 手动触发执行',
+      status: 'draft',
     });
   } catch (err) {
-    res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });
+    res.status(500).json({ error: '创建需求执行失败', detail: (err as Error).message });
   }
 });

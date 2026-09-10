@@ -8,3 +8,16 @@ dist/
 
 # 工作区目录（参考项目）
 workspace/
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+*.pid
+
+# Coverage
+coverage/
+
+# Temp files
+task_output.json

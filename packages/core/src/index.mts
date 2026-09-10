@@ -74,12 +74,13 @@ import { skillsRouter } from './routes/skills.mjs';
 import { graphDefinitionsRouter } from './routes/graph-definitions.mjs';
 import { booksRouter } from './routes/books.mjs';
 import { projectsRouter } from './routes/projects.mjs';
+import { schedulerRouter } from './routes/scheduler.mjs';  // C3: 调度器控制 API
 
 // ─── 后台调度 ────────────────────────────────────────────────────────────────
-import { buildSchedulerGraph } from './graph/scheduler-graph.mjs';
 import { buildRecoveryGraph } from './graph/recovery-graph.mjs';
 import { initDefaultConditions } from './graph/conditions/default-conditions.mjs';
 import { recoverOrphanedQuestions, startPeriodicCleanup } from './graph/orphan-detection.mjs';
+import { getSchedulerController } from './scheduler-controller.mjs';  // C3: 调度器控制器
 
 // 启动前注册所有默认条件函数（compile_pass / test_pass / quality_pass / security_pass 等）
 initDefaultConditions();
@@ -104,6 +105,7 @@ export function createApp(): express.Express {
   app.use('/api/graph-definitions', graphDefinitionsRouter);
   app.use('/api/books', booksRouter);
   app.use('/api/projects', projectsRouter);
+  app.use('/api/scheduler', schedulerRouter);  // C3: 调度器控制 API
 
   // 内部 API（MCP Bridge 专用）
   app.use('/api/internal', internalRouter);
@@ -128,29 +130,6 @@ app.listen(PORT, () => {
 
 // ─── 后台调度循环 ────────────────────────────────────────────────────────────
 
-/** 调度器运行标志（用于优雅关闭） */
-let schedulerRunning = true;
-
-/**
- * 启动调度器后台循环
- * 轮询 pending/rate_limited 的 TaskExecution，分发给 workerNode 执行
- */
-async function startSchedulerLoop() {
-  const schedulerGraph = buildSchedulerGraph();
-  console.log('[scheduler] 调度器后台循环已启动');
-
-  while (schedulerRunning) {
-    try {
-      await schedulerGraph.invoke({});
-    } catch (err) {
-      console.error('[scheduler] 调度循环出错:', (err as Error).message);
-    }
-    // 等待后重新轮询（补偿移除的 waitNode，避免空转消耗数据库）
-    await new Promise(r => setTimeout(r, 5000));
-  }
-  console.log('[scheduler] 调度器已停止');
-}
-
 /**
  * 启动僵尸恢复循环（每 5 分钟检测一次）
  * 检测 heartbeat 超时的执行实例，重置为 pending 重新调度
@@ -170,8 +149,11 @@ function startRecoveryLoop() {
   console.log('[recovery] 僵尸恢复循环已启动（每 5 分钟）');
 }
 
-// 启动后台循环
-startSchedulerLoop().catch(err => console.error('[scheduler] 致命错误:', err));
+// 启动调度器（C3: 使用调度器控制器）
+const schedulerController = getSchedulerController();
+schedulerController.start();
+
+// 启动僵尸恢复循环
 startRecoveryLoop();
 
 // 启动时运行孤儿检测
@@ -185,9 +167,9 @@ startPeriodicCleanup();
 // 优雅关闭
 process.on('SIGTERM', () => {
   console.log('[core] 收到 SIGTERM，正在关闭...');
-  schedulerRunning = false;
+  schedulerController.stop();
 });
 process.on('SIGINT', () => {
   console.log('[core] 收到 SIGINT，正在关闭...');
-  schedulerRunning = false;
+  schedulerController.stop();
 });

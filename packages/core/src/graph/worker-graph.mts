@@ -33,7 +33,7 @@ const WORKER_ID = 'worker-1';
  * 从任务数据构建 Agent prompt
  *
  * 当前为简化版：拼接任务标题和描述。
- * 后续可根据 acceptanceCriteria、techConstraints、storyContext 构建更丰富的 prompt。
+ * 后续可根据 acceptance_criteria、tech_constraints、story_context 构建更丰富的 prompt。
  */
 async function buildPrompt(taskId: string | null): Promise<string> {
   if (!taskId) {
@@ -56,21 +56,21 @@ async function buildPrompt(taskId: string | null): Promise<string> {
   }
 
   // 验收标准
-  if (task.acceptanceCriteria) {
-    parts.push(`\n## 验收标准\n${task.acceptanceCriteria}`);
+  if (task.acceptance_criteria) {
+    parts.push(`\n## 验收标准\n${task.acceptance_criteria}`);
   }
 
   // 技术约束
-  if (task.techConstraints) {
-    const constraints = typeof task.techConstraints === 'string'
-      ? task.techConstraints
-      : JSON.stringify(task.techConstraints, null, 2);
+  if (task.tech_constraints) {
+    const constraints = typeof task.tech_constraints === 'string'
+      ? task.tech_constraints
+      : JSON.stringify(task.tech_constraints, null, 2);
     parts.push(`\n## 技术约束\n${constraints}`);
   }
 
   // 故事上下文
-  if (task.storyContext) {
-    parts.push(`\n## 上下文\n${task.storyContext}`);
+  if (task.story_context) {
+    parts.push(`\n## 上下文\n${task.story_context}`);
   }
 
   return parts.join('\n');
@@ -124,14 +124,14 @@ export async function workerNode(
   }
 
   // ── M2.2: 工作流检测 ─────────────────────────────────────────────────────────
-  // 如果执行已有 graphDefinitionId，说明正在由 graphRunner 处理，跳过
-  if (execution.graphDefinitionId) {
-    console.log(`[worker-graph] 执行已有工作流 ${execution.graphDefinitionId}，跳过调度`);
+  // 如果执行已有 graph_definition_id，说明正在由 graphRunner 处理，跳过
+  if (execution.graph_definition_id) {
+    console.log(`[worker-graph] 执行已有工作流 ${execution.graph_definition_id}，跳过调度`);
     return { status: 'idle' };
   }
 
   // 任务执行：走 ruoyi-dev-flow 工作流
-  if (execution.subjectType === 'task' && taskId) {
+  if (execution.subject_type === 'task' && taskId) {
     console.log(`[worker-graph] 任务执行，委托给 graphRunner (ruoyi-dev-flow)`);
 
     try {
@@ -146,6 +146,34 @@ export async function workerNode(
       return { status: 'completed' };
     } catch (err) {
       const errorMsg = (err as Error).message || '工作流执行失败';
+      console.error(`[worker-graph] graphRunner 执行失败:`, err);
+      await executionStore.fail(executionId, errorMsg);
+      return { status: 'failed', error: errorMsg };
+    }
+  }
+
+  // 需求执行：走 requirement-decomposition 工作流（长期方案：经过调度器，统一并发控制）
+  if (execution.subject_type === 'requirement' && execution.requirement_id) {
+    console.log(`[worker-graph] 需求执行，委托给 graphRunner (requirement-decomposition)`);
+
+    try {
+      const requirement = await db.requirements.findUnique({
+        where: { id: execution.requirement_id },
+      });
+      if (!requirement) {
+        throw new Error(`需求不存在: ${execution.requirement_id}`);
+      }
+
+      await graphRunner.startExecution({
+        executionId,
+        flowId: requirement.workflow_id || 'requirement-decomposition',
+        input: requirement.title,
+        requirementId: execution.requirement_id,
+      });
+
+      return { status: 'completed' };
+    } catch (err) {
+      const errorMsg = (err as Error).message || '需求执行失败';
       console.error(`[worker-graph] graphRunner 执行失败:`, err);
       await executionStore.fail(executionId, errorMsg);
       return { status: 'failed', error: errorMsg };
@@ -186,25 +214,25 @@ export async function workerNode(
 
     // 2. 检查 controlStatus（进程管理）
     try {
-      const currentExec = await db.taskExecution.findUnique({
-        where: { executionId },
-        select: { controlStatus: true },
+      const currentExec = await db.task_executions.findUnique({
+        where: { execution_id: executionId },
+        select: { control_status: true },
       });
 
-      if (currentExec?.controlStatus === 'cancel_requested') {
+      if (currentExec?.control_status === 'cancel_requested') {
         console.log(`[worker] 检测到取消请求，终止执行: ${executionId}`);
         cancelled = true;
 
         // 通过 AbortSignal 通知 runLocal 终止 CLI 进程
         abortController.abort();
-      } else if (currentExec?.controlStatus === 'pause_requested') {
+      } else if (currentExec?.control_status === 'pause_requested') {
         // 暂停功能：记录日志，后续版本可实现完整的暂停/恢复机制
         // 完整的暂停需要 CLI 进程支持 SIGSTOP 信号或 MCP 协议扩展
         console.log(`[worker] 检测到暂停请求（当前版本仅记录，不暂停）: ${executionId}`);
         // 重置 controlStatus 避免重复日志
-        await db.taskExecution.update({
-          where: { executionId },
-          data: { controlStatus: 'paused' },
+        await db.task_executions.update({
+          where: { execution_id: executionId },
+          data: { control_status: 'paused' },
         });
       }
     } catch (err) {
@@ -219,28 +247,28 @@ export async function workerNode(
     }
 
     // 重置 controlStatus 为 idle（清除之前的暂停/取消请求）
-    await db.taskExecution.update({
-      where: { executionId },
-      data: { controlStatus: 'idle' },
+    await db.task_executions.update({
+      where: { execution_id: executionId },
+      data: { control_status: 'idle' },
     });
 
     // 构建 prompt
     const prompt = await buildPrompt(taskId);
 
     // 调用 Runner 执行 Agent
-    console.log(`[worker-graph] 调用 runLocal: provider=${execution.provider || 'claude'}, workDir=${execution.targetRepoPath}`);
+    console.log(`[worker-graph] 调用 runLocal: provider=${execution.provider || 'claude'}, workDir=${execution.target_repo_path}`);
     const result = await runLocal({
       provider: (execution.provider as 'claude' | 'codex') || 'claude',
       prompt,
-      workDir: execution.targetRepoPath,
+      workDir: execution.target_repo_path,
       model: undefined, // 使用 CLI 默认模型
       // 执行实例 ID —— 用于 MCP 配置（inbox_ask 工具）
       executionId,
       // AbortSignal 用于进程管理取消 —— 心跳循环检测到 cancel_requested 时触发
       abortSignal: abortController.signal,
       // 如果有 sessionId，尝试恢复会话（用于 429 重试后继续）
-      resume: execution.sessionId
-        ? { providerConversationId: execution.sessionId, input: prompt }
+      resume: execution.session_id
+        ? { providerConversationId: execution.session_id, input: prompt }
         : undefined,
       onEvent: async (event: AdapterEvent) => {
         // 提取 sessionId（来自 system/init 事件）
@@ -251,9 +279,9 @@ export async function workerNode(
         // 映射并保存对话事件（使用共享函数）
         const mapped = mapAdapterEvent(event);
         await conversationStore.saveEvent({
-          executionId,
-          sessionId: currentSessionId ?? undefined,
-          eventType: mapped.eventType,
+          execution_id: executionId,
+          session_id: currentSessionId ?? undefined,
+          event_type: mapped.eventType,
           role: mapped.role,
           payload: mapped.payload,
         });
@@ -266,10 +294,10 @@ export async function workerNode(
     });
 
     // P0-4 修复：持久化 sessionId 到执行实例（用于后续 --resume 恢复会话）
-    if (currentSessionId && currentSessionId !== execution.sessionId) {
-      await db.taskExecution.update({
-        where: { executionId },
-        data: { sessionId: currentSessionId },
+    if (currentSessionId && currentSessionId !== execution.session_id) {
+      await db.task_executions.update({
+        where: { execution_id: executionId },
+        data: { session_id: currentSessionId },
       });
     }
 
@@ -314,7 +342,7 @@ export async function workerNode(
 
     // 检查是否为 429 限流错误
     if (isRateLimitError(errorMessage)) {
-      const currentCount = execution.rateLimitCount;
+      const currentCount = execution.rate_limit_count;
 
       // 检查是否超过最大重试次数
       if (currentCount >= MAX_RATE_LIMIT_RETRIES) {

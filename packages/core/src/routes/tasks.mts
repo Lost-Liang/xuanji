@@ -20,19 +20,19 @@ tasksRouter.get('/', async (req, res) => {
 
     // 构建查询条件
     const where: any = {
-      taskId: { not: null },  // 只返回任务级执行，排除需求级执行
+      task_id: { not: null },  // 只返回任务级执行，排除需求级执行
     };
     if (requirementId) {
-      where.requirementId = requirementId as string;
+      where.requirement_id = requirementId as string;
     }
 
     // 查询 TaskExecution 记录（左连接 Task 获取 title）
-    const executions = await db.taskExecution.findMany({
+    const executions = await db.task_executions.findMany({
       where,
-      orderBy: { createdAt: 'asc' },
+      orderBy: { created_at: 'asc' },
       take: 100,
       include: {
-        task: {
+        tasks: {
           select: { id: true, title: true, description: true },
         },
       },
@@ -40,19 +40,19 @@ tasksRouter.get('/', async (req, res) => {
 
     // 转换为前端期望的格式
     const items = executions.map((e: any) => ({
-      id: e.executionId,
-      title: e.task?.title ?? '(无标题)',
-      task_id: e.taskId,
+      id: e.execution_id,
+      title: e.tasks?.title ?? '(无标题)',
+      task_id: e.task_id,
       status: e.status,
-      thread_id: e.threadId,
+      thread_id: e.thread_id,
       parent_execution_id: null,
       current_node_id: e.stage ?? null,
-      started_at: e.startedAt?.toISOString?.() ?? null,
-      finished_at: e.completedAt?.toISOString?.() ?? null,
-      created_at: e.createdAt?.toISOString?.() ?? null,
-      rate_limited_count: e.rateLimitCount ?? null,
-      rate_limited_until: e.retryAt?.toISOString?.() ?? null,
-      breakdown_content: e.task?.description ?? null,
+      started_at: e.started_at?.toISOString?.() ?? null,
+      finished_at: e.completed_at?.toISOString?.() ?? null,
+      created_at: e.created_at?.toISOString?.() ?? null,
+      rate_limited_count: e.rate_limit_count ?? null,
+      rate_limited_until: e.retry_at?.toISOString?.() ?? null,
+      breakdown_content: e.tasks?.description ?? null,
       session_ref_id: null, // TODO: 从 session_refs 表关联
     }));
 
@@ -68,10 +68,10 @@ tasksRouter.get('/', async (req, res) => {
  */
 tasksRouter.get('/:id', async (req, res) => {
   try {
-    const execution = await db.taskExecution.findUnique({
-      where: { executionId: req.params.id },
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id: req.params.id },
       include: {
-        task: {
+        tasks: {
           select: { id: true, title: true, description: true },
         },
       },
@@ -83,27 +83,27 @@ tasksRouter.get('/:id', async (req, res) => {
     }
 
     // 查询 phase_instances 获取 session_refs
-    const phases = await db.phaseInstance.findMany({
-      where: { executionId: execution.executionId },
-      orderBy: { createdAt: 'asc' },
+    const phases = await db.phase_instances.findMany({
+      where: { execution_id: execution.execution_id },
+      orderBy: { created_at: 'asc' },
     });
 
     const item: any = {
-      id: execution.executionId,
-      title: execution.task?.title ?? '(无标题)',
-      task_id: execution.taskId,
+      id: execution.execution_id,
+      title: execution.tasks?.title ?? '(无标题)',
+      task_id: execution.task_id,
       status: execution.status,
-      thread_id: execution.threadId,
+      thread_id: execution.thread_id,
       parent_execution_id: null,
       current_node_id: execution.stage ?? null,
-      started_at: execution.startedAt?.toISOString?.() ?? null,
-      finished_at: execution.completedAt?.toISOString?.() ?? null,
-      created_at: execution.createdAt?.toISOString?.() ?? null,
-      rate_limited_count: execution.rateLimitCount ?? null,
-      rate_limited_until: execution.retryAt?.toISOString?.() ?? null,
-      breakdown_content: execution.task?.description ?? null,
-      requirement_id: execution.requirementId,
-      graph_definition_id: execution.graphDefinitionId ?? null,
+      started_at: execution.started_at?.toISOString?.() ?? null,
+      finished_at: execution.completed_at?.toISOString?.() ?? null,
+      created_at: execution.created_at?.toISOString?.() ?? null,
+      rate_limited_count: execution.rate_limit_count ?? null,
+      rate_limited_until: execution.retry_at?.toISOString?.() ?? null,
+      breakdown_content: execution.tasks?.description ?? null,
+      requirement_id: execution.requirement_id,
+      graph_definition_id: execution.graph_definition_id ?? null,
       token_in: null,
       token_out: null,
       cost: null,
@@ -111,10 +111,10 @@ tasksRouter.get('/:id', async (req, res) => {
       phase_outputs: [],
       session_refs: phases.map((p: any) => ({
         id: p.id,
-        node_id: p.phaseId,
+        node_id: p.phase_id,
         iteration: p.attempt,
-        role: p.agentUsed ?? 'unknown',
-        omnigent_session_id: p.sessionId ?? '',
+        role: p.agent_used ?? 'unknown',
+        omnigent_session_id: p.session_id ?? '',
         omnigent_status: p.status,
       })),
     };
@@ -131,11 +131,11 @@ tasksRouter.get('/:id', async (req, res) => {
  */
 tasksRouter.post('/:id/confirm', async (req, res) => {
   try {
-    const executionId = req.params.id;
+    const execution_id = req.params.id;
 
     // 检查当前状态
-    const execution = await db.taskExecution.findUnique({
-      where: { executionId },
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id },
       select: { status: true },
     });
 
@@ -150,8 +150,8 @@ tasksRouter.post('/:id/confirm', async (req, res) => {
     }
 
     // 更新状态为 pending
-    await db.taskExecution.update({
-      where: { executionId },
+    await db.task_executions.update({
+      where: { execution_id },
       data: { status: 'pending' },
     });
 
@@ -185,16 +185,23 @@ tasksRouter.post('/', async (req, res) => {
 
 /**
  * POST /api/tasks/:id/execute
- * 手动触发任务执行（将 pending 任务交给 worker 执行）
+ * 手动触发任务执行 —— 长期方案：路由层只做状态转换，由调度器统一执行
+ *
+ * 职责：
+ * - draft → pending：允许调度器拾取
+ * - pending：已加入调度队列，无需重复触发
+ * - running/waiting：已在执行中
+ *
+ * 注意：路由层不直接调用 graphRunner.startExecution，避免绕过调度器的并发控制。
  */
 tasksRouter.post('/:id/execute', async (req, res) => {
   try {
-    const executionId = req.params.id;
+    const execution_id = req.params.id;
 
     // 检查当前状态
-    const execution = await db.taskExecution.findUnique({
-      where: { executionId },
-      select: { status: true, taskId: true, graphDefinitionId: true },
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id },
+      select: { status: true, task_id: true, graph_definition_id: true },
     });
 
     if (!execution) {
@@ -202,40 +209,47 @@ tasksRouter.post('/:id/execute', async (req, res) => {
       return;
     }
 
-    if (execution.status !== 'pending') {
-      // 任务已经在执行中，返回成功（避免竞态条件导致的报错）
-      if (execution.status === 'running' || execution.status === 'waiting') {
-        res.json({ ok: true, message: '任务已在执行中', status: execution.status });
-        return;
-      }
-      res.status(400).json({ error: '只能执行 pending 状态的任务', current_status: execution.status });
+    // 状态转换逻辑
+    if (execution.status === 'draft') {
+      // draft → pending：允许调度器拾取
+      await db.task_executions.update({
+        where: { execution_id },
+        data: { status: 'pending' },
+      });
+      res.json({
+        ok: true,
+        message: '任务已加入调度队列，调度器将在下一轮轮询时拾取（最多 5 秒）',
+        status: 'pending',
+      });
       return;
     }
 
-    // 获取完整的任务对象（参考 worker-graph.mts 的正确模式）
-    const task = execution.taskId ? await taskStore.getById(execution.taskId) : null;
-    if (!task) {
-      res.status(400).json({ error: '任务数据不存在', taskId: execution.taskId });
+    if (execution.status === 'pending') {
+      // 已加入调度队列
+      res.json({
+        ok: true,
+        message: '任务已在调度队列中，等待调度器拾取',
+        status: 'pending',
+      });
       return;
     }
 
-    // 异步启动任务执行
-    setImmediate(async () => {
-      try {
-        const { graphRunner } = await import('../graph/graph-runner.mjs');
-        await graphRunner.startExecution({
-          executionId,
-          flowId: 'ruoyi-dev-flow',
-          input: '', // 任务上下文由 agent-node 从 task 对象读取
-          task, // 传入完整的任务对象，而非 taskId 字符串
-        });
-      } catch (err) {
-        console.error(`[tasks] 执行任务失败:`, err);
-        await executionStore.fail(executionId, (err as Error).message);
-      }
+    if (execution.status === 'running' || execution.status === 'waiting') {
+      // 已在执行中
+      res.json({
+        ok: true,
+        message: '任务已在执行中',
+        status: execution.status,
+      });
+      return;
+    }
+
+    // 其他状态（completed/failed/cancelled）不允许重新执行
+    res.status(400).json({
+      error: '当前状态不允许执行',
+      current_status: execution.status,
+      hint: '只有 draft/pending 状态的任务可以触发执行',
     });
-
-    res.json({ ok: true, message: '执行已启动' });
   } catch (err) {
     res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });
   }
@@ -247,11 +261,11 @@ tasksRouter.post('/:id/execute', async (req, res) => {
  */
 tasksRouter.delete('/:id', async (req, res) => {
   try {
-    const executionId = req.params.id;
+    const execution_id = req.params.id;
 
     // 检查是否正在执行
-    const execution = await db.taskExecution.findUnique({
-      where: { executionId },
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id },
       select: { status: true },
     });
 
@@ -266,8 +280,8 @@ tasksRouter.delete('/:id', async (req, res) => {
     }
 
     // 删除执行实例
-    await db.taskExecution.delete({
-      where: { executionId },
+    await db.task_executions.delete({
+      where: { execution_id },
     });
 
     res.json({ ok: true });

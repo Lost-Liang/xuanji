@@ -29,6 +29,18 @@ const __dirname = dirname(__filename);
 // workflows 目录相对于当前文件的位置（src/graph -> ../../workflows）
 const WORKFLOWS_DIR = join(__dirname, '../../workflows');
 
+// ─── 全局状态 ────────────────────────────────────────────────────────────────
+
+// A4: 维护 executionId → AbortController 映射，供取消响应使用
+const activeAbortControllers = new Map<string, AbortController>();
+
+/**
+ * 获取指定执行的 AbortController（用于外部取消）
+ */
+export function getAbortController(executionId: string): AbortController | undefined {
+  return activeAbortControllers.get(executionId);
+}
+
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
 export interface StartExecutionOpts {
@@ -69,10 +81,10 @@ export async function loadFlow(flowId: string): Promise<{ yamlContent: string; g
 
   // 从 DB 加载用户流
   try {
-    const row = await db.graphDefinition.findUnique({
+    const row = await db.graph_definitions.findUnique({
       where: { id: flowId },
     });
-    if (row?.definitionJson) {
+    if (row?.definition_json) {
       // 用户流没有 YAML，构造一个 YAML 字符串供 buildGraphFromDef 使用
       // 这里简化处理，实际需要将 definitionJson 转回 YAML
       // TODO: 支持 DB 用户流执行
@@ -93,8 +105,8 @@ export async function loadFlow(flowId: string): Promise<{ yamlContent: string; g
  * 检查执行是否有待回答的问题
  */
 async function checkPendingQuestions(executionId: string): Promise<boolean> {
-  const count = await db.inboxQuestion.count({
-    where: { executionId, status: 'pending' },
+  const count = await db.inbox_questions.count({
+    where: { execution_id: executionId, status: 'pending' },
   });
   return count > 0;
 }
@@ -117,6 +129,15 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
 
   console.log(`[graph-runner] 启动执行: ${executionId}, 流程: ${flowId}`);
 
+  // 0. 获取租约 —— CAS 原子操作（修复 A2: 使用真正的 acquireLease）
+  const WORKER_ID = `graph-runner-${executionId.slice(0, 8)}`;
+  const lease = await executionStore.acquireLease(executionId, WORKER_ID);
+  if (!lease) {
+    const errorMsg = `获取租约失败，可能已被其他 worker 抢占或状态不符: ${executionId}`;
+    console.warn(`[graph-runner] ${errorMsg}`);
+    throw new Error(errorMsg);  // 抛错让调用方处理
+  }
+
   // 1. 加载流程定义
   const flow = await loadFlow(flowId);
   if (!flow) {
@@ -124,15 +145,13 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     return;
   }
 
-  // 2. 更新执行记录：设置 graphDefinitionId
+  // 2. 设置 graph_definition_id 和 thread_id（acquireLease 已设置 status='running'）
   const threadId = randomUUID();
-  await db.taskExecution.update({
-    where: { executionId },
+  await db.task_executions.update({
+    where: { execution_id: executionId },
     data: {
-      graphDefinitionId: flowId,
-      threadId,
-      status: 'running',
-      startedAt: new Date(),
+      graph_definition_id: flowId,
+      thread_id: threadId,
     },
   });
 
@@ -153,48 +172,39 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     requirement_id: requirementId || null,
   };
 
-  // 5. 启动心跳循环
-  const WORKER_ID = 'graph-runner';
+  // 5. 启动心跳循环（修复 A2: 使用 renewHeartbeat 续约，更新 heartbeat_at）
+  // 修复 A4: 创建 AbortController，支持取消响应
   let cancelled = false;
+  const abortController = new AbortController();
+
+  // 维护 executionId → AbortController 映射，供外部查询
+  activeAbortControllers.set(executionId, abortController);
 
   const heartbeatInterval = setInterval(async () => {
     try {
-      const exec = await db.taskExecution.findUnique({
-        where: { executionId },
-        select: { leaseToken: true, controlStatus: true },
-      });
-
-      if (!exec || exec.leaseToken !== WORKER_ID) {
-        console.warn(`[graph-runner] 租约已失效: ${executionId}`);
+      // 续约心跳（更新 heartbeat_at，用于僵尸检测）
+      const ok = await executionStore.renewHeartbeat(executionId, lease);
+      if (!ok) {
+        console.warn(`[graph-runner] 心跳续约失败，租约可能已失效: ${executionId}`);
         cancelled = true;
         return;
       }
 
-      // 续约
-      await db.taskExecution.update({
-        where: { executionId },
-        data: { leaseExpiresAt: new Date(Date.now() + 60_000) },
-      });
-
       // 检查控制状态
-      if (exec.controlStatus === 'cancel_requested') {
-        console.log(`[graph-runner] 收到取消请求: ${executionId}`);
+      const exec = await db.task_executions.findUnique({
+        where: { execution_id: executionId },
+        select: { control_status: true },
+      });
+      if (exec?.control_status === 'cancel_requested') {
+        console.log(`[graph-runner] 收到取消请求，触发 AbortSignal: ${executionId}`);
         cancelled = true;
+        abortController.abort();  // A4: 触发取消信号
       }
     } catch (err) {
       console.error(`[graph-runner] 心跳循环出错:`, err);
     }
   }, HEARTBEAT_INTERVAL_MS);
   heartbeatInterval.unref();
-
-  // 获取租约
-  await db.taskExecution.update({
-    where: { executionId },
-    data: {
-      leaseToken: WORKER_ID,
-      leaseExpiresAt: new Date(Date.now() + 60_000),
-    },
-  });
 
   try {
     // 6. 执行图
@@ -204,6 +214,8 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
         execution_id: executionId,
         exec_shortid: executionId.slice(0, 8),
       },
+      // A4: 传入 AbortSignal，让 LangGraph 节点可以响应取消
+      signal: abortController.signal,
     };
 
     const result = await graph.invoke(initialState, config);
@@ -223,8 +235,8 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     // 在标记完成前检查是否有 pending 问题
     if (await checkPendingQuestions(executionId)) {
       // 有待回答的问题，不标记为 completed
-      await db.taskExecution.update({
-        where: { executionId },
+      await db.task_executions.update({
+        where: { execution_id: executionId },
         data: { status: 'waiting' },
       });
       console.log(`[graph-runner] 执行 ${executionId} 有待回答问题，状态更新为 waiting`);
@@ -238,23 +250,23 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
       console.log(`[graph-runner] Gate 中断，等待人工审核: ${executionId}`);
 
       // 更新状态为 paused
-      await db.taskExecution.update({
-        where: { executionId },
+      await db.task_executions.update({
+        where: { execution_id: executionId },
         data: {
           status: 'paused',
           stage: err.nodeId || 'gate',
         },
       });
 
-      // 创建 inbox_question 供 Dashboard 展示
-      await db.inboxQuestion.create({
+      // 创建 inbox_questions 供 Dashboard 展示
+      await db.inbox_questions.create({
         data: {
           id: randomUUID(),
-          executionId,
+          execution_id: executionId,
           body: '请审核当前阶段的输出',
           choices: JSON.stringify({ flowId, nodeId: err.nodeId }),
           status: 'pending',
-          createdAt: new Date(),
+          created_at: new Date(),
         },
       });
 
@@ -266,6 +278,8 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     await executionStore.fail(executionId, err?.message || '执行失败');
   } finally {
     clearInterval(heartbeatInterval);
+    // A4: 清理 AbortController 映射
+    activeAbortControllers.delete(executionId);
   }
 }
 
@@ -278,12 +292,12 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   console.log(`[graph-runner] 恢复执行: ${executionId}, decision: ${decision}`);
 
   // 1. 获取执行记录
-  const exec = await db.taskExecution.findUnique({
-    where: { executionId },
-    select: { threadId: true, graphDefinitionId: true, status: true },
+  const exec = await db.task_executions.findUnique({
+    where: { execution_id: executionId },
+    select: { thread_id: true, graph_definition_id: true, status: true },
   });
 
-  if (!exec || !exec.threadId || !exec.graphDefinitionId) {
+  if (!exec || !exec.thread_id || !exec.graph_definition_id) {
     throw new Error('执行记录不存在或状态不正确');
   }
 
@@ -292,15 +306,15 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   }
 
   // 2. 更新状态为 running
-  await db.taskExecution.update({
-    where: { executionId },
+  await db.task_executions.update({
+    where: { execution_id: executionId },
     data: { status: 'running' },
   });
 
   // 3. 加载流程图
-  const flow = await loadFlow(exec.graphDefinitionId);
+  const flow = await loadFlow(exec.graph_definition_id);
   if (!flow) {
-    await executionStore.fail(executionId, `流程定义不存在: ${exec.graphDefinitionId}`);
+    await executionStore.fail(executionId, `流程定义不存在: ${exec.graph_definition_id}`);
     return;
   }
 
@@ -314,7 +328,7 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   // 5. 继续执行
   const config = {
     configurable: {
-      thread_id: exec.threadId,
+      thread_id: exec.thread_id,
       execution_id: executionId,
       exec_shortid: executionId.slice(0, 8),
     },
@@ -331,8 +345,8 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
     // 再次遇到 gate 中断
     if (err?.name === 'GraphInterrupt') {
       console.log(`[graph-runner] 再次遇到 Gate 中断: ${executionId}`);
-      await db.taskExecution.update({
-        where: { executionId },
+      await db.task_executions.update({
+        where: { execution_id: executionId },
         data: {
           status: 'paused',
           stage: err.nodeId || 'gate',
@@ -379,15 +393,15 @@ export async function updateRequirementFromSpec(
   const specForDoc = { ...specData };
   delete specForDoc.business_goal; // 去重，business_goal 单独存
 
-  await db.requirement.update({
+  await db.requirements.update({
     where: { id: requirementId },
     data: {
-      businessGoal: specData.business_goal || null,
-      specDoc: JSON.stringify(specForDoc, null, 2),
+      business_goal: specData.business_goal || null,
+      spec_doc: JSON.stringify(specForDoc, null, 2),
     },
   });
 
-  console.log(`[graph-runner] 已更新 Requirement.specDoc 和 businessGoal: ${requirementId}`);
+  console.log(`[graph-runner] 已更新 Requirement.spec_doc 和 business_goal: ${requirementId}`);
 }
 
 // ─── 完成回调 ──────────────────────────────────────────────────────────────────
@@ -432,16 +446,16 @@ async function createTaskTreeFromPhaseOutputs(
   requirementId: string,
   executionId: string,
 ): Promise<void> {
-  const requirement = await db.requirement.findUnique({ where: { id: requirementId } });
+  const requirement = await db.requirements.findUnique({ where: { id: requirementId } });
   if (!requirement) return;
 
   // 查找 task_breakdown 节点的输出
-  const phaseOutput = await db.phaseOutput.findFirst({
+  const phaseOutput = await db.phase_outputs.findFirst({
     where: {
       key: 'tasks',
-      phaseInstance: {
-        executionId,
-        phaseId: 'task_breakdown',
+      phase_instances: {
+        execution_id: executionId,
+        phase_id: 'task_breakdown',
       },
     },
   });
@@ -527,15 +541,15 @@ export async function createTaskTreeFromParsed(
     // 标题优先级: epicData.name > epicData.title > 需求标题 > Epic ${tempId}
     const epicTitle = epicData.name || epicData.title || requirement.title || `Epic ${tempId}`;
 
-    await db.epic.create({
+    await db.epics.create({
       data: {
         id: epicId,
-        requirementId: requirement.id,
+        requirement_id: requirement.id,
         title: epicTitle,
         description: epicData.description || null,
         module: epicData.module || null,
         priority: epicData.priority || null,
-        acceptanceCriteria: epicData.acceptance_criteria || null,
+        acceptance_criteria: epicData.acceptance_criteria || null,
         status: 'pending',
       },
     });
@@ -610,14 +624,14 @@ export async function createTaskTreeFromParsed(
 
     const featureTitle = featureData.title || featureData.name || fallbackTitle;
 
-    await db.feature.create({
+    await db.features.create({
       data: {
         id: featureId,
-        epicId: epicRealId || null,
+        epic_id: epicRealId || null,
         title: featureTitle,
         description: featureData.description || null,
         module: featureData.module || null,
-        acceptanceCriteria: featureData.acceptance_criteria || null,
+        acceptance_criteria: featureData.acceptance_criteria || null,
         priority: featureData.priority || null,
         status: 'pending',
       },
@@ -632,16 +646,16 @@ export async function createTaskTreeFromParsed(
     const epicRealId = epicMap.get(us.epic_id);
     const featureRealId = featureMap.get(us.feature_id);
 
-    await db.userStory.create({
+    await db.user_stories.create({
       data: {
         id: usId,
-        epicId: epicRealId || null,
-        featureId: featureRealId || null,
+        epic_id: epicRealId || null,
+        feature_id: featureRealId || null,
         title: us.title || '',
-        asA: us.as_a || null,
-        iWant: us.i_want || null,
-        soThat: us.so_that || null,
-        acceptanceText: us.acceptance_text || null,
+        as_a: us.as_a || null,
+        i_want: us.i_want || null,
+        so_that: us.so_that || null,
+        acceptance_text: us.acceptance_text || null,
         module: us.module || null,
         priority: us.priority || 'P2',
         status: 'pending',
@@ -656,21 +670,21 @@ export async function createTaskTreeFromParsed(
         taskSequence++;
         const taskId = randomUUID();
 
-        await db.task.create({
+        await db.tasks.create({
           data: {
             id: taskId,
-            userStoryId: usId,
-            epicId: epicRealId || null,
+            user_story_id: usId,
+            epic_id: epicRealId || null,
             title: taskData.title,
             description: taskData.description || null,
-            acceptanceCriteria: taskData.acceptance_criteria || null,
-            acceptanceSteps: taskData.acceptance_steps || null,
+            acceptance_criteria: taskData.acceptance_criteria || null,
+            acceptance_steps: taskData.acceptance_steps || null,
             priority: taskData.priority || null,
-            techConstraints: taskData.tech_constraints || null,
-            taskType: taskData.task_type || null,
-            estimatedHours: taskData.estimated_hours || null,
-            targetProjectId: requirement.targetProjectId,
-            targetRepoPath: requirement.targetRepoPath,
+            tech_constraints: taskData.tech_constraints || null,
+            task_type: taskData.task_type || null,
+            estimated_hours: taskData.estimated_hours || null,
+            target_project_id: requirement.target_project_id,
+            target_repo_path: requirement.target_repo_path,
             sequence: taskSequence,
             status: 'pending',
           },
@@ -682,8 +696,8 @@ export async function createTaskTreeFromParsed(
           subjectId: taskId,
           taskId,
           requirementId: requirement.id,
-          targetProjectId: requirement.targetProjectId,
-          targetRepoPath: requirement.targetRepoPath,
+          targetProjectId: requirement.target_project_id,
+          targetRepoPath: requirement.target_repo_path,
         });
       }
     }
@@ -699,20 +713,20 @@ export async function createTaskTreeFromParsed(
     // 尝试找到关联的 epic
     const epicRealId = taskData.epic_id ? epicMap.get(taskData.epic_id) : null;
 
-    await db.task.create({
+    await db.tasks.create({
       data: {
         id: taskId,
-        epicId: epicRealId || null,
+        epic_id: epicRealId || null,
         title: taskData.title,
         description: taskData.description || null,
-        acceptanceCriteria: taskData.acceptance_criteria || null,
-        acceptanceSteps: taskData.acceptance_steps || null,
+        acceptance_criteria: taskData.acceptance_criteria || null,
+        acceptance_steps: taskData.acceptance_steps || null,
         priority: taskData.priority || null,
-        techConstraints: taskData.tech_constraints || null,
-        taskType: taskData.task_type || null,
-        estimatedHours: taskData.estimated_hours || null,
-        targetProjectId: requirement.targetProjectId,
-        targetRepoPath: requirement.targetRepoPath,
+        tech_constraints: taskData.tech_constraints || null,
+        task_type: taskData.task_type || null,
+        estimated_hours: taskData.estimated_hours || null,
+        target_project_id: requirement.target_project_id,
+        target_repo_path: requirement.target_repo_path,
         sequence: taskSequence,
         status: 'pending',
       },
@@ -724,8 +738,8 @@ export async function createTaskTreeFromParsed(
       subjectId: taskId,
       taskId,
       requirementId: requirement.id,
-      targetProjectId: requirement.targetProjectId,
-      targetRepoPath: requirement.targetRepoPath,
+      targetProjectId: requirement.target_project_id,
+      targetRepoPath: requirement.target_repo_path,
     });
   }
 
@@ -740,7 +754,7 @@ async function createTaskTreeFromBreakdown(
   requirementExecutionId: string,
   tasksData: any[],
 ): Promise<void> {
-  const requirement = await db.requirement.findUnique({ where: { id: requirementId } });
+  const requirement = await db.requirements.findUnique({ where: { id: requirementId } });
   if (!requirement) return;
 
   // tasksData 现在是 [{ user_stories: [...], tasks: [...] }]

@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.mjs';
-import type { TaskExecution } from '@prisma/client';
+import type { task_executions } from '@prisma/client';
 
 /**
  * 租约信息 —— Worker 持有此对象证明其对执行实例的所有权
@@ -31,11 +31,16 @@ export const executionStore = {
     targetProjectId: string;
     targetRepoPath: string;
     status?: string;  // 默认 'draft'
-  }): Promise<TaskExecution> {
-    return db.taskExecution.create({
+  }): Promise<task_executions> {
+    return db.task_executions.create({
       data: {
-        executionId: randomUUID(),
-        ...data,
+        execution_id: randomUUID(),
+        subject_type: data.subjectType,
+        subject_id: data.subjectId,
+        task_id: data.taskId,
+        requirement_id: data.requirementId,
+        target_project_id: data.targetProjectId,
+        target_repo_path: data.targetRepoPath,
         status: data.status ?? 'draft',
       },
     });
@@ -44,9 +49,9 @@ export const executionStore = {
   /**
    * 根据执行 ID 查询执行实例
    */
-  async get(executionId: string): Promise<TaskExecution | null> {
-    return db.taskExecution.findUnique({
-      where: { executionId },
+  async get(executionId: string): Promise<task_executions | null> {
+    return db.task_executions.findUnique({
+      where: { execution_id: executionId },
     });
   },
 
@@ -67,20 +72,20 @@ export const executionStore = {
 
     // 原子更新：仅当执行实例处于 pending/rate_limited 且无 Worker 占用时生效
     // rate_limited 状态由 releaseLeaseKeepStatus 保留，调度器在 retryAt 到期后重新获取
-    const result = await db.taskExecution.updateMany({
+    const result = await db.task_executions.updateMany({
       where: {
-        executionId,
+        execution_id: executionId,
         status: { in: ['pending', 'rate_limited'] },
-        workerId: null,
+        worker_id: null,
       },
       data: {
         status: 'running',
-        workerId,
-        leaseToken,
-        fencingToken: { increment: 1 }, // 防护令牌递增，使旧租约失效
-        leaseExpiresAt,
-        heartbeatAt: new Date(),
-        startedAt: new Date(),
+        worker_id: workerId,
+        lease_token: leaseToken,
+        fencing_token: { increment: 1 }, // 防护令牌递增，使旧租约失效
+        lease_expires_at: leaseExpiresAt,
+        heartbeat_at: new Date(),
+        started_at: new Date(),
       },
     });
 
@@ -88,15 +93,15 @@ export const executionStore = {
     if (result.count === 0) return null;
 
     // 回读已更新的记录，返回租约信息
-    const execution = await db.taskExecution.findUnique({
-      where: { executionId },
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id: executionId },
     });
     if (!execution) return null;
 
     return {
-      workerId: execution.workerId!,
-      leaseToken: execution.leaseToken!,
-      fencingToken: execution.fencingToken,
+      workerId: execution.worker_id!,
+      leaseToken: execution.lease_token!,
+      fencingToken: execution.fencing_token,
     };
   },
 
@@ -110,14 +115,14 @@ export const executionStore = {
     executionId: string,
     lease: LeaseInfo
   ): Promise<boolean> {
-    const result = await db.taskExecution.updateMany({
+    const result = await db.task_executions.updateMany({
       where: {
-        executionId,
-        workerId: lease.workerId,
-        leaseToken: lease.leaseToken,
-        fencingToken: lease.fencingToken,
+        execution_id: executionId,
+        worker_id: lease.workerId,
+        lease_token: lease.leaseToken,
+        fencing_token: lease.fencingToken,
       },
-      data: { heartbeatAt: new Date() },
+      data: { heartbeat_at: new Date() },
     });
     return result.count > 0;
   },
@@ -129,15 +134,15 @@ export const executionStore = {
    * 仅需 workerId + leaseToken 校验（释放操作无需 fencingToken）。
    */
   async releaseLease(executionId: string, lease: LeaseInfo): Promise<void> {
-    await db.taskExecution.updateMany({
+    await db.task_executions.updateMany({
       where: {
-        executionId,
-        workerId: lease.workerId,
-        leaseToken: lease.leaseToken,
+        execution_id: executionId,
+        worker_id: lease.workerId,
+        lease_token: lease.leaseToken,
       },
       data: {
-        workerId: null,
-        leaseToken: null,
+        worker_id: null,
+        lease_token: null,
         status: 'pending',
       },
     });
@@ -154,15 +159,15 @@ export const executionStore = {
    * 导致限流退避策略完全失效。
    */
   async releaseLeaseKeepStatus(executionId: string, lease: LeaseInfo): Promise<void> {
-    await db.taskExecution.updateMany({
+    await db.task_executions.updateMany({
       where: {
-        executionId,
-        workerId: lease.workerId,
-        leaseToken: lease.leaseToken,
+        execution_id: executionId,
+        worker_id: lease.workerId,
+        lease_token: lease.leaseToken,
       },
       data: {
-        workerId: null,
-        leaseToken: null,
+        worker_id: null,
+        lease_token: null,
         // 不重置 status —— 保持 'rate_limited' 状态
         // 调度器查询 status='pending'，只有 retryAt 到期后才会被拾取
       },
@@ -176,15 +181,15 @@ export const executionStore = {
    * 避免数据库中残留脏租约信息。
    */
   async complete(executionId: string, finalOutput: string): Promise<void> {
-    await db.taskExecution.update({
-      where: { executionId },
+    await db.task_executions.update({
+      where: { execution_id: executionId },
       data: {
         status: 'completed',
-        finalOutput,
-        completedAt: new Date(),
-        workerId: null,
-        leaseToken: null,
-        leaseExpiresAt: null,
+        final_output: finalOutput,
+        completed_at: new Date(),
+        worker_id: null,
+        lease_token: null,
+        lease_expires_at: null,
       },
     });
   },
@@ -196,15 +201,15 @@ export const executionStore = {
    * 避免数据库中残留脏租约信息。
    */
   async fail(executionId: string, errorMessage: string): Promise<void> {
-    await db.taskExecution.update({
-      where: { executionId },
+    await db.task_executions.update({
+      where: { execution_id: executionId },
       data: {
         status: 'failed',
-        errorMessage,
-        completedAt: new Date(),
-        workerId: null,
-        leaseToken: null,
-        leaseExpiresAt: null,
+        error_message: errorMessage,
+        completed_at: new Date(),
+        worker_id: null,
+        lease_token: null,
+        lease_expires_at: null,
       },
     });
   },
@@ -220,12 +225,12 @@ export const executionStore = {
     retryAt: Date,
     errorMessage: string
   ): Promise<void> {
-    await db.taskExecution.update({
-      where: { executionId },
+    await db.task_executions.update({
+      where: { execution_id: executionId },
       data: {
-        rateLimitCount: { increment: 1 },
-        retryAt,
-        errorMessage,
+        rate_limit_count: { increment: 1 },
+        retry_at: retryAt,
+        error_message: errorMessage,
         status: 'rate_limited',
       },
     });
@@ -237,12 +242,18 @@ export const executionStore = {
    * 默认超时 10 分钟。用于调度器的恢复机制：
    * 发现僵尸后，调度器可强制释放租约并重新调度。
    */
-  async findZombies(timeoutMinutes: number = 10): Promise<TaskExecution[]> {
+  async findZombies(timeoutMinutes: number = 10): Promise<task_executions[]> {
     const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);
-    return db.taskExecution.findMany({
+    return db.task_executions.findMany({
       where: {
         status: 'running',
-        heartbeatAt: { lt: cutoff },
+        OR: [
+          { heartbeat_at: { lt: cutoff } },  // 心跳超时
+          {
+            heartbeat_at: null,
+            started_at: { lt: cutoff },  // 启动超过 timeoutMinutes 且无心跳
+          },
+        ],
       },
     });
   },
@@ -258,17 +269,17 @@ export const executionStore = {
    * 条件 WHERE 仍限定 status='running'，避免误覆盖其他 Worker 已完成的执行
    */
   async forceReleaseZombie(executionId: string): Promise<boolean> {
-    const result = await db.taskExecution.updateMany({
+    const result = await db.task_executions.updateMany({
       where: {
-        executionId,
+        execution_id: executionId,
         status: 'running',
       },
       data: {
         status: 'pending',
-        workerId: null,
-        leaseToken: null,
-        leaseExpiresAt: null,
-        heartbeatAt: null,
+        worker_id: null,
+        lease_token: null,
+        lease_expires_at: null,
+        heartbeat_at: null,
       },
     });
     return result.count > 0;
