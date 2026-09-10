@@ -14,10 +14,9 @@ const newInput = ref('')
 const creating = ref(false)
 const searchText = ref('')
 
-// 项目选择
+// 项目选择（必选）
 const projects = ref<Project[]>([])
 const selectedProjectId = ref<string>('')
-const customPath = ref('')
 
 // 计算实际使用的路径
 const targetRepoPath = computed(() => {
@@ -25,7 +24,7 @@ const targetRepoPath = computed(() => {
     const p = projects.value.find(x => x.id === selectedProjectId.value)
     return p?.path || ''
   }
-  return customPath.value.trim()
+  return ''
 })
 
 // 工作流选择
@@ -96,6 +95,10 @@ async function loadProjects() {
 async function createAndExecute() {
   const text = newInput.value.trim()
   if (!text) return
+  if (!selectedProjectId.value) {
+    ElMessage.warning('请选择项目')
+    return
+  }
   creating.value = true
   try {
     const reqId = `req-${Date.now()}`
@@ -118,7 +121,6 @@ async function createAndExecute() {
     await api.execute(reqId, text)
     newInput.value = ''
     selectedProjectId.value = ''
-    customPath.value = ''
     ElMessage.success('已创建并执行')
     loadList()
   } catch (e: any) {
@@ -149,22 +151,15 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
           :disabled="creating"
           rows="2"
         ></textarea>
-        <div class="workdir-input-row">
+        <div class="project-select-row">
+          <span class="project-label">项目</span>
           <select v-model="selectedProjectId" class="project-select" :disabled="creating">
-            <option value="">选择项目（可选）</option>
+            <option value="" disabled>选择项目（必选）</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
-          <span class="input-separator">或</span>
-          <input
-            v-model="customPath"
-            type="text"
-            class="workdir-input"
-            placeholder="手动输入路径"
-            :disabled="creating || !!selectedProjectId"
-          />
         </div>
         <div class="create-footer">
-          <button class="create-btn" :disabled="!newInput.trim()" @click="createAndExecute">
+          <button class="create-btn" :disabled="!newInput.trim() || !selectedProjectId" @click="createAndExecute">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
               <path d="M12 5v14M5 12h14"/>
             </svg>
@@ -293,10 +288,17 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
   border-color: var(--accent-dim);
 }
 
-.workdir-input-row {
+.project-select-row {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.project-label {
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .project-select {
@@ -307,7 +309,7 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
-  min-width: 180px;
+  min-width: 220px;
 }
 
 .project-select:focus {
@@ -318,34 +320,6 @@ onMounted(() => { loadList(); loadWorkflows(); loadProjects() })
 .project-select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.input-separator {
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.workdir-input {
-  flex: 1;
-  padding: 8px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 13px;
-  font-family: var(--font-mono);
-  transition: border-color 0.16s;
-}
-
-.workdir-input:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-
-.workdir-input::placeholder {
-  color: var(--muted);
-  font-family: var(--font-sans);
 }
 
 .create-btn {
