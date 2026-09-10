@@ -34,6 +34,70 @@ import { readSkillContent, extractSkillBody } from '../lib/skill-content.mjs';
 // env 可覆盖
 const RUN_TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS) || 60 * 60 * 1000;
 
+// ─── 工作目录解析 ──────────────────────────────────────────────────────────────
+
+/**
+ * 解析 agent 进程的工作目录（spawn 的 cwd）
+ *
+ * 优先级：
+ *   1. 任务自带的目标项目目录（task.target_repo_path）
+ *   2. 子图节点：该任务独立的 worktree
+ *   3. 执行实例自身的 target_repo_path（需求级执行 state.task 为 null，走这条）
+ *
+ * ⚠️ 字段名必须是 snake_case。Prisma 返回的 tasks 行是 `target_repo_path`；
+ * 写成 camelCase 的 `targetRepoPath` 会恒为 undefined，workDir 便静默落到
+ * process.cwd()——也就是 core 服务自己的目录，被调度的 agent 于是带着全工具
+ * 权限在璇玑源码里执行（2026-09-10 事故根因）。task 的类型是 any，TS 拦不住
+ * 这种笔误，改这里请对照 prisma/schema.prisma。
+ *
+ * 三条路径都拿不到时抛错，绝不降级到 process.cwd()。
+ *
+ * @param opts.lookupExecRepoPath / opts.createWorktree —— 测试注入点，生产走默认实现
+ */
+export async function resolveAgentWorkDir(opts: {
+  task: any;
+  executionId: string;
+  nodeId: string;
+  isSubgraph?: boolean;
+  execShortid?: string;
+  lookupExecRepoPath?: (executionId: string) => Promise<string | null | undefined>;
+  createWorktree?: (taskShortid: string, execShortid: string) => Promise<string>;
+}): Promise<string> {
+  const { task, executionId, nodeId, isSubgraph, execShortid, lookupExecRepoPath, createWorktree } = opts;
+
+  // 1. 任务自带目标目录
+  //    camelCase 分支仅为兼容手工构造的对象；真实 Prisma 行只有 snake_case
+  const taskRepoPath = task?.target_repo_path || task?.targetRepoPath;
+  if (taskRepoPath) {
+    return taskRepoPath;
+  }
+
+  // 2. 子图节点：每个任务一个独立 worktree
+  //    注意 tasks 表没有 shortid 列，task.shortid 恒为 undefined，故回退到主键 id
+  if (isSubgraph && task) {
+    const create = createWorktree ?? ensureTaskWorktree;
+    return await create(task.shortid ?? task.id, execShortid ?? '');
+  }
+
+  // 3. 需求级执行：用执行实例自己的 target_repo_path
+  const lookup = lookupExecRepoPath ?? (async (id: string) => {
+    const exec = await db.task_executions.findUnique({
+      where: { execution_id: id },
+      select: { target_repo_path: true },
+    });
+    return exec?.target_repo_path;
+  });
+  const execRepoPath = await lookup(executionId);
+  if (execRepoPath) {
+    return execRepoPath;
+  }
+
+  throw new Error(
+    `无法确定 Agent 工作目录：execution=${executionId} node=${nodeId} 的 target_repo_path 为空。` +
+      `拒绝降级到 process.cwd()——那会让 agent 在璇玑自己的源码目录里以全权限执行。`,
+  );
+}
+
 // ─── Binding 选择器 ────────────────────────────────────────────────────────────
 
 /**
@@ -304,15 +368,13 @@ export function makeAgentNode(opts: {
     }
 
     // ── 确定工作目录 ─────────────────────────────────────────────────────────
-    let workDir = process.cwd();
-
-    // 优先使用 task.targetRepoPath（用户指定的目标项目目录）
-    if (task?.targetRepoPath) {
-      workDir = task.targetRepoPath;
-    } else if (opts.isSubgraph && task) {
-      const wtPath = await ensureTaskWorktree(task.shortid, execShortid);
-      workDir = wtPath;
-    }
+    const workDir = await resolveAgentWorkDir({
+      task,
+      executionId: topExecId,
+      nodeId: opts.nodeId,
+      isSubgraph: opts.isSubgraph,
+      execShortid,
+    });
 
     // ── 会话恢复（用于 429 重试后继续）────────────────────────────────────────
     const existingSessionId = phaseInstance?.sessionId;
