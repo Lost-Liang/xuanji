@@ -247,8 +247,32 @@ requirementsRouter.delete('/:id', async (req, res) => {
       return;
     }
 
-    // 级联删除：删除整个分解树和关联执行
-    // 1. 删除所有关联的 TaskExecutions（需求级 + 任务级）
+    // 级联删除：按外键依赖顺序处理所有关联表
+    // 先收集所有关联的 execution_id
+    const executions = await db.task_executions.findMany({
+      where: {
+        OR: [
+          { subject_type: 'requirement', subject_id: requirementId },
+          { requirement_id: requirementId },
+        ],
+      },
+      select: { execution_id: true },
+    });
+    const executionIds = executions.map(e => e.execution_id);
+
+    // 清理 execution 级联引用（复用辅助函数）
+    await cascadeDeleteExecutions(executionIds);
+
+    const epics = await db.epics.findMany({
+      where: { requirement_id: requirementId },
+      select: { id: true },
+    });
+    const epicIds = epics.map(e => e.id);
+
+    // 清理直接引用 requirement_id 的表
+    await db.task_logs.deleteMany({ where: { requirement_id: requirementId } });
+
+    // 删除 task_executions
     await db.task_executions.deleteMany({
       where: {
         OR: [
@@ -258,42 +282,32 @@ requirementsRouter.delete('/:id', async (req, res) => {
       },
     });
 
-    // 2. 删除所有关联的 Tasks（通过 Epic 层级联）
+    // 10. 删除 tasks（通过 epic 层级联）
     await db.tasks.deleteMany({
-      where: {
-        epics: {
-          requirement_id: requirementId,
-        },
-      },
+      where: { epics: { requirement_id: requirementId } },
     });
 
-    // 3. 删除所有关联的 UserStories
+    // 11. 删除 user_stories（外键 → epics.id, features.id）
     await db.user_stories.deleteMany({
       where: {
         OR: [
-          { epics: { requirement_id: requirementId } },
+          { epic_id: { in: epicIds } },
           { features: { epics: { requirement_id: requirementId } } },
         ],
       },
     });
 
-    // 4. 删除所有关联的 Features
+    // 12. 删除 features（外键 → epics.id）
     await db.features.deleteMany({
-      where: {
-        epics: {
-          requirement_id: requirementId,
-        },
-      },
+      where: { epics: { requirement_id: requirementId } },
     });
 
-    // 5. 删除所有关联的 Epics
+    // 13. 删除 epics（外键 → requirements.id）
     await db.epics.deleteMany({
-      where: {
-        requirement_id: requirementId,
-      },
+      where: { requirement_id: requirementId },
     });
 
-    // 6. 删除需求本身
+    // 14. 删除 requirements
     await db.requirements.delete({ where: { id: requirementId } });
     res.json({ ok: true });
   } catch (err) {
@@ -716,6 +730,44 @@ requirementsRouter.post('/epics/:id/pause', async (req, res) => {
 });
 
 /**
+ * 级联清理与 executionIds 关联的所有表（外键顺序删除）
+ */
+async function cascadeDeleteExecutions(executionIds: string[]) {
+  if (executionIds.length === 0) return;
+
+  // phase_outputs → phase_instances.id
+  const phases = await db.phase_instances.findMany({
+    where: { execution_id: { in: executionIds } },
+    select: { id: true },
+  });
+  const phaseIds = phases.map(p => p.id);
+  if (phaseIds.length > 0) {
+    await db.phase_outputs.deleteMany({ where: { phase_instance_id: { in: phaseIds } } });
+  }
+
+  // conversation_events → task_executions.execution_id
+  await db.conversation_events.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // inbox_questions → task_executions.execution_id
+  await db.inbox_questions.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // execution_events → task_executions.execution_id
+  await db.execution_events.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // interventions → task_executions.execution_id
+  await db.interventions.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // decisions → task_executions.execution_id
+  await db.decisions.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // task_logs → task_executions.execution_id
+  await db.task_logs.deleteMany({ where: { execution_id: { in: executionIds } } });
+
+  // phase_instances → task_executions.execution_id
+  await db.phase_instances.deleteMany({ where: { execution_id: { in: executionIds } } });
+}
+
+/**
  * DELETE /api/epics/:id
  * 删除 Epic 及其子内容
  */
@@ -723,18 +775,24 @@ requirementsRouter.delete('/epics/:id', async (req, res) => {
   try {
     const epicId = req.params.id;
 
-    // 级联删除
-    // 1. 删除关联的 TaskExecutions
+    // 级联删除：先清理外键引用
+    const executions = await db.task_executions.findMany({
+      where: { tasks: { epic_id: epicId } },
+      select: { execution_id: true },
+    });
+    await cascadeDeleteExecutions(executions.map(e => e.execution_id));
+
+    // 1. 删除 TaskExecutions
     await db.task_executions.deleteMany({
       where: { tasks: { epic_id: epicId } },
     });
 
-    // 2. 删除关联的 Tasks
+    // 2. 删除 Tasks
     await db.tasks.deleteMany({
       where: { epic_id: epicId },
     });
 
-    // 3. 删除关联的 UserStories
+    // 3. 删除 UserStories
     await db.user_stories.deleteMany({
       where: {
         OR: [
@@ -744,7 +802,7 @@ requirementsRouter.delete('/epics/:id', async (req, res) => {
       },
     });
 
-    // 4. 删除关联的 Features
+    // 4. 删除 Features
     await db.features.deleteMany({
       where: { epic_id: epicId },
     });
@@ -869,7 +927,17 @@ requirementsRouter.delete('/features/:id', async (req, res) => {
   try {
     const featureId = req.params.id;
 
-    // 级联删除
+    // 级联删除：先清理外键引用
+    const executions = await db.task_executions.findMany({
+      where: {
+        tasks: {
+          user_stories: { feature_id: featureId },
+        },
+      },
+      select: { execution_id: true },
+    });
+    await cascadeDeleteExecutions(executions.map(e => e.execution_id));
+
     await db.task_executions.deleteMany({
       where: {
         tasks: {
@@ -1002,7 +1070,13 @@ requirementsRouter.delete('/user-stories/:id', async (req, res) => {
   try {
     const userStoryId = req.params.id;
 
-    // 级联删除
+    // 级联删除：先清理外键引用
+    const executions = await db.task_executions.findMany({
+      where: { tasks: { user_story_id: userStoryId } },
+      select: { execution_id: true },
+    });
+    await cascadeDeleteExecutions(executions.map(e => e.execution_id));
+
     await db.task_executions.deleteMany({
       where: { tasks: { user_story_id: userStoryId } },
     });
