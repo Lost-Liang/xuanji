@@ -133,12 +133,13 @@ function selectBinding(
 }
 
 /**
- * 构建 Agent Prompt：角色指令 + 技能 + 节点上下文
+ * 构建 Agent Prompt：角色指令 + 技能 + 节点上下文 + 输出格式要求
  */
 function buildAgentPrompt(
   binding: AgentBinding | null,
   nodeContext: string,
-  skillContent: string | null
+  skillContent: string | null,
+  nodeId?: string,
 ): string {
   const parts: string[] = [];
 
@@ -157,7 +158,91 @@ function buildAgentPrompt(
     parts.push('\n\n---\n\n# 当前任务\n\n' + nodeContext);
   }
 
-  return parts.join('');
+  // 4. 根据节点类型追加输出格式要求
+  const nodeType = nodeId;
+  let outputFormat = '';
+
+  if (nodeType === 'write_tests') {
+    outputFormat = `
+
+## 输出格式要求
+
+在最终回答末尾，输出一个 JSON 代码块：
+
+\`\`\`json
+{
+  "ok": boolean,           // 测试编写是否完成
+  "summary": "一句话总结",
+  "test_files": ["文件路径"],
+  "test_count": number     // 测试用例总数
+}
+\`\`\``;
+  } else if (nodeType === 'develop') {
+    outputFormat = `
+
+## 输出格式要求
+
+在最终回答末尾，输出一个 JSON 代码块：
+
+\`\`\`json
+{
+  "ok": boolean,              // 开发是否完成
+  "summary": "一句话总结",
+  "files_created": ["文件路径"],
+  "files_modified": ["文件路径"],
+  "compilation_ok": boolean   // 编译是否通过
+}
+\`\`\``;
+  } else if (nodeType === 'test') {
+    outputFormat = `
+
+## 输出格式要求
+
+在最终回答末尾，输出一个 JSON 代码块：
+
+\`\`\`json
+{
+  "ok": boolean,              // 测试是否全部通过
+  "summary": "一句话总结",
+  "passed": boolean,          // 测试是否全部通过
+  "passed_count": number,     // 通过的测试数
+  "total_count": number,      // 测试总数
+  "compilation_ok": boolean   // 编译是否通过
+}
+\`\`\``;
+  } else if (nodeType === 'code_review') {
+    outputFormat = `
+
+## 输出格式要求
+
+在最终回答末尾，输出一个 JSON 代码块：
+
+\`\`\`json
+{
+  "ok": boolean,              // 审查是否通过
+  "summary": "一句话总结",
+  "approved": boolean,        // 是否批准
+  "issues": ["问题描述"]
+}
+\`\`\``;
+  } else if (nodeType === 'code_fix') {
+    outputFormat = `
+
+## 输出格式要求
+
+在最终回答末尾，输出一个 JSON 代码块：
+
+\`\`\`json
+{
+  "ok": boolean,                 // 修复是否完成
+  "summary": "一句话总结",
+  "files_modified": ["文件路径"],
+  "issues_resolved": ["问题描述"]
+}
+\`\`\``;
+  }
+
+  return parts.join('') + outputFormat;
 }
 
 // ─── 返回构建 ──────────────────────────────────────────────────────────────────
@@ -321,7 +406,7 @@ export function makeAgentNode(opts: {
 
     // ── 构建 Prompt ──────────────────────────────────────────────────────────
     const nodeContext = opts.buildPrompt(state);
-    let promptText = buildAgentPrompt(selectedBinding, nodeContext, skillContent);
+    let promptText = buildAgentPrompt(selectedBinding, nodeContext, skillContent, opts.nodeId);
 
     if (isRejectRedo) {
       promptText = `人审驳回意见：${lastReview.comments}\n\n请据此修正：\n\n${promptText}`;
@@ -351,6 +436,18 @@ export function makeAgentNode(opts: {
       });
 
       if (existing) {
+        // 复用旧 phase_instance 时，如果状态是终态（failed/completed），重置为 running
+        if (existing.status === 'failed' || existing.status === 'completed') {
+          await db.phase_instances.update({
+            where: { id: existing.id },
+            data: {
+              status: 'running',
+              error_message: null,
+              completed_at: null,
+              started_at: new Date(),
+            },
+          });
+        }
         phaseInstance = { id: existing.id, sessionId: existing.session_id };
       } else {
         // 创建新的 phase instance
