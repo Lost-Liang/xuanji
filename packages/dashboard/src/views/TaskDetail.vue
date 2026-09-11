@@ -204,6 +204,7 @@ function phaseLabel(id: string): string {
     test: '测试', review: '审查', deploy: '部署', archive: '归档',
     // 新版工作流节点
     develop: '开发', compile_check: '编译', test_check: '测试',
+    write_tests: '写测试',  // 添加 write_tests 映射
     quality_review: '质量审查', security_review: '安全审查', final_review: '终审',
     bug_fix: '修复', quality_issue_fix: '质量修复', security_issue_fix: '安全修复',
   }
