@@ -71,18 +71,30 @@ function readPromptContent(agentId: string): string {
 }
 
 async function main() {
-  console.log('[seed] 开始初始化 Agent Bindings...');
+  // --update：更新已存在 binding 的 prompt_content（从 .md 文件重新读取）
+  const shouldUpdate = process.argv.includes('--update');
+
+  console.log(`[seed] 开始初始化 Agent Bindings...${shouldUpdate ? ' (update 模式)' : ''}`);
 
   for (const def of AGENT_DEFS) {
     const promptContent = readPromptContent(def.id);
 
-    // 检查是否已存在，已存在则跳过（保留用户修改）
+    // 检查是否已存在
     const existing = await prisma.agent_bindings.findUnique({
       where: { id: def.id },
     });
 
     if (existing) {
-      console.log(`[seed] ⊘ ${def.id} 已存在，跳过（保留用户修改）`);
+      if (shouldUpdate) {
+        // update 模式：刷新 prompt_content（保留用户对其他字段的修改）
+        await prisma.agent_bindings.update({
+          where: { id: def.id },
+          data: { prompt_content: promptContent },
+        });
+        console.log(`[seed] ↻ ${def.id} prompt_content 已更新 (${promptContent.length} 字符)`);
+      } else {
+        console.log(`[seed] ⊘ ${def.id} 已存在，跳过（保留用户修改）`);
+      }
       continue;
     }
 
@@ -104,7 +116,7 @@ async function main() {
     console.log(`[seed] ✓ ${binding.id} (${def.name})`);
   }
 
-  console.log('[seed] 完成，共 13 个 Agent Bindings');
+  console.log(`[seed] 完成，共 ${AGENT_DEFS.length} 个 Agent Bindings`);
 }
 
 main()
