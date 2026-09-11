@@ -48,7 +48,7 @@ describe('Visit Counter', () => {
   });
 
   describe('routeFromSource', () => {
-    it('should loop back when visits < limit', () => {
+    it('should loop back when visits <= limit', () => {
       // 构造路由元数据：source → fix_node（loop_back, loop_max: 2）
       const meta: RouteMeta = {
         source: 'check_node',
@@ -58,15 +58,20 @@ describe('Visit Counter', () => {
         ],
       };
 
-      // 第 1 次完成（visits=1），1 < 2，应该回环
+      // 第 1 次完成（visits=1），1 <= 2，应该回环
       const state1 = { loop_counters: { check_node: 1 } };
       const result1 = routeFromSource(state1, meta);
       expect(result1).toBe('fix_node');
 
-      // 第 2 次完成（visits=2），2 < 2 为 false，应该耗尽，走默认边
+      // 第 2 次完成（visits=2），2 <= 2，应该回环
       const state2 = { loop_counters: { check_node: 2 } };
       const result2 = routeFromSource(state2, meta);
-      expect(result2).toBe('next_node');
+      expect(result2).toBe('fix_node');
+
+      // 第 3 次完成（visits=3），3 > 2，应该耗尽，走默认边
+      const state3 = { loop_counters: { check_node: 3 } };
+      const result3 = routeFromSource(state3, meta);
+      expect(result3).toBe('next_node');
     });
 
     it('should use DEFAULT_MAX when loop_max is not specified', () => {
@@ -78,11 +83,11 @@ describe('Visit Counter', () => {
         ],
       };
 
-      // DEFAULT_MAX = 3，所以 visits < 3 都回环
-      const state1 = { loop_counters: { check_node: 2 } };
+      // DEFAULT_MAX = 3，所以 visits <= 3 都回环
+      const state1 = { loop_counters: { check_node: 3 } };
       expect(routeFromSource(state1, meta, 3)).toBe('fix_node');
 
-      const state2 = { loop_counters: { check_node: 3 } };
+      const state2 = { loop_counters: { check_node: 4 } };
       expect(routeFromSource(state2, meta, 3)).toBe('next_node');
     });
 
@@ -200,11 +205,11 @@ describe('Visit Counter', () => {
       const result = await graph.invoke(initialState, config);
 
       // 验证：循环应该在 2 次后停止
-      expect(checkCount).toBe(3); // check 执行 3 次（初始 + 2 次回环）
-      expect(fixCount).toBe(2); // fix 执行 2 次
-      expect(result.loop_counters?.['check_node']).toBe(2);
+      expect(checkCount).toBe(4); // check 执行 4 次（初始 + 3 次回环检查）
+      expect(fixCount).toBe(3); // fix 执行 3 次
+      expect(result.loop_counters?.['check_node']).toBe(3);
 
-      // 第 3 次 check 时，visits=2 < loop_max=2 为 false，不再回环
+      // 第 4 次 check 时，visits=3 > loop_max=2，不再回环
       // 图应该结束
     });
   });

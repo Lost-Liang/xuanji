@@ -96,11 +96,12 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
   if (loopBack) {
     const visits = state.loop_counters?.[meta.source] ?? 0
     const limit = loopBack.loop_max ?? DEFAULT_MAX
-    // V4 修正：visits < limit 而非 visits <= limit
-    // 第 1 次完成（visits=1），1 < 3 → 回环
-    // 第 2 次完成（visits=2），2 < 3 → 回环
-    // 第 3 次完成（visits=3），3 < 3 为 false → 耗尽
-    if (visits < limit) {
+    // V4 修正：visits <= limit（spec §5.2）
+    // loop_max: 2 时，允许 visits=1,2 回环，visits=3 耗尽
+    // 第 1 次完成（visits=1），1 <= 2 → 回环
+    // 第 2 次完成（visits=2），2 <= 2 → 回环
+    // 第 3 次完成（visits=3），3 > 2 → 耗尽
+    if (visits <= limit) {
       if (loopBack.condition) {
         if (loopBack.condition.type === 'keyword') {
           if (evaluateKeywordCondition(sourceText(state, meta.source), loopBack.condition.config)) return loopBack.target
