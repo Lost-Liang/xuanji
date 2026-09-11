@@ -65,7 +65,7 @@ export interface RouteMeta {
   }>
 }
 
-// ─── 动态条件边路由函数（V4 修正）─────────────────────────────────────────────
+// ─── 动态条件边路由函数（V4 修正 + Task 3）─────────────────────────────────────
 /**
  * 根据状态和路由元数据决定下一个节点
  * 优先级：非回环条件边 → 回环条件边（未超限）→ 默认边 → __end__
@@ -76,6 +76,11 @@ export interface RouteMeta {
  * - 第 1 次完成 visits=1，若 loop_max=2，1 <= 2 → 回环
  * - 第 2 次完成 visits=2，若 loop_max=2，2 <= 2 → 回环
  * - 第 3 次完成 visits=3，若 loop_max=2，3 > 2 → 耗尽
+ *
+ * Task 3 修正：
+ * - 条件函数签名改为 (sourceText: string | null) => boolean
+ * - 从 YAML 的 source 字段读取节点 ID
+ * - 使用 sourceText(state, sourceId) 获取文本并注入
  */
 export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number = 3): string {
   const nonDefault = meta.edges.filter((e) => !e.is_default && !e.loop_back)
@@ -88,7 +93,10 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
       if (evaluateKeywordCondition(sourceText(state, meta.source), e.condition.config)) return e.target
     } else if (e.condition.type === 'function') {
       const fn = getCondition(e.condition.config.name!)
-      if (fn(state)) return e.target
+      // Task 3: 从 YAML 的 source 字段读取节点 ID，注入文本
+      const sourceId = e.condition.config.source
+      const text = sourceId ? sourceText(state, sourceId) : null
+      if (fn(text)) return e.target
     }
   }
 
@@ -107,7 +115,10 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
           if (evaluateKeywordCondition(sourceText(state, meta.source), loopBack.condition.config)) return loopBack.target
         } else if (loopBack.condition.type === 'function') {
           const fn = getCondition(loopBack.condition.config.name!)
-          if (fn(state)) return loopBack.target
+          // Task 3: 从 YAML 的 source 字段读取节点 ID，注入文本
+          const sourceId = loopBack.condition.config.source
+          const text = sourceId ? sourceText(state, sourceId) : null
+          if (fn(text)) return loopBack.target
         }
       } else {
         return loopBack.target

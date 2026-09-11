@@ -1,15 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { parseNodeOutput } from '../src/graph/conditions/default-conditions.mjs'
+import { parseOutput } from '../src/graph/conditions/default-conditions.mjs'
 
-describe('parseNodeOutput', () => {
-  // 模拟 sourceText 函数
-  const mockSourceText = (text: string | null) => {
-    return (state: any, sourceId: string) => text
-  }
-
+describe('parseOutput', () => {
   it('解析纯 JSON 字符串', () => {
-    const state = { results: { test: '{"ok": true}' } }
-    const result = parseNodeOutput(state, 'test', mockSourceText('{"ok": true}'))
+    const result = parseOutput('{"ok": true}')
     expect(result).toEqual({ ok: true })
   })
 
@@ -23,8 +17,7 @@ describe('parseNodeOutput', () => {
 { "ok": true, "passed": 39, "total": 39 }
 \`\`\`
 `
-    const state = {}
-    const result = parseNodeOutput(state, 'test', mockSourceText(markdown))
+    const result = parseOutput(markdown)
     expect(result).toEqual({ ok: true, passed: 39, total: 39 })
   })
 
@@ -34,27 +27,27 @@ describe('parseNodeOutput', () => {
   { "ok": false, "summary": "Failed" }
 \`\`\`
 `
-    const result = parseNodeOutput({}, 'test', mockSourceText(markdown))
+    const result = parseOutput(markdown)
     expect(result).toEqual({ ok: false, summary: 'Failed' })
   })
 
   it('空文本返回 null', () => {
-    const result = parseNodeOutput({}, 'test', mockSourceText(''))
+    const result = parseOutput('')
     expect(result).toBeNull()
   })
 
   it('null 返回 null', () => {
-    const result = parseNodeOutput({}, 'test', mockSourceText(null))
+    const result = parseOutput(null)
     expect(result).toBeNull()
   })
 
   it('无 ok 字段的 JSON 返回 null', () => {
-    const result = parseNodeOutput({}, 'test', mockSourceText('{"passed": 39}'))
+    const result = parseOutput('{"passed": 39}')
     expect(result).toBeNull()
   })
 
   it('无法解析的文本返回 null', () => {
-    const result = parseNodeOutput({}, 'test', mockSourceText('not json'))
+    const result = parseOutput('not json')
     expect(result).toBeNull()
   })
 })

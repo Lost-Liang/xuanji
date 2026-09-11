@@ -87,8 +87,9 @@ describe('builder.mts 核心函数', () => {
       const meta = {
         source: 'compile_check',
         edges: [
-          { target: 'test_check', condition: { type: 'function' as const, config: { name: 'compile_pass' } } },
-          { target: 'bug_fix', condition: { type: 'function' as const, config: { name: 'compile_fail' } }, loop_back: true, loop_max: 3 },
+          // Task 3: 条件边需要 source 字段
+          { target: 'test_check', condition: { type: 'function' as const, config: { name: 'compile_pass', source: 'compile_check' } } },
+          { target: 'bug_fix', condition: { type: 'function' as const, config: { name: 'compile_fail', source: 'compile_check' } }, loop_back: true, loop_max: 3 },
         ],
       };
 

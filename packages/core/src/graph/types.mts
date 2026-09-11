@@ -31,6 +31,7 @@ export interface EdgeCondition {
     regex?: string[]
     case_sensitive?: boolean
     name?: string          // function 类型：注册表函数名（spec §6.2）
+    source?: string        // function 类型：条件读哪个节点的产出（必填，spec §6.2 Task 3）
   }
 }
 

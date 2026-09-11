@@ -22,52 +22,37 @@ describe('default-conditions.mts', () => {
 
     it('code_review_pass 审查通过返回 true', () => {
       const fn = getCondition('code_review_pass')!
-      const state = {
-        node_outputs: {
-          code_review: ['{"ok": true, "approved": true}'],
-        },
-      }
-      expect(fn(state)).toBe(true)
+      // Task 3: 条件函数接收文本而不是 state
+      const text = '{"ok": true, "approved": true}'
+      expect(fn(text)).toBe(true)
     })
 
     it('code_review_pass 审查失败返回 false', () => {
       const fn = getCondition('code_review_pass')!
-      const state = {
-        node_outputs: {
-          code_review: ['{"ok": false, "approved": false}'],
-        },
-      }
-      expect(fn(state)).toBe(false)
+      // Task 3: 条件函数接收文本而不是 state
+      const text = '{"ok": false, "approved": false}'
+      expect(fn(text)).toBe(false)
     })
 
     it('code_review_pass 无法解析返回 false', () => {
       const fn = getCondition('code_review_pass')!
-      const state = {
-        node_outputs: {
-          code_review: ['not json'],
-        },
-      }
-      expect(fn(state)).toBe(false)
+      // Task 3: 条件函数接收文本而不是 state
+      const text = 'not json'
+      expect(fn(text)).toBe(false)
     })
 
     it('code_review_issues 审查失败返回 true', () => {
       const fn = getCondition('code_review_issues')!
-      const state = {
-        node_outputs: {
-          code_review: ['{"ok": false, "approved": false}'],
-        },
-      }
-      expect(fn(state)).toBe(true)
+      // Task 3: 条件函数接收文本而不是 state
+      const text = '{"ok": false, "approved": false}'
+      expect(fn(text)).toBe(true)
     })
 
     it('code_review_issues 无法解析返回 true（fail-fast）', () => {
       const fn = getCondition('code_review_issues')!
-      const state = {
-        node_outputs: {
-          code_review: ['not json'],
-        },
-      }
-      expect(fn(state)).toBe(true)
+      // Task 3: 条件函数接收文本而不是 state
+      const text = 'not json'
+      expect(fn(text)).toBe(true)
     })
   })
 })

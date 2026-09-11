@@ -94,6 +94,7 @@ edges:
       type: function
       config:
         name: compile_pass
+        source: compile_check  # Task 3: 条件函数读取 compile_check 节点的输出
 
   - from: compile_check
     to: bug_fix
@@ -101,6 +102,7 @@ edges:
       type: function
       config:
         name: compile_fail
+        source: compile_check  # Task 3: 条件函数读取 compile_check 节点的输出
     loop_max: 3   # 最多循环修复 3 次
 
   # bug_fix → compile_check（修复后重新编译验证）
@@ -114,6 +116,7 @@ edges:
       type: function
       config:
         name: test_pass
+        source: test_check  # Task 3: 条件函数读取 test_check 节点的输出
 
   - from: test_check
     to: bug_fix
@@ -121,6 +124,7 @@ edges:
       type: function
       config:
         name: test_fail
+        source: test_check  # Task 3: 条件函数读取 test_check 节点的输出
     loop_max: 3   # 最多循环修复 3 次
 
   # quality_review 条件边：pass → security_review, issues → quality_issue_fix
@@ -130,6 +134,7 @@ edges:
       type: function
       config:
         name: quality_pass
+        source: quality_review  # Task 3: 条件函数读取 quality_review 节点的输出
 
   - from: quality_review
     to: quality_issue_fix
@@ -137,6 +142,7 @@ edges:
       type: function
       config:
         name: quality_issues
+        source: quality_review  # Task 3: 条件函数读取 quality_review 节点的输出
     loop_max: 3
 
   # quality_issue_fix → quality_review（修复后重新审查）
@@ -150,6 +156,7 @@ edges:
       type: function
       config:
         name: security_pass
+        source: security_review  # Task 3: 条件函数读取 security_review 节点的输出
 
   - from: security_review
     to: security_issue_fix
@@ -157,6 +164,7 @@ edges:
       type: function
       config:
         name: security_issues
+        source: security_review  # Task 3: 条件函数读取 security_review 节点的输出
     loop_max: 3
 
   # security_issue_fix → security_review（修复后重新审查）

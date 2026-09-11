@@ -118,6 +118,17 @@ export function assertWorkflowValid(parsed: any): asserts parsed is WorkflowDef 
       throw new Error(`边的 to 引用了不存在的节点: ${edge.to}`)
     }
 
+    // Task 3 规则：条件边的 source 必填且必须存在于 nodes
+    if (edge.condition?.type === 'function') {
+      const source = edge.condition.config?.source
+      if (!source) {
+        throw new Error(`条件边 from '${edge.from}' 缺少 source 字段`)
+      }
+      if (!nodeIds.has(source)) {
+        throw new Error(`条件边的 source '${source}' 不存在于 nodes`)
+      }
+    }
+
     // 统计入边和出边
     if (edge.to !== '__end__') {
       incomingEdges.set(edge.to, (incomingEdges.get(edge.to) || 0) + 1)

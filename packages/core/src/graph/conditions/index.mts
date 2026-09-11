@@ -3,7 +3,9 @@
 // 条件函数统一使用 any（与 default-conditions.mts 中 (state: any) 保持一致）
 // import type { TopState, SubState } from '../state-schema.mjs'
 
-export type ConditionFunction = (state: any) => boolean
+// Task 3: 条件函数签名改为 (sourceText: string | null) => boolean
+// 条件函数不再硬编码节点 ID，节点引用由 YAML 的 source 字段注入
+export type ConditionFunction = (sourceText: string | null) => boolean
 
 // 条件函数注册表
 export const conditionRegistry: Map<string, ConditionFunction> = new Map()
