@@ -19,17 +19,13 @@ export interface TaskListItem {
 }
 
 export interface PhaseOutput {
-  id: string
+  id: number
   execution_id: string
   node_id: string
   iteration: number
-  file_changes: any
-  diff_content: string | null
-  pr_url: string | null
-  test_result: any
-  review_result: any
-  compile_result: any
-  created_at: string
+  key: string          // 新增：产出物键名
+  value: string | null // 新增：markdown 文本
+  created_at: string | null
 }
 
 export interface SessionRef {
@@ -39,6 +35,8 @@ export interface SessionRef {
   role: string
   omnigent_session_id: string
   omnigent_status: string
+  started_at: string | null      // 新增：阶段开始时间
+  completed_at: string | null    // 新增：阶段完成时间
 }
 
 export interface TaskDetail {

@@ -1,18 +1,15 @@
 <script setup lang="ts">
-// core/web/src/views/TaskDetail.vue —— 任务详情页（V3 重构）
-// 设计简报：https://claude.ai/skills/impeccable/shape-brief-taskdetail.md
+// core/web/src/views/TaskDetail.vue —— 任务详情页（V4 重构）
+// 设计简报：任务详情页重设计 Plan
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, type TaskDetail, type SessionRef, type PhaseOutput } from '../api/tasks'
-import hljs from 'highlight.js/lib/core'
-import diff from 'highlight.js/lib/languages/diff'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import LiveEventStream from '../components/execution/LiveEventStream.vue'
 import ChatDrawer from '../components/drawers/ChatDrawer.vue'
 import LogDrawer from '../components/drawers/LogDrawer.vue'
-
-// 注册 diff 语言
-hljs.registerLanguage('diff', diff)
 
 const route = useRoute()
 const router = useRouter()
@@ -22,8 +19,6 @@ const loading = ref(true)
 const workflow = ref<any>(null)
 
 // 折叠状态
-const phaseOutputsExpanded = ref(false)
-const breakdownExpanded = ref(false)
 const rightDrawerVisible = ref(false)
 const rightDrawerTab = ref<'log' | 'chat'>('log')
 
@@ -40,6 +35,17 @@ function statusText(status: string): string {
     rate_limited: '限流中',
   }
   return map[status] || status
+}
+
+// Markdown 渲染（Task 6c）
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    const rawHtml = marked(text) as string
+    return DOMPurify.sanitize(rawHtml)
+  } catch {
+    return text
+  }
 }
 
 // 解析 breakdown_content
@@ -137,53 +143,59 @@ function formatDuration(start: string | null, end: string | null): string {
 // 和新版工作流（develop/compile_check/test_check/quality_review/security_review/final_review）
 const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review']
 
-// 计算阶段状态
+// 计算阶段状态（Task 6b: 只显示已执行阶段，带耗时）
 interface PhaseStatus {
   id: string
   label: string
   status: 'done' | 'running' | 'pending' | 'failed' | 'skipped'
   iteration: number
+  duration: string | null
 }
 
 const phaseStatuses = computed<PhaseStatus[]>(() => {
   const d = detail.value
-  if (!d) return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending' as const, iteration: 0 }))
+  if (!d) return []
 
   // 从工作流定义获取阶段列表
   const workflowNodes = workflow.value?.definition_json?.nodes || []
-  if (!workflow.value || workflowNodes.length === 0) {
-    // 回退到硬编码（兼容旧数据）
-    return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending' as const, iteration: 0 }))
-  }
 
-  // 构建状态映射（从 session_refs，因为 phase_outputs 为空）
-  const statusMap = new Map<string, { status: string; iteration: number }>()
+  // 构建状态映射（从 session_refs，使用新的 started_at/completed_at 字段）
+  const statusMap = new Map<string, { status: string; iteration: number; started_at: string | null; completed_at: string | null }>()
 
-  // 从 session_refs 获取状态（omnigent_status: completed/failed/running 等）
+  // 从 session_refs 获取状态
   for (const sr of d.session_refs) {
     const existing = statusMap.get(sr.node_id)
     if (!existing || sr.iteration > existing.iteration) {
       statusMap.set(sr.node_id, {
         status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
-        iteration: sr.iteration || 0
+        iteration: sr.iteration || 0,
+        started_at: sr.started_at,
+        completed_at: sr.completed_at,
       })
     }
   }
 
-  // 当前节点
-  const currentNode = d.current_node_id
+  // 按照 workflow 定义的顺序排序
+  const order = workflowNodes.length > 0
+    ? workflowNodes.map((n: any) => n.id)
+    : phaseOrder
 
-  // 从工作流节点生成阶段列表
-  return workflowNodes.map((n: any) => {
-    const phaseInfo = statusMap.get(n.id)
-    return {
-      id: n.id,
-      label: n.name || n.id,  // 使用 name，无则回退 id
-      status: phaseInfo?.status
-        || (n.id === currentNode ? 'running' : 'pending'),
-      iteration: phaseInfo?.iteration || 0,
-    }
-  })
+  // 只保留有记录的阶段（不展示未执行的阶段）
+  return order
+    .filter((id: string) => statusMap.has(id))
+    .map((id: string) => {
+      const info = statusMap.get(id)!
+      const duration = info.started_at && info.completed_at
+        ? formatDuration(info.started_at, info.completed_at)
+        : null
+      return {
+        id,
+        label: phaseLabel(id),
+        status: info.status as PhaseStatus['status'],
+        iteration: info.iteration,
+        duration,
+      }
+    })
 })
 
 function phaseLabel(id: string): string {
@@ -314,29 +326,6 @@ function parseJson(v: any): any {
   }
   return v
 }
-
-// Diff 语法高亮
-function highlightDiff(code: string): string {
-  try {
-    return hljs.highlight(code, { language: 'diff' }).value
-  } catch {
-    return code
-  }
-}
-
-// 文件变更类型
-type FileChange = { action: string; path: string }
-
-function parseFileChanges(fc: any): FileChange[] {
-  if (!fc) return []
-  if (Array.isArray(fc)) {
-    return fc.map(f => ({
-      action: f.action || f.type || 'modified',
-      path: f.path || f.file || String(f),
-    }))
-  }
-  return []
-}
 </script>
 
 <template>
@@ -348,209 +337,62 @@ function parseFileChanges(fc: any): FileChange[] {
       <span class="breadcrumb-current">{{ title }}</span>
     </nav>
 
-    <div class="main-content" v-if="detail">
-      <!-- 顶部双卡并列 -->
-      <div class="top-cards">
-        <!-- 状态概览卡片 -->
-        <section class="card status-card">
-          <div class="status-header">
-            <div class="status-badge" :class="effectiveStatus">
-              <span class="status-icon"></span>
-              <span class="status-label">{{ statusText(effectiveStatus) }}</span>
-            </div>
-            <span class="task-id">{{ detail.id.slice(-8) }}</span>
-          </div>
-
-          <h1 class="task-title">{{ title }}</h1>
-          <p v-if="taskDescription" class="task-description">{{ taskDescription }}</p>
-          <span v-if="taskType" class="task-type-tag">{{ taskType }}</span>
-
-          <!-- 限流信息 -->
-          <div v-if="effectiveStatus === 'rate_limited'" class="rate-limit-banner">
-            <span>限流次数: {{ detail.rate_limited_count ?? 0 }}</span>
-            <span v-if="detail.rate_limited_until"> · 退避至 {{ formatTime(detail.rate_limited_until) }}</span>
-          </div>
-
-          <!-- 元信息 -->
-          <div class="meta-grid">
-            <div class="meta-item">
-              <span class="meta-label">开始</span>
-              <span class="meta-value">{{ formatTime(detail.started_at) }}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">用时</span>
-              <span class="meta-value">{{ formatDuration(detail.started_at, detail.finished_at) }}</span>
-            </div>
-            <div class="meta-item" v-if="detail.current_node_id">
-              <span class="meta-label">当前</span>
-              <span class="meta-value mono">{{ detail.current_node_id }}</span>
-            </div>
-          </div>
-
-          <!-- Token 聚合 -->
-          <div class="token-stats" v-if="detail.token_in || detail.token_out || detail.cost">
-            <div class="token-item" v-if="detail.token_in">
-              <span class="token-label">Token 入</span>
-              <span class="token-value">{{ detail.token_in.toLocaleString() }}</span>
-            </div>
-            <div class="token-item" v-if="detail.token_out">
-              <span class="token-label">Token 出</span>
-              <span class="token-value">{{ detail.token_out.toLocaleString() }}</span>
-            </div>
-            <div class="token-item" v-if="detail.cost">
-              <span class="token-label">成本</span>
-              <span class="token-value">${{ Number(detail.cost).toFixed(4) }}</span>
-            </div>
-          </div>
-
-          <!-- 操作按钮 -->
-          <div class="action-bar">
-            <button class="btn btn-primary" @click="goToCanvas">查看画布</button>
-            <button class="btn btn-secondary" @click="openRightDrawer('chat')" :disabled="!mainSessionRef">对话</button>
-            <button class="btn btn-secondary" @click="openRightDrawer('log')">日志</button>
-            <template v-if="effectiveStatus === 'running'">
-              <button class="btn btn-warning" @click="pauseTask">暂停</button>
-              <button class="btn btn-danger" @click="cancelTask">取消</button>
-            </template>
-            <button v-if="effectiveStatus === 'paused'" class="btn btn-primary" @click="resumeTask">继续</button>
-            <button v-if="effectiveStatus === 'failed'" class="btn btn-primary" @click="retryTask">重试</button>
-          </div>
-
-          <!-- Review Gate -->
-          <div v-if="detail.parent_current_node_id?.startsWith('review_gate_')" class="review-gate-section">
-            <div class="review-gate-header">
-              <span class="review-gate-title">审查决策</span>
-              <span class="review-gate-hint">顶层执行停在 {{ detail.parent_current_node_id }}</span>
-            </div>
-            <div class="review-gate-body">
-              <div class="radio-group">
-                <label class="radio-item" :class="{ checked: gateDecision === 'approve' }">
-                  <input type="radio" value="approve" v-model="gateDecision" />
-                  <span class="radio-label">批准</span>
-                </label>
-                <label class="radio-item" :class="{ checked: gateDecision === 'reject' }">
-                  <input type="radio" value="reject" v-model="gateDecision" />
-                  <span class="radio-label">驳回</span>
-                </label>
-              </div>
-              <textarea
-                v-model="gateComments"
-                class="review-input"
-                placeholder="审查意见（可选）"
-                rows="2"
-              ></textarea>
-              <button class="btn btn-primary btn-block" :disabled="gateSubmitting" @click="submitGate">
-                {{ gateSubmitting ? '提交中...' : '提交决策' }}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- 执行进度卡片 -->
-        <section class="card progress-card">
-          <h2 class="card-title">执行进度</h2>
-          <div class="phase-flow">
-            <div
-              v-for="phase in phaseStatuses"
-              :key="phase.id"
-              class="phase-chip"
-              :class="phase.status"
-            >
-              <span class="phase-icon">
-                <template v-if="phase.status === 'done'">✓</template>
-                <template v-else-if="phase.status === 'failed'">✗</template>
-                <template v-else-if="phase.status === 'running'">●</template>
-                <template v-else>○</template>
-              </span>
-              <span class="phase-label">{{ phase.label }}</span>
-              <span v-if="phase.iteration > 0" class="phase-iter">#{{ phase.iteration }}</span>
-            </div>
-          </div>
-          <div class="progress-summary">
-            <span>{{ phaseStatuses.filter(p => p.status === 'done').length }} / {{ phaseStatuses.length }} 阶段完成</span>
-          </div>
-        </section>
-      </div>
-
-      <!-- Phase 产出物（折叠） -->
-      <section class="card collapsible-card" :class="{ expanded: phaseOutputsExpanded }">
-        <header class="collapsible-header" @click="phaseOutputsExpanded = !phaseOutputsExpanded">
-          <h2 class="card-title">Phase 产出物</h2>
-          <span class="collapsible-meta" v-if="detail.phase_outputs.length">
-            {{ detail.phase_outputs.length }} 条记录
-          </span>
-          <span class="collapsible-toggle">{{ phaseOutputsExpanded ? '收起' : '展开' }}</span>
-        </header>
-        <div class="collapsible-body" v-if="phaseOutputsExpanded">
-          <div v-if="!detail.phase_outputs.length" class="empty-state">
-            任务执行中，暂无产出物
-          </div>
-          <div v-else class="phase-outputs">
-            <article
-              v-for="po in detail.phase_outputs"
-              :key="po.id"
-              class="phase-output-item"
-            >
-              <header class="po-header">
-                <span class="po-node">{{ po.node_id }}</span>
-                <span class="po-iteration">iter #{{ po.iteration }}</span>
-                <span class="po-time">{{ formatTime(po.created_at) }}</span>
-              </header>
-
-              <!-- 文件变更 -->
-              <div v-if="parseFileChanges(parseJson(po.file_changes)).length" class="po-section">
-                <h4 class="po-section-title">文件变更</h4>
-                <ul class="file-list">
-                  <li
-                    v-for="(fc, i) in parseFileChanges(parseJson(po.file_changes))"
-                    :key="i"
-                    class="file-item"
-                    :class="fc.action"
-                  >
-                    <span class="file-action">{{ fc.action === 'new' || fc.action === 'added' ? '+' : fc.action === 'deleted' ? '-' : 'M' }}</span>
-                    <span class="file-path">{{ fc.path }}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <!-- Diff -->
-              <div v-if="po.diff_content" class="po-section">
-                <h4 class="po-section-title">Diff</h4>
-                <pre class="diff-block" v-html="highlightDiff(po.diff_content)"></pre>
-              </div>
-
-              <!-- PR -->
-              <div v-if="po.pr_url" class="po-section">
-                <h4 class="po-section-title">PR</h4>
-                <a :href="po.pr_url" target="_blank" class="pr-link">{{ po.pr_url }}</a>
-              </div>
-
-              <!-- 测试结果 -->
-              <div v-if="parseJson(po.test_result)" class="po-section">
-                <h4 class="po-section-title">测试结果</h4>
-                <pre class="json-block">{{ JSON.stringify(parseJson(po.test_result), null, 2) }}</pre>
-              </div>
-
-              <!-- 审查结果 -->
-              <div v-if="parseJson(po.review_result)" class="po-section">
-                <h4 class="po-section-title">审查结果</h4>
-                <pre class="json-block">{{ JSON.stringify(parseJson(po.review_result), null, 2) }}</pre>
-              </div>
-            </article>
-          </div>
+    <!-- Zone A: 标题条 -->
+    <section class="title-bar" v-if="detail">
+      <div class="title-bar-main">
+        <div class="status-badge" :class="effectiveStatus">
+          <span class="status-icon"></span>
+          <span class="status-label">{{ statusText(effectiveStatus) }}</span>
         </div>
-      </section>
+        <h1 class="task-title">{{ title }}</h1>
+        <div class="task-meta">
+          <span>开始 {{ formatTime(detail.started_at) }}</span>
+          <span class="meta-sep">·</span>
+          <span>用时 {{ formatDuration(detail.started_at, detail.finished_at) }}</span>
+          <span class="meta-sep">·</span>
+          <span class="mono">{{ detail.id.slice(-8) }}</span>
+        </div>
+      </div>
+      <div class="title-bar-actions">
+        <button class="btn btn-secondary" @click="goToCanvas">查看画布</button>
+        <button class="btn btn-secondary" @click="openRightDrawer('chat')" :disabled="!mainSessionRef">对话</button>
+        <button class="btn btn-secondary" @click="openRightDrawer('log')">日志</button>
+        <button v-if="effectiveStatus === 'failed'" class="btn btn-primary" @click="retryTask">重试</button>
+        <button v-if="effectiveStatus === 'running'" class="btn btn-warning" @click="pauseTask">暂停</button>
+        <button v-if="effectiveStatus === 'paused'" class="btn btn-primary" @click="resumeTask">继续</button>
+      </div>
+    </section>
 
-      <!-- 拆分内容（折叠） -->
-      <section class="card collapsible-card" :class="{ expanded: breakdownExpanded }">
-        <header class="collapsible-header" @click="breakdownExpanded = !breakdownExpanded">
-          <h2 class="card-title">拆分内容</h2>
-          <span class="collapsible-toggle">{{ breakdownExpanded ? '收起' : '展开' }}</span>
-        </header>
-        <div class="collapsible-body" v-if="breakdownExpanded">
-          <div v-if="!parsedBreakdown" class="empty-state">
-            暂无结构化拆分信息
+    <!-- Zone B: 流程条 -->
+    <section class="phase-flow-card" v-if="detail && phaseStatuses.length">
+      <div class="phase-flow">
+        <template v-for="(phase, idx) in phaseStatuses" :key="phase.id">
+          <div class="phase-node">
+            <div class="phase-dot" :class="phase.status">
+              <template v-if="phase.status === 'done'">✓</template>
+              <template v-else-if="phase.status === 'failed'">✗</template>
+              <template v-else-if="phase.status === 'running'">●</template>
+            </div>
+            <div class="phase-label">{{ phase.label }}</div>
+            <div v-if="phase.duration" class="phase-duration">{{ phase.duration }}</div>
           </div>
+          <div
+            v-if="idx < phaseStatuses.length - 1"
+            class="phase-connector"
+            :class="{ done: phase.status === 'done' }"
+          ></div>
+        </template>
+      </div>
+    </section>
+
+    <!-- Zone C: 主内容区 -->
+    <div class="main-content-grid" v-if="detail && !loading">
+      <!-- 左列 -->
+      <div class="main-col">
+        <!-- 任务要求卡 -->
+        <section class="content-card">
+          <h2 class="card-title">任务要求</h2>
+          <div v-if="!parsedBreakdown" class="empty-state">此任务未提供详细要求</div>
           <div v-else class="breakdown-content">
             <template v-if="parsedBreakdown.kind === 'json'">
               <div v-for="(v, k) in otherBreakdownFields" :key="k" class="breakdown-field">
@@ -558,14 +400,64 @@ function parseFileChanges(fc: any): FileChange[] {
                 <pre v-if="typeof v === 'object' && v !== null" class="breakdown-field-value">{{ formatFieldValue(v) }}</pre>
                 <p v-else class="breakdown-field-text">{{ formatFieldValue(v) }}</p>
               </div>
-              <p v-if="!Object.keys(otherBreakdownFields).length" class="empty-state">
-                无其他拆分字段
-              </p>
+              <p v-if="!Object.keys(otherBreakdownFields).length" class="empty-state">无其他拆分字段</p>
             </template>
             <pre v-else class="breakdown-raw">{{ parsedBreakdown.text }}</pre>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- 阶段结果卡 -->
+        <section v-if="detail.phase_outputs.length" class="content-card">
+          <h2 class="card-title">阶段结果</h2>
+          <div v-for="po in detail.phase_outputs" :key="po.id" class="phase-result">
+            <div class="phase-result-header">
+              <span class="phase-result-title">{{ phaseLabel(po.node_id) }}</span>
+              <span class="phase-result-time">{{ formatTime(po.created_at) }}</span>
+            </div>
+            <div class="phase-result-body" v-html="renderMarkdown(po.value || '')"></div>
+          </div>
+        </section>
+        <section v-else class="content-card">
+          <h2 class="card-title">阶段结果</h2>
+          <div class="empty-state">此任务无阶段产出记录</div>
+        </section>
+      </div>
+
+      <!-- 右列 -->
+      <div class="side-col">
+        <!-- 元信息卡 -->
+        <section class="content-card">
+          <h2 class="card-title">元信息</h2>
+          <div class="meta-list">
+            <div class="meta-row">
+              <span class="meta-label">执行 ID</span>
+              <span class="meta-value mono">{{ detail.id }}</span>
+            </div>
+            <div v-if="detail.requirement_id" class="meta-row">
+              <span class="meta-label">需求 ID</span>
+              <span class="meta-value mono">{{ detail.requirement_id.slice(0, 8) }}...</span>
+            </div>
+            <div v-if="detail.rate_limited_count" class="meta-row">
+              <span class="meta-label">限流次数</span>
+              <span class="meta-value">{{ detail.rate_limited_count }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 产出物索引卡 -->
+        <section v-if="detail.phase_outputs.length" class="content-card">
+          <h2 class="card-title">产出物索引</h2>
+          <div class="output-index">
+            <div v-for="po in detail.phase_outputs" :key="po.id" class="output-index-item">
+              <span class="output-index-label">{{ phaseLabel(po.node_id) }}</span>
+              <span class="output-index-time">{{ formatTime(po.created_at) }}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div v-else-if="loading" class="loading-state">
+      <el-skeleton :rows="5" animated />
     </div>
 
     <!-- 右侧抽屉（日志 + 对话） -->
@@ -636,51 +528,27 @@ function parseFileChanges(fc: any): FileChange[] {
 .breadcrumb-current {
   color: var(--text);
   font-weight: 500;
-  max-width: 200px;
+  max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ========== 顶部双卡并列 ========== */
-.top-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-@media (max-width: 900px) {
-  .top-cards { grid-template-columns: 1fr; }
-}
-
-/* ========== 卡片基础 ========== */
-.card {
+/* ========== Zone A: 标题条 ========== */
+.title-bar {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0;
-}
-
-/* ========== 状态卡片 ========== */
-.status-card {
   padding: 20px;
+  margin-bottom: 16px;
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
 }
 
-.status-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.title-bar-main {
+  flex: 1;
 }
 
 .status-badge {
@@ -729,364 +597,145 @@ function parseFileChanges(fc: any): FileChange[] {
   color: var(--muted);
 }
 
-.task-id {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--faint);
-}
-
 .task-title {
   font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0;
-  line-height: 1.3;
-}
-
-.task-description {
-  font-size: 14px;
-  color: var(--muted);
-  margin: 0;
-  line-height: 1.6;
-}
-
-.task-type-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.rate-limit-banner {
-  padding: 10px 12px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--st-paused);
-}
-
-/* ========== 元信息网格 ========== */
-.meta-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.meta-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.meta-label {
-  font-size: 11px;
-  color: var(--faint);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.meta-value {
-  font-size: 14px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.meta-value.mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-/* ========== Token 统计 ========== */
-.token-stats {
-  display: flex;
-  gap: 20px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.token-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.token-label {
-  font-size: 10px;
-  color: var(--faint);
-  text-transform: uppercase;
-}
-
-.token-value {
-  font-size: 13px;
-  color: var(--text);
-  font-family: var(--font-mono);
-}
-
-/* ========== 操作按钮 ========== */
-.action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.btn {
-  font-family: var(--font-ui);
-  font-weight: 500;
-  font-size: 13px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.16s, border-color 0.16s, color 0.16s;
-}
-
-.btn:hover:not(:disabled) {
-  border-color: var(--accent-dim);
-  background: var(--surface-2);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #001016;
-}
-.btn-primary:hover:not(:disabled) {
-  background: #06B6D4;
-  border-color: #06B6D4;
-}
-
-.btn-secondary {
-  background: transparent;
-}
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btn-warning {
-  border-color: var(--st-paused);
-  color: var(--st-paused);
-}
-.btn-warning:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.btn-danger {
-  border-color: var(--st-failed);
-  color: var(--st-failed);
-}
-.btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.btn-block {
-  width: 100%;
-}
-
-/* ========== Review Gate ========== */
-.review-gate-section {
-  margin-top: 12px;
-  padding: 16px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: 8px;
-}
-
-.review-gate-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.review-gate-title {
-  font-size: 14px;
   font-weight: 600;
-  color: var(--st-paused);
+  margin: 8px 0;
+  color: var(--text);
 }
 
-.review-gate-hint {
-  font-size: 12px;
+.task-meta {
+  font-size: 13px;
   color: var(--muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
-.review-gate-body {
+.meta-sep {
+  color: var(--faint);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.title-bar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* ========== Zone B: 流程条 ========== */
+.phase-flow-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.phase-flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.phase-node {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.radio-group {
-  display: flex;
-  gap: 12px;
-}
-
-.radio-item {
-  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: border-color 0.16s, background 0.16s;
+  min-width: 80px;
 }
 
-.radio-item:hover {
-  border-color: var(--accent-dim);
-}
-
-.radio-item.checked {
-  border-color: var(--accent);
-  background: rgba(34, 211, 238, 0.08);
-}
-
-.radio-item input { display: none; }
-.radio-label { font-size: 13px; color: var(--text); }
-
-.review-input {
-  width: 100%;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-family: inherit;
+.phase-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
-  resize: vertical;
+  font-weight: 600;
 }
 
-.review-input:focus {
-  outline: none;
-  border-color: var(--accent-dim);
+.phase-dot.done {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--st-done);
+  border: 1px solid var(--st-done);
 }
 
-/* ========== 进度卡片 ========== */
-.progress-card {
-  padding: 20px;
+.phase-dot.failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--st-failed);
+  border: 1px solid var(--st-failed);
+}
+
+.phase-dot.running {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--st-running);
+  border: 1px solid var(--st-running);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.phase-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.phase-duration {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.phase-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 8px;
+  margin-bottom: 30px;
+}
+
+.phase-connector.done {
+  background: var(--st-done);
+}
+
+/* ========== Zone C: 主内容区 ========== */
+.main-content-grid {
+  display: grid;
+  grid-template-columns: 65% 35%;
+  gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .main-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.main-col, .side-col {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.phase-flow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.phase-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--surface);
+/* ========== 内容卡片 ========== */
+.content-card {
+  background: var(--panel);
   border: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--muted);
-  transition: border-color 0.2s, background 0.2s, color 0.2s;
+  border-radius: var(--radius);
+  padding: 16px;
 }
 
-.phase-chip.done {
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.3);
-  color: var(--st-done);
-}
-
-.phase-chip.running {
-  background: rgba(34, 211, 238, 0.08);
-  border-color: var(--st-running);
-  color: var(--st-running);
-}
-
-.phase-chip.running .phase-icon {
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.phase-chip.failed {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--st-failed);
-}
-
-.phase-chip.skipped {
-  opacity: 0.5;
-}
-
-.phase-icon {
-  font-size: 12px;
-  width: 16px;
-  text-align: center;
-}
-
-.phase-iter {
-  font-size: 10px;
-  color: var(--faint);
-  font-family: var(--font-mono);
-}
-
-.progress-summary {
-  font-size: 12px;
-  color: var(--muted);
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* ========== 折叠卡片 ========== */
-.collapsible-card {
-  margin-bottom: 12px;
-}
-
-.collapsible-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  cursor: pointer;
-  transition: background 0.16s;
-}
-
-.collapsible-header:hover {
-  background: var(--surface);
-}
-
-.collapsible-meta {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.collapsible-toggle {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--accent);
-}
-
-.collapsible-body {
-  padding: 0 20px 20px;
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 12px;
 }
 
 .empty-state {
@@ -1096,122 +745,7 @@ function parseFileChanges(fc: any): FileChange[] {
   font-size: 13px;
 }
 
-/* ========== Phase 产出物 ========== */
-.phase-outputs {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.phase-output-item {
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.po-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.po-node {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.po-iteration {
-  font-size: 11px;
-  color: var(--faint);
-  font-family: var(--font-mono);
-}
-
-.po-time {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--faint);
-}
-
-.po-section {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.po-section:first-of-type {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-.po-section-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.file-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  font-size: 13px;
-}
-
-.file-action {
-  width: 20px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.file-item.added .file-action { color: var(--st-done); }
-.file-item.new .file-action { color: var(--st-done); }
-.file-item.deleted .file-action { color: var(--st-failed); }
-.file-item.modified .file-action { color: var(--st-paused); }
-
-.file-path {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text);
-}
-
-.diff-block, .json-block {
-  margin: 0;
-  padding: 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text);
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 300px;
-}
-
-.pr-link {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 13px;
-  word-break: break-all;
-}
-.pr-link:hover { text-decoration: underline; }
-
-/* ========== 拆分内容 ========== */
+/* ========== 任务要求 ========== */
 .breakdown-content {
   display: flex;
   flex-direction: column;
@@ -1261,6 +795,175 @@ function parseFileChanges(fc: any): FileChange[] {
   word-break: break-word;
 }
 
+/* ========== 阶段结果 ========== */
+.phase-result {
+  background: var(--surface);
+  border-left: 3px solid var(--ai);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.phase-result:last-child {
+  margin-bottom: 0;
+}
+
+.phase-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.phase-result-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ai);
+}
+
+.phase-result-time {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.phase-result-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.phase-result-body :deep(h1),
+.phase-result-body :deep(h2),
+.phase-result-body :deep(h3) {
+  margin: 12px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.phase-result-body :deep(ul),
+.phase-result-body :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.phase-result-body :deep(code) {
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.phase-result-body :deep(pre) {
+  background: var(--surface-2);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+/* ========== 元信息 ========== */
+.meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.meta-label {
+  color: var(--muted);
+}
+
+.meta-value {
+  color: var(--text);
+  text-align: right;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ========== 产出物索引 ========== */
+.output-index {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.output-index-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.output-index-label {
+  color: var(--text);
+}
+
+.output-index-time {
+  color: var(--faint);
+  font-family: var(--font-mono);
+}
+
+/* ========== 按钮样式 ========== */
+.btn {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  background: var(--surface-2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #001016;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #06B6D4;
+  border-color: #06B6D4;
+}
+
+.btn-secondary {
+  background: transparent;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-warning {
+  border-color: var(--st-paused);
+  color: var(--st-paused);
+}
+.btn-warning:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.1);
+}
+
 /* ========== 右侧抽屉 ========== */
 .right-drawer :deep(.el-drawer__header) {
   padding: 12px 16px;
@@ -1308,5 +1011,15 @@ function parseFileChanges(fc: any): FileChange[] {
   font-size: 12px;
   color: var(--faint);
   margin-top: 8px;
+}
+
+/* ========== 加载状态 ========== */
+.loading-state {
+  padding: 40px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 </style>
