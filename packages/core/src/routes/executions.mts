@@ -47,17 +47,22 @@ async function toExecutionListItem(e: any): Promise<any> {
     }
   } catch { /* ignore */ }
 
-  // 聚合 phase_nodes：{ phaseId: status }
+  // 聚合 phase_nodes：{ phaseId: status }，按 attempt 降序只保留最新状态
   let phaseNodes: Record<string, string> = {};
   try {
     const phases = await db.phase_instances.findMany({
       where: { execution_id: e.execution_id },
+      orderBy: { attempt: 'desc' },
       select: { phase_id: true, status: true },
     });
-    phaseNodes = phases.reduce((acc: Record<string, string>, p: any) => {
-      acc[p.phase_id] = p.status;
-      return acc;
-    }, {});
+    // 按 attempt 降序遍历，每个 phase_id 只取第一次（最新）出现的状态
+    const seen = new Set<string>();
+    for (const p of phases) {
+      if (!seen.has(p.phase_id)) {
+        phaseNodes[p.phase_id] = p.status;
+        seen.add(p.phase_id);
+      }
+    }
   } catch { /* ignore */ }
 
   return {

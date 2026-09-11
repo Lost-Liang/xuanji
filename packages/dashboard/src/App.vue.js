@@ -101,9 +101,6 @@ let __VLS_components;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['brand']} */ ;
 /** @type {__VLS_StyleScopedClasses['brand']} */ ;
-/** @type {__VLS_StyleScopedClasses['mark']} */ ;
-/** @type {__VLS_StyleScopedClasses['brand']} */ ;
-/** @type {__VLS_StyleScopedClasses['brand']} */ ;
 /** @type {__VLS_StyleScopedClasses['nav-item']} */ ;
 /** @type {__VLS_StyleScopedClasses['nav-item']} */ ;
 /** @type {__VLS_StyleScopedClasses['nav-item']} */ ;
@@ -130,14 +127,13 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.aside, __VLS_intrinsicElements
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "brand" },
 });
-__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: "mark" },
+__VLS_asFunctionalElement(__VLS_intrinsicElements.img, __VLS_intrinsicElements.img)({
+    src: "/favicon.svg",
+    ...{ class: "logo-icon" },
+    alt: "璇玑",
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "name" },
-});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-    ...{ class: "dot-sep" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.nav, __VLS_intrinsicElements.nav)({
     ...{ class: "nav" },
@@ -340,9 +336,8 @@ var __VLS_42;
 /** @type {__VLS_StyleScopedClasses['app']} */ ;
 /** @type {__VLS_StyleScopedClasses['side']} */ ;
 /** @type {__VLS_StyleScopedClasses['brand']} */ ;
-/** @type {__VLS_StyleScopedClasses['mark']} */ ;
+/** @type {__VLS_StyleScopedClasses['logo-icon']} */ ;
 /** @type {__VLS_StyleScopedClasses['name']} */ ;
-/** @type {__VLS_StyleScopedClasses['dot-sep']} */ ;
 /** @type {__VLS_StyleScopedClasses['nav']} */ ;
 /** @type {__VLS_StyleScopedClasses['nav-item']} */ ;
 /** @type {__VLS_StyleScopedClasses['label']} */ ;

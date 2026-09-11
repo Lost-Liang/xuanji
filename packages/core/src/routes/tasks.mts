@@ -244,11 +244,24 @@ tasksRouter.post('/:id/execute', async (req, res) => {
       return;
     }
 
-    // 其他状态（completed/failed/cancelled）不允许重新执行
-    res.status(400).json({
-      error: '当前状态不允许执行',
-      current_status: execution.status,
-      hint: '只有 draft/pending 状态的任务可以触发执行',
+    // failed/completed/cancelled → 重置为 pending，允许重新执行
+    // 同时清空旧的 phase_instances，避免画布显示旧的失败状态
+    await db.phase_instances.deleteMany({
+      where: { execution_id },
+    });
+    await db.task_executions.update({
+      where: { execution_id },
+      data: {
+        status: 'pending',
+        error_message: null,
+        completed_at: null,
+        stage: 'planning',
+      },
+    });
+    res.json({
+      ok: true,
+      message: '任务已重置并加入调度队列',
+      status: 'pending',
     });
   } catch (err) {
     res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });

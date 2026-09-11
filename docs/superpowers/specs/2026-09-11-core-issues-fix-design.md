@@ -101,7 +101,7 @@ Agent 的 Prompt 定义在 `agent-node.mts` 的 `buildSystemPrompt` 函数中。
 
 在 `agent-node.mts` 中解析 Agent 输出的最终回答末尾的 JSON 代码块，分别存储：
 - `phase_outputs.value`：Agent 的完整输出（含分析和思考过程）
-- `phase_outputs.result_payload`：解析出的 JSON 对象（结构化数据）
+- `phase_instances.result_payload`（JSONB 字段）：解析出的 JSON 对象（结构化数据）
 
 ### 1.4 错误处理
 

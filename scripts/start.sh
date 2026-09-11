@@ -79,8 +79,8 @@ init_database() {
 
 # 启动 Core API
 start_core() {
-    print_info "启动 Core API (端口 3000)..."
-    pnpm --filter @xuanji/core start > "$LOG_DIR/core.log" 2>&1 &
+    print_info "启动 Core API (端口 3000, tsx watch 热重载)..."
+    pnpm --filter @xuanji/core dev > "$LOG_DIR/core.log" 2>&1 &
     CORE_PID=$!
     echo $CORE_PID > "$LOG_DIR/core.pid"
     sleep 2
