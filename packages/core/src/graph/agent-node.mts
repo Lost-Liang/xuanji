@@ -587,6 +587,7 @@ export function makeAgentNode(opts: {
 
     // ── 保存阶段产出物 ───────────────────────────────────────────────────────
     if (phaseInstance) {
+      // 保存完整输出到 phase_outputs
       await db.phase_outputs.create({
         data: {
           phase_instance_id: phaseInstance.id,
@@ -595,12 +596,37 @@ export function makeAgentNode(opts: {
         },
       });
 
+      // 尝试从输出中提取 JSON 并存储到 result_payload
+      let resultPayload: any = null
+      if (output) {
+        // 尝试从 ```json 代码块提取
+        const jsonMatch = output.match(/```json\s*(\{[\s\S]*?\})\s*```/)
+        if (jsonMatch) {
+          try {
+            resultPayload = JSON.parse(jsonMatch[1])
+          } catch {
+            console.warn(`[agent-node] 无法解析 ${opts.nodeId} 的 JSON 代码块`)
+          }
+        } else {
+          // 回退：尝试直接解析
+          try {
+            const parsed = JSON.parse(output)
+            if (typeof parsed === 'object' && parsed !== null) {
+              resultPayload = parsed
+            }
+          } catch {
+            console.warn(`[agent-node] ${opts.nodeId} 输出无法解析为 JSON`)
+          }
+        }
+      }
+
       // 标记 phase instance 完成
       await db.phase_instances.update({
         where: { id: phaseInstance.id },
         data: {
           status: 'completed',
           result_content: output,
+          result_payload: resultPayload,  // 存储解析出的 JSON
           session_id: currentSessionId,
           completed_at: new Date(),
         },
