@@ -107,9 +107,11 @@ describe('builder.mts 核心函数', () => {
       expect(routeFromSource(failState, meta)).toBe('bug_fix');
 
       // 编译失败但循环次数达到上限 → __end__（无默认边）
+      // loop_max 未设置，使用 DEFAULT_MAX=3
+      // visits <= 3 回环，visits > 3 耗尽
       const exhaustedState = {
         node_outputs: { compile_check: [JSON.stringify({ ok: false })] },
-        loop_counters: { compile_check: 3 },
+        loop_counters: { compile_check: 4 },
       };
       expect(routeFromSource(exhaustedState, meta)).toBe('__end__');
     });
