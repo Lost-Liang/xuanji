@@ -58,6 +58,18 @@ export const testFail: ConditionFunction = (state: any) => {
   return result === null || result.ok === false
 }
 
+// ─── 代码审查类：code_review 节点的输出 ─────────────────────────────────
+export const codeReviewPass: ConditionFunction = (state: any) => {
+  const result = parseNodeOutput(state, 'code_review')
+  return result?.ok === true
+}
+
+export const codeReviewIssues: ConditionFunction = (state: any) => {
+  const result = parseNodeOutput(state, 'code_review')
+  // 防御性处理：没有输出或 ok=false 都视为有问题
+  return result === null || result.ok === false
+}
+
 // ─── 审查类：reviewer agent 输出形如 { issues: false } 或 { issues: [...] } ───
 const nodeIssues = (state: any, nodeId: string) => {
   try {
@@ -88,4 +100,7 @@ export function initDefaultConditions(): void {
   registerCondition('quality_issues', qualityIssues)
   registerCondition('security_pass', securityPass)
   registerCondition('security_issues', securityIssues)
+  // 新增 code_review 条件函数
+  registerCondition('code_review_pass', codeReviewPass)
+  registerCondition('code_review_issues', codeReviewIssues)
 }
