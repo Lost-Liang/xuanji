@@ -125,6 +125,29 @@ export interface GraphDef {
 // YAML 作者模型（与运行时 source/target 分开，spec §1.4/§3）
 
 // 作者节点：自带 agent_binding_id 注入、config 合并、selector 等。运行时聚合在映射阶段完成
+// 准出契约（Task 4）
+export interface ExitContract {
+  schema?: Record<string, 'string' | 'number' | 'boolean' | 'string[]'>;
+  requires?: RequireAssertion[];
+}
+
+export interface RequireAssertion {
+  type: 'file_exists' | 'file_not_exists' | 'command' | 'grep';
+  path?: string;
+  run?: string;
+  expect_exit?: number;
+  timeout_seconds?: number;
+  pattern?: string;
+  expect?: 'present' | 'absent';
+}
+
+export interface ContractFailure {
+  type: 'schema' | 'assertion';
+  field?: string;
+  assertion?: RequireAssertion;
+  detail: string;
+}
+
 export interface WorkflowNode {
   id: string
   type: NodeType                       // 'agent' | 'gate' | 'command' | 'subgraph' | 'python'
@@ -150,6 +173,7 @@ export interface WorkflowNode {
   loop_counter_key?: string
   python_config?: { timeout_seconds: number; encoding: string }   // 未来扩展占位，保留类型不实现
   context?: string                    // 控制 agent 读取的 state 通道，默认 'input'
+  exit_contract?: ExitContract        // 准出契约（Task 4）
 }
 
 // 作者边：字段用 from/to（映射前绝不读 source/target），loop_max 只落在条件回环边上

@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import type { SelectorRule } from './types.mjs';
 import { getByRole, type AgentBinding } from '../storage/agent-binding-store.mjs';
 import { readSkillContent, extractSkillBody } from '../lib/skill-content.mjs';
+import { verifyContract } from './contract-verifier.mjs';
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
 
@@ -350,6 +351,7 @@ export function makeAgentNode(opts: {
   isSubgraph?: boolean;                       // 子图节点有 task，建 worktree
   isArchive?: boolean;                        // archive 节点：prompt 拼 git push + gh pr create
   interactionMode?: 'interactive' | 'autonomous';
+  exitContract?: any;                         // 准出契约（Task 4）
 }) {
   return async (state: any, config: any) => {
     const task = state.task;
@@ -597,6 +599,54 @@ export function makeAgentNode(opts: {
 
       // inbox_ask 中断（LangGraph interrupt）—— 向上透传
       throw err;
+    }
+
+    // ── 准出契约校验（Task 4）────────────────────────────────────────────────────
+    // AI 说「测试通过」不算数，流程跑断言才算数
+    // 契约失败不抛错，合成 ok:false verdict 走正常路由
+    const exitContract = opts.exitContract;
+    let contractVerified = true;
+    let contractFailures: any[] = [];
+
+    if (exitContract) {
+      const contractResult = await verifyContract(
+        opts.nodeId,
+        output,
+        exitContract,
+        workDir,
+      );
+
+      if (!contractResult.ok) {
+        contractVerified = false;
+        contractFailures = contractResult.failures;
+
+        console.warn(
+          `[agent-node] 准出契约失败: nodeId=${opts.nodeId} failures=${contractFailures.length}`,
+        );
+
+        // 更新 phase instance 状态为 contract_failed
+        if (phaseInstance) {
+          await db.phase_instances.update({
+            where: { id: phaseInstance.id },
+            data: {
+              status: 'contract_failed',
+              error_message: `准出契约失败: ${contractFailures.map((f) => f.detail).join('; ')}`,
+              completed_at: new Date(),
+            },
+          });
+        }
+
+        // 合成 ok:false verdict
+        const verdict = {
+          ok: false,
+          contract_failed: true,
+          failures: contractFailures,
+          ai_claimed: extractJsonFromOutput(output),
+        };
+        output = JSON.stringify(verdict);
+      } else {
+        console.log(`[agent-node] 准出契约通过: nodeId=${opts.nodeId}`);
+      }
     }
 
     // ── 保存阶段产出物 ───────────────────────────────────────────────────────
