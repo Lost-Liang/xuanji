@@ -23,7 +23,7 @@ import { ensureTaskWorktree } from './worktree.mjs';
 import { mapAdapterEvent, handleInboxAsk } from './shared-agent-utils.mjs';
 import { db } from '../db.mjs';
 import { randomUUID } from 'node:crypto';
-import type { SelectorRule } from './types.mjs';
+import type { SelectorRule, ExitContract } from './types.mjs';
 import { getByRole, type AgentBinding } from '../storage/agent-binding-store.mjs';
 import { readSkillContent, extractSkillBody } from '../lib/skill-content.mjs';
 import { verifyContract } from './contract-verifier.mjs';
@@ -351,7 +351,7 @@ export function makeAgentNode(opts: {
   isSubgraph?: boolean;                       // 子图节点有 task，建 worktree
   isArchive?: boolean;                        // archive 节点：prompt 拼 git push + gh pr create
   interactionMode?: 'interactive' | 'autonomous';
-  exitContract?: any;                         // 准出契约（Task 4）
+  exitContract?: ExitContract;                // 准出契约（Task 4）
 }) {
   return async (state: any, config: any) => {
     const task = state.task;
