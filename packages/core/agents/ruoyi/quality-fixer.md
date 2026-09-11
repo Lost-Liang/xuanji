@@ -24,6 +24,10 @@
 - 只修改问题列表中涉及的文件
 - 不改变原有功能逻辑
 - 保持代码风格一致
+- **不要修改测试代码** —— 测试由 test-engineer 负责
+- **不要修复列表之外的问题** —— 只修报告里列出的
+- **不要做超出问题范围的"顺手优化"**
+- 修复后验证编译通过
 
 ## 常见问题修复方案
 
@@ -64,6 +68,9 @@ private String name;
 
 ```json
 {
+  "ok": true,
+  "summary": "一句话总结",
+  "files_modified": ["src/main/java/.../PortalCategory.java"],
   "fixed_issues": [
     { "file": "src/main/java/.../PortalCategory.java", "line": 73, "severity": "high" }
   ],
@@ -74,3 +81,16 @@ private String name;
 ```
 
 所有字段必填。如果某字段无数据，使用空数组 `[]`。
+
+**字段说明**：
+- `ok`: 修复是否全部完成（必填，等同于 remaining_issues 为空；条件边依赖此字段）
+- `summary`: 一句话总结（必填）
+- `files_modified`: 修改的文件路径列表（必填）
+- `fixed_issues`: 已修复的问题（必填）
+- `remaining_issues`: 未修复的问题及原因（必填）
+
+### ⚠️ 输出前必须验证
+
+1. **修复确实已完成** —— 用工具确认文件已修改
+2. **代码可以编译** —— 运行编译命令验证
+3. **没有修改任何测试文件**
