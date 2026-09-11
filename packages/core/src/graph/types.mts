@@ -197,6 +197,11 @@ export interface WorkflowDef {
   name: string
   description?: string
   vars?: Record<string, any>
+  budget?: {
+    max_agent_invocations?: number;   // 默认 30
+    max_wall_clock_minutes?: number;  // 默认 120
+    max_node_visits?: number;         // 默认 5
+  };
   input_schema?: {
     type: string
     properties: Record<string, any>

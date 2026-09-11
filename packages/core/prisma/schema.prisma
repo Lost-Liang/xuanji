@@ -250,6 +250,10 @@ model task_executions {
   retry_at            DateTime?
   graph_definition_id String?
   thread_id           String?
+  agent_invocations   Int                   @default(0)
+  budget_max_agent_invocations Int?
+  budget_max_wall_clock_minutes Int?
+  budget_max_node_visits        Int?
   conversation_events conversation_events[]
   decisions           decisions[]
   execution_events    execution_events[]

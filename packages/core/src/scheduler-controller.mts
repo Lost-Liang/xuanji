@@ -126,6 +126,11 @@ class SchedulerController {
             });
           }
         }
+
+        // 预算检查：对所有正在运行的任务进行监督
+        for (const execId of this.currentRunning) {
+          await this.checkBudget(execId);
+        }
       } catch (err) {
         console.error('[scheduler-controller] 调度循环出错:', (err as Error).message);
       }
@@ -150,6 +155,9 @@ class SchedulerController {
    */
   private async executeTask(schedulerGraph: any, executionId: string, taskId: string | null): Promise<void> {
     try {
+      // 执行前预算检查（防止预算超限的任务被启动）
+      await this.checkBudget(executionId);
+
       await schedulerGraph.invoke({ executionId, taskId });
     } catch (err) {
       console.error(`[scheduler-controller] 任务执行出错: ${executionId}`, err);
@@ -169,6 +177,89 @@ class SchedulerController {
         console.log(`[scheduler-controller] 任务完成: ${executionId} (running: ${this.currentRunning.size})`);
       }
     }
+  }
+
+  /**
+   * 预算检查 —— 在调度循环中对所有正在运行的任务执行
+   *
+   * 检查项：
+   * 1. agent_invocations 是否超限
+   * 2. 墙钟（wall clock）是否超限
+   * 3. 节点访问次数（max_node_visits）是否超限（兜底）
+   * 4. 会话未重置探针（session 在重入时未重置 → 空转）
+   *
+   * 任何检查项失败时自动调用 abort() 中止执行
+   */
+  private async checkBudget(executionId: string): Promise<void> {
+    const exec = await db.task_executions.findUnique({
+      where: { execution_id: executionId },
+    });
+    if (!exec) return;
+
+    // 跳过非 running 状态的执行
+    if (exec.status !== 'running') return;
+
+    // 跳过没有预算配置的执行（兼容旧数据）
+    if (exec.budget_max_agent_invocations == null && exec.budget_max_wall_clock_minutes == null && exec.budget_max_node_visits == null) {
+      return;
+    }
+
+    const phases = await db.phase_instances.findMany({
+      where: { execution_id: executionId },
+      orderBy: { attempt: 'desc' },
+    });
+
+    // 1. agent 调用次数
+    if (exec.budget_max_agent_invocations != null && exec.agent_invocations >= exec.budget_max_agent_invocations) {
+      await this.abort(executionId, `超出预算：已调用 Agent ${exec.agent_invocations} 次（上限 ${exec.budget_max_agent_invocations}）`);
+      return;
+    }
+
+    // 2. 墙钟
+    if (exec.budget_max_wall_clock_minutes != null && exec.started_at) {
+      const elapsed = (Date.now() - exec.started_at.getTime()) / 60000;
+      if (elapsed >= exec.budget_max_wall_clock_minutes) {
+        await this.abort(executionId, `超出预算：已运行 ${Math.floor(elapsed)} 分钟（上限 ${exec.budget_max_wall_clock_minutes}）`);
+        return;
+      }
+    }
+
+    // 3. 节点访问次数（兜底）
+    if (exec.budget_max_node_visits != null && phases.length > 0) {
+      const maxVisits = Math.max(...phases.map(p => p.attempt));
+      if (maxVisits > exec.budget_max_node_visits) {
+        const node = phases.find(p => p.attempt === maxVisits);
+        await this.abort(executionId, `流程疑似打转：节点 ${node?.phase_id} 已执行 ${maxVisits} 次（上限 ${exec.budget_max_node_visits}）`);
+        return;
+      }
+    }
+
+    // 4. 会话未重置探针（本次事故专用）
+    const stale = phases.filter(p => {
+      const samePhase = phases.filter(pp => pp.phase_id === p.phase_id);
+      return samePhase.length > new Set(samePhase.map(pp => pp.session_id)).size;
+    });
+    if (stale.length > 0) {
+      await this.abort(executionId, `节点 ${stale[0].phase_id} 重复进入但会话未重置，疑似空转`);
+    }
+  }
+
+  /**
+   * 预算中止 —— 复用现有 cancel 通道
+   *
+   * 不直接标记 failed，而是设置 control_status='cancel_requested'，
+   * 让 graph-runner 的心跳循环读到后执行真正的取消流程。
+   */
+  private async abort(executionId: string, reason: string): Promise<void> {
+    console.log(`[scheduler-controller] 预算中止: ${executionId} - ${reason}`);
+    await db.task_executions.update({
+      where: { execution_id: executionId },
+      data: {
+        control_status: 'cancel_requested',
+        error_message: reason,
+      },
+    });
+    // 心跳循环会读到 control_status 并执行中止
   }
 }
 

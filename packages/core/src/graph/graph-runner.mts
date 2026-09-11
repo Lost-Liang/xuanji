@@ -155,6 +155,22 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     },
   });
 
+  // 2b. 存储预算快照（从 WorkflowDef 读取 budget 字段）
+  try {
+    const workflowDef = loadWorkflowFromYaml(flow.yamlContent);
+    const budget = workflowDef.budget ?? {};
+    await db.task_executions.update({
+      where: { execution_id: executionId },
+      data: {
+        budget_max_agent_invocations: budget.max_agent_invocations ?? 30,
+        budget_max_wall_clock_minutes: budget.max_wall_clock_minutes ?? 120,
+        budget_max_node_visits: budget.max_node_visits ?? 5,
+      },
+    });
+  } catch (err) {
+    console.warn(`[graph-runner] 存储预算快照失败（不影响执行）:`, err);
+  }
+
   // 3. 编译成 LangGraph 图
   let graph: ReturnType<typeof buildGraphFromDef>;
   try {
