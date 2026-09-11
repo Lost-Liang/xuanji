@@ -84,7 +84,7 @@ interface CodeFixOutput extends BaseOutput {
 
 ### 1.3 实现方案
 
-在 Agent Prompt 中增加输出格式要求。以 test agent 为例，在 Prompt 尾部添加：
+Agent 的 Prompt 定义在 `agent-node.mts` 的 `buildSystemPrompt` 函数中。在每个 Agent 的 Prompt 尾部追加输出格式要求。以 test agent 为例：
 
 ```
 输出格式要求：
@@ -133,15 +133,38 @@ interface CodeFixOutput extends BaseOutput {
 
 改为使用 `default-conditions.mts` 中已注册的 **function 类型** 条件函数。
 
-`default-conditions.mts` 已有：
+需要两个改动：
+
+**改动 1：修改 `parseNodeOutput` 函数，支持从 markdown 中提取 JSON 代码块**
+
+当前 `parseNodeOutput` 只能解析纯 JSON 字符串。Agent 输出变为 markdown+JSON 后，需要先提取 JSON 代码块再解析：
+
 ```typescript
-export const testPass: ConditionFunction = (state) => {
-  const result = parseNodeOutput(state, 'test')
-  return result?.ok === true
+// default-conditions.mts 修改 parseNodeOutput
+function parseNodeOutput(state: any, sourceId: string): { ok: boolean } | null {
+  const text = sourceText(state, sourceId)
+  if (!text || text === '') return null
+
+  // 尝试从 ```json 代码块提取
+  const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/)
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[1])
+    } catch { }
+  }
+
+  // 回退：尝试直接解析整个输出
+  try {
+    const parsed = JSON.parse(text)
+    if (typeof parsed?.ok === 'boolean') return parsed
+  } catch { }
+
+  // 无法解析 → 返回 null（视为失败）
+  return null
 }
 ```
 
-**需要新增的条件函数**：
+**改动 2：新增 code_review 条件函数并注册**
 
 ```typescript
 // default-conditions.mts 新增
@@ -202,34 +225,6 @@ registerCondition('code_review_issues', codeReviewIssues)
     config:
       name: code_review_issues
   loop_max: 3
-```
-
-### 2.4 parseNodeOutput 的工作流程（受结构化输出影响）
-
-```typescript
-function parseNodeOutput(state: any, sourceId: string): { ok: boolean } | null {
-  // 1. 从 state 中读取指定节点的输出（sourceText）
-  const text = sourceText(state, sourceId)
-  if (!text || text === '') return null
-
-  // 2. 尝试从文本中提取 JSON 代码块
-  // 支持格式：```json { "ok": true } ```
-  const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/)
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[1])
-    } catch { }
-  }
-
-  // 3. 尝试直接解析整个输出
-  try {
-    const parsed = JSON.parse(text)
-    if (typeof parsed?.ok === 'boolean') return parsed
-  } catch { }
-
-  // 4. 无法解析 → 返回 null（视为失败）
-  return null
-}
 ```
 
 ---
@@ -356,7 +351,7 @@ onEvent: async (event: AdapterEvent) => {
 | 文件 | 改动 |
 |------|------|
 | `packages/core/workflows/ruoyi-dev-flow.yaml` | 条件边改为 function 类型 |
-| `packages/core/src/graph/conditions/default-conditions.mts` | 新增 code_review_pass、code_review_issues 条件函数并注册 |
+| `packages/core/src/graph/conditions/default-conditions.mts` | 修改 parseNodeOutput 支持 JSON 代码块提取；新增 code_review_pass、code_review_issues 条件函数并注册 |
 | `packages/core/src/graph/shared-agent-utils.mts` | mapAdapterEvent 返回类型改为可空，只在 init 时记录 |
 | `packages/core/src/graph/agent-node.mts` | onEvent 回调只记录非空事件；解析 Agent 输出 JSON |
 | `packages/core/src/graph/builder.mts` | 无需修改（function 类型已经支持） |
