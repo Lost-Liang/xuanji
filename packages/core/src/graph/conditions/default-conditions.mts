@@ -9,16 +9,31 @@ import { sourceText } from './source-text.mjs'
 const reading = (state: any, sourceId: string) => sourceText(state, sourceId)
 
 // ─── 辅助函数：解析节点输出 ─────────────────────────────────────────────────────
-function parseNodeOutput(state: any, sourceId: string): { ok: boolean } | null {
+export function parseNodeOutput(
+  state: any,
+  sourceId: string,
+  sourceTextFn: (state: any, sourceId: string) => string | null = sourceText,
+): { ok: boolean } | null {
+  const text = sourceTextFn(state, sourceId)
+  if (!text || text === '') return null
+
+  // 尝试从 ```json 代码块提取
+  const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/)
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1])
+      if (typeof parsed?.ok === 'boolean') return parsed
+    } catch { }
+  }
+
+  // 回退：尝试直接解析整个输出
   try {
-    const text = reading(state, sourceId)
-    if (!text || text === '') return null  // 空状态
     const parsed = JSON.parse(text)
     if (typeof parsed?.ok === 'boolean') return parsed
-    return null
-  } catch {
-    return null
-  }
+  } catch { }
+
+  // 无法解析 → 返回 null（视为失败）
+  return null
 }
 
 // ─── 编译类：输出文本形如 { ok: true } ──────────────────────────────────────────
