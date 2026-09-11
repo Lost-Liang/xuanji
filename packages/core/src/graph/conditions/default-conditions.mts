@@ -15,7 +15,7 @@ export function parseNodeOutput(
   sourceTextFn: (state: any, sourceId: string) => string | null = sourceText,
 ): { ok: boolean } | null {
   const text = sourceTextFn(state, sourceId)
-  if (!text || text === '') return null
+  if (!text) return null
 
   // 尝试从 ```json 代码块提取
   const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/)
@@ -74,7 +74,7 @@ export const codeReviewIssues: ConditionFunction = (state: any) => {
 const nodeIssues = (state: any, nodeId: string) => {
   try {
     const text = reading(state, nodeId)
-    if (!text || text === '') return false  // 无输出视为无问题（放行）
+    if (!text) return false  // 无输出视为无问题（放行）
     const parsed = JSON.parse(text || '{}')
     return parsed?.issues ?? false
   } catch {

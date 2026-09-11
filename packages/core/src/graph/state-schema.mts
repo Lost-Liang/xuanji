@@ -12,7 +12,7 @@ export const TopState = Annotation.Root({
   loop_counters: Annotation<Record<string, number>>({ reducer: (a, b) => ({ ...a, ...b }), default: () => ({}) }),
   session_refs: Annotation<any[]>({ reducer: (a, b) => a.concat(b), default: () => [] }),
   // 并行隔离通道（spec §6.0）
-  node_outputs: Annotation<Record<string, string[]>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),  // sourceId → 各轮输出文本数组
+  node_outputs: Annotation<Record<string, string[]>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),  // sourceId → 各轮输出文本数组（合并语义）
   node_channels: Annotation<Record<string, string>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),    // sourceId → 私有 channel key
 })
 
@@ -23,6 +23,6 @@ export const SubState = Annotation.Root({
   loop_counters: Annotation<Record<string, number>>({ reducer: (a, b) => ({ ...a, ...b }), default: () => ({}) }),
   session_refs: Annotation<any[]>({ reducer: (a, b) => a.concat(b), default: () => [] }),
   // 并行隔离通道（spec §6.0）
-  node_outputs: Annotation<Record<string, string[]>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),  // sourceId → 各轮输出文本数组
+  node_outputs: Annotation<Record<string, string[]>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),  // sourceId → 各轮输出文本数组（合并语义）
   node_channels: Annotation<Record<string, string>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),    // sourceId → 私有 channel key
 })

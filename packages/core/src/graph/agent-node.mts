@@ -159,10 +159,9 @@ function buildAgentPrompt(
   }
 
   // 4. 根据节点类型追加输出格式要求
-  const nodeType = nodeId;
   let outputFormat = '';
 
-  if (nodeType === 'write_tests') {
+  if (nodeId === 'write_tests') {
     outputFormat = `
 
 ## 输出格式要求
@@ -177,7 +176,7 @@ function buildAgentPrompt(
   "test_count": number     // 测试用例总数
 }
 \`\`\``;
-  } else if (nodeType === 'develop') {
+  } else if (nodeId === 'develop') {
     outputFormat = `
 
 ## 输出格式要求
@@ -193,7 +192,7 @@ function buildAgentPrompt(
   "compilation_ok": boolean   // 编译是否通过
 }
 \`\`\``;
-  } else if (nodeType === 'test') {
+  } else if (nodeId === 'test') {
     outputFormat = `
 
 ## 输出格式要求
@@ -210,7 +209,7 @@ function buildAgentPrompt(
   "compilation_ok": boolean   // 编译是否通过
 }
 \`\`\``;
-  } else if (nodeType === 'code_review') {
+  } else if (nodeId === 'code_review') {
     outputFormat = `
 
 ## 输出格式要求
@@ -225,7 +224,7 @@ function buildAgentPrompt(
   "issues": ["问题描述"]
 }
 \`\`\``;
-  } else if (nodeType === 'code_fix') {
+  } else if (nodeId === 'code_fix') {
     outputFormat = `
 
 ## 输出格式要求
@@ -318,6 +317,7 @@ export function buildReturn(
   }
   return {
     results: [{ node_id: nodeId, output, phase_instance_id: phaseInstanceId }],
+    node_outputs: { [nodeId]: [output] },
     session_refs,
   };
 }
