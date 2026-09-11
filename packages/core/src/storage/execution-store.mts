@@ -215,6 +215,49 @@ export const executionStore = {
   },
 
   /**
+   * 标记执行失败并同时写入 execution_events
+   *
+   * 这是推荐的失败标记方法，确保所有失败都有事件记录。
+   * 用于替代 fail() 方法，解决"系统里没有记录"的问题。
+   *
+   * @param executionId 执行实例 ID
+   * @param message 错误消息
+   * @param details 可选的错误详情（node、visits、errorType）
+   */
+  async failWithEvent(
+    executionId: string,
+    message: string,
+    details?: { node?: string; visits?: number; errorType?: string }
+  ): Promise<void> {
+    await db.$transaction([
+      // 1. 更新执行实例状态
+      db.task_executions.update({
+        where: { execution_id: executionId },
+        data: {
+          status: 'failed',
+          error_message: message,
+          completed_at: new Date(),
+          worker_id: null,
+          lease_token: null,
+          lease_expires_at: null,
+        },
+      }),
+      // 2. 写入失败事件
+      db.execution_events.create({
+        data: {
+          execution_id: executionId,
+          event_type: 'failed',
+          from_status: 'running',
+          to_status: 'failed',
+          message,
+          details: details ? JSON.stringify(details) : null,
+          created_at: new Date(),
+        },
+      }),
+    ]);
+  },
+
+  /**
    * 标记限流（429）—— 设置重试时间和递增限流计数
    *
    * 退避策略：5分钟 → 10分钟 → 30分钟 → 60分钟

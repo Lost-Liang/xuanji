@@ -156,7 +156,18 @@ class SchedulerController {
     } finally {
       // 任务完成，从 running 集合中移除
       this.currentRunning.delete(executionId);
-      console.log(`[scheduler-controller] 任务完成: ${executionId} (running: ${this.currentRunning.size})`);
+
+      // 区分完成与失败日志
+      const execution = await db.task_executions.findUnique({
+        where: { execution_id: executionId },
+        select: { status: true, error_message: true },
+      });
+
+      if (execution?.status === 'failed') {
+        console.log(`[scheduler-controller] 任务失败: ${executionId} - ${execution.error_message || '未知错误'} (running: ${this.currentRunning.size})`);
+      } else {
+        console.log(`[scheduler-controller] 任务完成: ${executionId} (running: ${this.currentRunning.size})`);
+      }
     }
   }
 }

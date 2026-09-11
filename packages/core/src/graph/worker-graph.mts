@@ -141,7 +141,7 @@ export async function workerNode(
       } catch (err) {
         const errorMsg = (err as Error).message || '工作流重新派发失败';
         console.error(`[worker-graph] graphRunner 重新派发失败:`, err);
-        await executionStore.fail(executionId, errorMsg);
+        await executionStore.failWithEvent(executionId, errorMsg);
         return { status: 'failed', error: errorMsg };
       }
     }
@@ -167,7 +167,7 @@ export async function workerNode(
     } catch (err) {
       const errorMsg = (err as Error).message || '工作流执行失败';
       console.error(`[worker-graph] graphRunner 执行失败:`, err);
-      await executionStore.fail(executionId, errorMsg);
+      await executionStore.failWithEvent(executionId, errorMsg);
       return { status: 'failed', error: errorMsg };
     }
   }
@@ -195,7 +195,7 @@ export async function workerNode(
     } catch (err) {
       const errorMsg = (err as Error).message || '需求执行失败';
       console.error(`[worker-graph] graphRunner 执行失败:`, err);
-      await executionStore.fail(executionId, errorMsg);
+      await executionStore.failWithEvent(executionId, errorMsg);
       return { status: 'failed', error: errorMsg };
     }
   }
@@ -324,7 +324,7 @@ export async function workerNode(
 
     // 检查是否被取消
     if (cancelled) {
-      await executionStore.fail(executionId, '执行已被用户取消');
+      await executionStore.failWithEvent(executionId, '执行已被用户取消');
       if (taskId) {
         await taskStore.updateStatus(taskId, 'failed');
       }
@@ -352,7 +352,7 @@ export async function workerNode(
 
     // 执行失败
     const errorMsg = result.error || 'Agent 执行失败，无输出';
-    await executionStore.fail(executionId, errorMsg);
+    await executionStore.failWithEvent(executionId, errorMsg);
     if (taskId) {
       await taskStore.updateStatus(taskId, 'failed');
     }
@@ -367,7 +367,7 @@ export async function workerNode(
 
       // 检查是否超过最大重试次数
       if (currentCount >= MAX_RATE_LIMIT_RETRIES) {
-        await executionStore.fail(
+        await executionStore.failWithEvent(
           executionId,
           `限流重试次数已达上限 (${MAX_RATE_LIMIT_RETRIES})，放弃执行`,
         );
@@ -400,7 +400,7 @@ export async function workerNode(
     }
 
     // 非限流错误，直接标记失败
-    await executionStore.fail(executionId, errorMessage);
+    await executionStore.failWithEvent(executionId, errorMessage);
     if (taskId) {
       await taskStore.updateStatus(taskId, 'failed');
     }

@@ -141,7 +141,7 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
   // 1. 加载流程定义
   const flow = await loadFlow(flowId);
   if (!flow) {
-    await executionStore.fail(executionId, `流程定义不存在: ${flowId}`);
+    await executionStore.failWithEvent(executionId, `流程定义不存在: ${flowId}`);
     return;
   }
 
@@ -161,7 +161,7 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     graph = buildGraphFromDef(flow.yamlContent);
   } catch (err) {
     console.error(`[graph-runner] 编译图失败:`, err);
-    await executionStore.fail(executionId, `编译流程图失败: ${(err as Error).message}`);
+    await executionStore.failWithEvent(executionId, `编译流程图失败: ${(err as Error).message}`);
     return;
   }
 
@@ -227,7 +227,7 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
 
     // 7. 检查是否被取消
     if (cancelled) {
-      await executionStore.fail(executionId, '执行已被取消');
+      await executionStore.failWithEvent(executionId, '执行已被取消');
       return;
     }
 
@@ -299,13 +299,18 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
 
     if (execState?.control_status === 'cancel_requested' || cancelled) {
       console.log(`[graph-runner] 执行已取消: ${executionId}`);
-      await executionStore.fail(executionId, '执行已被用户取消');
+      await executionStore.failWithEvent(executionId, '执行已被用户取消');
       return;
     }
 
     // 其他错误
     console.error(`[graph-runner] 执行出错:`, err);
-    await executionStore.fail(executionId, err?.message || '执行失败');
+
+    // 提取错误详情
+    const errorDetails = extractErrorDetails(err);
+
+    // 使用 failWithEvent 记录失败（带事件留痕）
+    await executionStore.failWithEvent(executionId, err?.message || '执行失败', errorDetails);
   } finally {
     clearInterval(heartbeatInterval);
     // A4: 清理 AbortController 映射
@@ -344,7 +349,7 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   // 3. 加载流程图
   const flow = await loadFlow(exec.graph_definition_id);
   if (!flow) {
-    await executionStore.fail(executionId, `流程定义不存在: ${exec.graph_definition_id}`);
+    await executionStore.failWithEvent(executionId, `流程定义不存在: ${exec.graph_definition_id}`);
     return;
   }
 
@@ -386,7 +391,7 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
     }
 
     console.error(`[graph-runner] 恢复执行出错:`, err);
-    await executionStore.fail(executionId, err?.message || '执行失败');
+    await executionStore.failWithEvent(executionId, err?.message || '执行失败');
   }
 }
 
@@ -843,6 +848,48 @@ async function createTaskTreeFromBreakdown(
       await createTaskTreeFromParsed(requirement, data, specData);
     }
   }
+}
+
+// ─── 错误详情提取 ────────────────────────────────────────────────────────────────
+
+/**
+ * 从错误对象中提取详情信息
+ *
+ * 支持的错误类型：
+ * - GraphRecursionError: LangGraph 递归限制错误
+ * - LoopExhaustedError: 自定义循环耗尽错误（带 nodeId 和 visits）
+ */
+function extractErrorDetails(err: unknown): { node?: string; visits?: number; errorType?: string } | undefined {
+  if (!err || typeof err !== 'object') {
+    return undefined;
+  }
+
+  const error = err as Record<string, any>;
+
+  // 检查是否为 GraphRecursionError
+  if (error.name === 'GraphRecursionError' || error.constructor?.name === 'GraphRecursionError') {
+    return { errorType: 'GraphRecursionError' };
+  }
+
+  // 检查是否为 LoopExhaustedError
+  if (error.name === 'LoopExhaustedError' || error.constructor?.name === 'LoopExhaustedError') {
+    return {
+      node: error.nodeId || error.node,
+      visits: error.visits,
+      errorType: 'LoopExhaustedError',
+    };
+  }
+
+  // 从错误消息中提取关键信息
+  const message = error.message || String(error);
+
+  // 检测递归/循环相关错误
+  if (message.includes('recursion') || message.includes('recursion limit')) {
+    return { errorType: 'RecursionError' };
+  }
+
+  // 无法识别的错误类型，不返回详情
+  return undefined;
 }
 
 // ─── 导出单例接口 ──────────────────────────────────────────────────────────────

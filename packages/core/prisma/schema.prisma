@@ -85,6 +85,7 @@ model execution_events {
   from_status     String?
   to_status       String?
   message         String?
+  details         String?         // JSON string containing error details (node, visits, errorType)
   created_at      DateTime        @default(now())
   task_executions task_executions @relation(fields: [execution_id], references: [execution_id])
 }
