@@ -1,17 +1,15 @@
 /// <reference types="../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
-// core/web/src/views/TaskDetail.vue —— 任务详情页（V3 重构）
-// 设计简报：https://claude.ai/skills/impeccable/shape-brief-taskdetail.md
+// core/web/src/views/TaskDetail.vue —— 任务详情页（V4 重构）
+// 设计简报：任务详情页重设计 Plan
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api/tasks';
-import hljs from 'highlight.js/lib/core';
-import diff from 'highlight.js/lib/languages/diff';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import LiveEventStream from '../components/execution/LiveEventStream.vue';
 import ChatDrawer from '../components/drawers/ChatDrawer.vue';
 import LogDrawer from '../components/drawers/LogDrawer.vue';
-// 注册 diff 语言
-hljs.registerLanguage('diff', diff);
 const route = useRoute();
 const router = useRouter();
 const taskId = computed(() => route.params.id);
@@ -19,8 +17,6 @@ const detail = ref(null);
 const loading = ref(true);
 const workflow = ref(null);
 // 折叠状态
-const phaseOutputsExpanded = ref(false);
-const breakdownExpanded = ref(false);
 const rightDrawerVisible = ref(false);
 const rightDrawerTab = ref('log');
 // review gate
@@ -35,6 +31,18 @@ function statusText(status) {
         rate_limited: '限流中',
     };
     return map[status] || status;
+}
+// Markdown 渲染（Task 6c）
+function renderMarkdown(text) {
+    if (!text)
+        return '';
+    try {
+        const rawHtml = marked(text);
+        return DOMPurify.sanitize(rawHtml);
+    }
+    catch {
+        return text;
+    }
 }
 const parsedBreakdown = computed(() => {
     const c = detail.value?.breakdown_content;
@@ -132,36 +140,41 @@ const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check',
 const phaseStatuses = computed(() => {
     const d = detail.value;
     if (!d)
-        return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending', iteration: 0 }));
+        return [];
     // 从工作流定义获取阶段列表
     const workflowNodes = workflow.value?.definition_json?.nodes || [];
-    if (!workflow.value || workflowNodes.length === 0) {
-        // 回退到硬编码（兼容旧数据）
-        return phaseOrder.map(id => ({ id, label: phaseLabel(id), status: 'pending', iteration: 0 }));
-    }
-    // 构建状态映射（从 session_refs，因为 phase_outputs 为空）
+    // 构建状态映射（从 session_refs，使用新的 started_at/completed_at 字段）
     const statusMap = new Map();
-    // 从 session_refs 获取状态（omnigent_status: completed/failed/running 等）
+    // 从 session_refs 获取状态
     for (const sr of d.session_refs) {
         const existing = statusMap.get(sr.node_id);
         if (!existing || sr.iteration > existing.iteration) {
             statusMap.set(sr.node_id, {
                 status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
-                iteration: sr.iteration || 0
+                iteration: sr.iteration || 0,
+                started_at: sr.started_at,
+                completed_at: sr.completed_at,
             });
         }
     }
-    // 当前节点
-    const currentNode = d.current_node_id;
-    // 从工作流节点生成阶段列表
-    return workflowNodes.map((n) => {
-        const phaseInfo = statusMap.get(n.id);
+    // 按照 workflow 定义的顺序排序
+    const order = workflowNodes.length > 0
+        ? workflowNodes.map((n) => n.id)
+        : phaseOrder;
+    // 只保留有记录的阶段（不展示未执行的阶段）
+    return order
+        .filter((id) => statusMap.has(id))
+        .map((id) => {
+        const info = statusMap.get(id);
+        const duration = info.started_at && info.completed_at
+            ? formatDuration(info.started_at, info.completed_at)
+            : null;
         return {
-            id: n.id,
-            label: n.name || n.id, // 使用 name，无则回退 id
-            status: phaseInfo?.status
-                || (n.id === currentNode ? 'running' : 'pending'),
-            iteration: phaseInfo?.iteration || 0,
+            id,
+            label: phaseLabel(id),
+            status: info.status,
+            iteration: info.iteration,
+            duration,
         };
     });
 });
@@ -311,32 +324,11 @@ function parseJson(v) {
     }
     return v;
 }
-// Diff 语法高亮
-function highlightDiff(code) {
-    try {
-        return hljs.highlight(code, { language: 'diff' }).value;
-    }
-    catch {
-        return code;
-    }
-}
-function parseFileChanges(fc) {
-    if (!fc)
-        return [];
-    if (Array.isArray(fc)) {
-        return fc.map(f => ({
-            action: f.action || f.type || 'modified',
-            path: f.path || f.file || String(f),
-        }));
-    }
-    return [];
-}
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['breadcrumb-link']} */ ;
-/** @type {__VLS_StyleScopedClasses['top-cards']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
 /** @type {__VLS_StyleScopedClasses['running']} */ ;
@@ -357,37 +349,27 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['rate_limited']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['failed']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['running']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
+/** @type {__VLS_StyleScopedClasses['done']} */ ;
+/** @type {__VLS_StyleScopedClasses['main-content-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-warning']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-danger']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-input']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['running']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['failed']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-icon']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-action']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-action']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-action']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-action']} */ ;
-/** @type {__VLS_StyleScopedClasses['pr-link']} */ ;
 /** @type {__VLS_StyleScopedClasses['drawer-tab']} */ ;
 /** @type {__VLS_StyleScopedClasses['drawer-tab']} */ ;
 /** @type {__VLS_StyleScopedClasses['chat-placeholder']} */ ;
@@ -421,17 +403,11 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.
 });
 (__VLS_ctx.title);
 if (__VLS_ctx.detail) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "main-content" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "top-cards" },
-    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "card status-card" },
+        ...{ class: "title-bar" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "status-header" },
+        ...{ class: "title-bar-main" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "status-badge" },
@@ -444,119 +420,33 @@ if (__VLS_ctx.detail) {
         ...{ class: "status-label" },
     });
     (__VLS_ctx.statusText(__VLS_ctx.effectiveStatus));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "task-id" },
-    });
-    (__VLS_ctx.detail.id.slice(-8));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h1, __VLS_intrinsicElements.h1)({
         ...{ class: "task-title" },
     });
     (__VLS_ctx.title);
-    if (__VLS_ctx.taskDescription) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
-            ...{ class: "task-description" },
-        });
-        (__VLS_ctx.taskDescription);
-    }
-    if (__VLS_ctx.taskType) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "task-type-tag" },
-        });
-        (__VLS_ctx.taskType);
-    }
-    if (__VLS_ctx.effectiveStatus === 'rate_limited') {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "rate-limit-banner" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-        (__VLS_ctx.detail.rate_limited_count ?? 0);
-        if (__VLS_ctx.detail.rate_limited_until) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-            (__VLS_ctx.formatTime(__VLS_ctx.detail.rate_limited_until));
-        }
-    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "meta-grid" },
+        ...{ class: "task-meta" },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "meta-item" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-label" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-value" },
-    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
     (__VLS_ctx.formatTime(__VLS_ctx.detail.started_at));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "meta-item" },
-    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-label" },
+        ...{ class: "meta-sep" },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-value" },
-    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
     (__VLS_ctx.formatDuration(__VLS_ctx.detail.started_at, __VLS_ctx.detail.finished_at));
-    if (__VLS_ctx.detail.current_node_id) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "meta-item" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "meta-label" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "meta-value mono" },
-        });
-        (__VLS_ctx.detail.current_node_id);
-    }
-    if (__VLS_ctx.detail.token_in || __VLS_ctx.detail.token_out || __VLS_ctx.detail.cost) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "token-stats" },
-        });
-        if (__VLS_ctx.detail.token_in) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "token-item" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-label" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-value" },
-            });
-            (__VLS_ctx.detail.token_in.toLocaleString());
-        }
-        if (__VLS_ctx.detail.token_out) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "token-item" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-label" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-value" },
-            });
-            (__VLS_ctx.detail.token_out.toLocaleString());
-        }
-        if (__VLS_ctx.detail.cost) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "token-item" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-label" },
-            });
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "token-value" },
-            });
-            (Number(__VLS_ctx.detail.cost).toFixed(4));
-        }
-    }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "meta-sep" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "mono" },
+    });
+    (__VLS_ctx.detail.id.slice(-8));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "action-bar" },
+        ...{ class: "title-bar-actions" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
         ...{ onClick: (__VLS_ctx.goToCanvas) },
-        ...{ class: "btn btn-primary" },
+        ...{ class: "btn btn-secondary" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
         ...{ onClick: (...[$event]) => {
@@ -575,14 +465,16 @@ if (__VLS_ctx.detail) {
             } },
         ...{ class: "btn btn-secondary" },
     });
+    if (__VLS_ctx.effectiveStatus === 'failed') {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (__VLS_ctx.retryTask) },
+            ...{ class: "btn btn-primary" },
+        });
+    }
     if (__VLS_ctx.effectiveStatus === 'running') {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (__VLS_ctx.pauseTask) },
             ...{ class: "btn btn-warning" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (__VLS_ctx.cancelTask) },
-            ...{ class: "btn btn-danger" },
         });
     }
     if (__VLS_ctx.effectiveStatus === 'paused') {
@@ -591,86 +483,22 @@ if (__VLS_ctx.detail) {
             ...{ class: "btn btn-primary" },
         });
     }
-    if (__VLS_ctx.effectiveStatus === 'failed') {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (__VLS_ctx.retryTask) },
-            ...{ class: "btn btn-primary" },
-        });
-    }
-    if (__VLS_ctx.detail.parent_current_node_id?.startsWith('review_gate_')) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "review-gate-section" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "review-gate-header" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "review-gate-title" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "review-gate-hint" },
-        });
-        (__VLS_ctx.detail.parent_current_node_id);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "review-gate-body" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "radio-group" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
-            ...{ class: "radio-item" },
-            ...{ class: ({ checked: __VLS_ctx.gateDecision === 'approve' }) },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
-            type: "radio",
-            value: "approve",
-        });
-        (__VLS_ctx.gateDecision);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "radio-label" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
-            ...{ class: "radio-item" },
-            ...{ class: ({ checked: __VLS_ctx.gateDecision === 'reject' }) },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
-            type: "radio",
-            value: "reject",
-        });
-        (__VLS_ctx.gateDecision);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "radio-label" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.textarea, __VLS_intrinsicElements.textarea)({
-            value: (__VLS_ctx.gateComments),
-            ...{ class: "review-input" },
-            placeholder: "审查意见（可选）",
-            rows: "2",
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (__VLS_ctx.submitGate) },
-            ...{ class: "btn btn-primary btn-block" },
-            disabled: (__VLS_ctx.gateSubmitting),
-        });
-        (__VLS_ctx.gateSubmitting ? '提交中...' : '提交决策');
-    }
+}
+if (__VLS_ctx.detail && __VLS_ctx.phaseStatuses.length) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "card progress-card" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
-        ...{ class: "card-title" },
+        ...{ class: "phase-flow-card" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "phase-flow" },
     });
-    for (const [phase] of __VLS_getVForSourceType((__VLS_ctx.phaseStatuses))) {
+    for (const [phase, idx] of __VLS_getVForSourceType((__VLS_ctx.phaseStatuses))) {
+        (phase.id);
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            key: (phase.id),
-            ...{ class: "phase-chip" },
-            ...{ class: (phase.status) },
+            ...{ class: "phase-node" },
         });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "phase-icon" },
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "phase-dot" },
+            ...{ class: (phase.status) },
         });
         if (phase.status === 'done') {
         }
@@ -678,252 +506,230 @@ if (__VLS_ctx.detail) {
         }
         else if (phase.status === 'running') {
         }
-        else {
-        }
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "phase-label" },
         });
         (phase.label);
-        if (phase.iteration > 0) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "phase-iter" },
-            });
-            (phase.iteration);
-        }
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "progress-summary" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-    (__VLS_ctx.phaseStatuses.filter(p => p.status === 'done').length);
-    (__VLS_ctx.phaseStatuses.length);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "card collapsible-card" },
-        ...{ class: ({ expanded: __VLS_ctx.phaseOutputsExpanded }) },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.header, __VLS_intrinsicElements.header)({
-        ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.detail))
-                    return;
-                __VLS_ctx.phaseOutputsExpanded = !__VLS_ctx.phaseOutputsExpanded;
-            } },
-        ...{ class: "collapsible-header" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
-        ...{ class: "card-title" },
-    });
-    if (__VLS_ctx.detail.phase_outputs.length) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "collapsible-meta" },
-        });
-        (__VLS_ctx.detail.phase_outputs.length);
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "collapsible-toggle" },
-    });
-    (__VLS_ctx.phaseOutputsExpanded ? '收起' : '展开');
-    if (__VLS_ctx.phaseOutputsExpanded) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "collapsible-body" },
-        });
-        if (!__VLS_ctx.detail.phase_outputs.length) {
+        if (phase.duration) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "empty-state" },
+                ...{ class: "phase-duration" },
             });
+            (phase.duration);
         }
-        else {
+        if (idx < __VLS_ctx.phaseStatuses.length - 1) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "phase-outputs" },
+                ...{ class: "phase-connector" },
+                ...{ class: ({ done: phase.status === 'done' }) },
             });
-            for (const [po] of __VLS_getVForSourceType((__VLS_ctx.detail.phase_outputs))) {
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.article, __VLS_intrinsicElements.article)({
-                    key: (po.id),
-                    ...{ class: "phase-output-item" },
-                });
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.header, __VLS_intrinsicElements.header)({
-                    ...{ class: "po-header" },
-                });
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                    ...{ class: "po-node" },
-                });
-                (po.node_id);
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                    ...{ class: "po-iteration" },
-                });
-                (po.iteration);
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                    ...{ class: "po-time" },
-                });
-                (__VLS_ctx.formatTime(po.created_at));
-                if (__VLS_ctx.parseFileChanges(__VLS_ctx.parseJson(po.file_changes)).length) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        ...{ class: "po-section" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.h4, __VLS_intrinsicElements.h4)({
-                        ...{ class: "po-section-title" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.ul, __VLS_intrinsicElements.ul)({
-                        ...{ class: "file-list" },
-                    });
-                    for (const [fc, i] of __VLS_getVForSourceType((__VLS_ctx.parseFileChanges(__VLS_ctx.parseJson(po.file_changes))))) {
-                        __VLS_asFunctionalElement(__VLS_intrinsicElements.li, __VLS_intrinsicElements.li)({
-                            key: (i),
-                            ...{ class: "file-item" },
-                            ...{ class: (fc.action) },
-                        });
-                        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                            ...{ class: "file-action" },
-                        });
-                        (fc.action === 'new' || fc.action === 'added' ? '+' : fc.action === 'deleted' ? '-' : 'M');
-                        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                            ...{ class: "file-path" },
-                        });
-                        (fc.path);
-                    }
-                }
-                if (po.diff_content) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        ...{ class: "po-section" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.h4, __VLS_intrinsicElements.h4)({
-                        ...{ class: "po-section-title" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-                        ...{ class: "diff-block" },
-                    });
-                    __VLS_asFunctionalDirective(__VLS_directives.vHtml)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.highlightDiff(po.diff_content)) }, null, null);
-                }
-                if (po.pr_url) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        ...{ class: "po-section" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.h4, __VLS_intrinsicElements.h4)({
-                        ...{ class: "po-section-title" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.a, __VLS_intrinsicElements.a)({
-                        href: (po.pr_url),
-                        target: "_blank",
-                        ...{ class: "pr-link" },
-                    });
-                    (po.pr_url);
-                }
-                if (__VLS_ctx.parseJson(po.test_result)) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        ...{ class: "po-section" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.h4, __VLS_intrinsicElements.h4)({
-                        ...{ class: "po-section-title" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-                        ...{ class: "json-block" },
-                    });
-                    (JSON.stringify(__VLS_ctx.parseJson(po.test_result), null, 2));
-                }
-                if (__VLS_ctx.parseJson(po.review_result)) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        ...{ class: "po-section" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.h4, __VLS_intrinsicElements.h4)({
-                        ...{ class: "po-section-title" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-                        ...{ class: "json-block" },
-                    });
-                    (JSON.stringify(__VLS_ctx.parseJson(po.review_result), null, 2));
-                }
-            }
-        }
-    }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "card collapsible-card" },
-        ...{ class: ({ expanded: __VLS_ctx.breakdownExpanded }) },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.header, __VLS_intrinsicElements.header)({
-        ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.detail))
-                    return;
-                __VLS_ctx.breakdownExpanded = !__VLS_ctx.breakdownExpanded;
-            } },
-        ...{ class: "collapsible-header" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
-        ...{ class: "card-title" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "collapsible-toggle" },
-    });
-    (__VLS_ctx.breakdownExpanded ? '收起' : '展开');
-    if (__VLS_ctx.breakdownExpanded) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "collapsible-body" },
-        });
-        if (!__VLS_ctx.parsedBreakdown) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "empty-state" },
-            });
-        }
-        else {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "breakdown-content" },
-            });
-            if (__VLS_ctx.parsedBreakdown.kind === 'json') {
-                for (const [v, k] of __VLS_getVForSourceType((__VLS_ctx.otherBreakdownFields))) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                        key: (k),
-                        ...{ class: "breakdown-field" },
-                    });
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                        ...{ class: "breakdown-field-label" },
-                    });
-                    (__VLS_ctx.fieldLabel(String(k)));
-                    if (typeof v === 'object' && v !== null) {
-                        __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-                            ...{ class: "breakdown-field-value" },
-                        });
-                        (__VLS_ctx.formatFieldValue(v));
-                    }
-                    else {
-                        __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
-                            ...{ class: "breakdown-field-text" },
-                        });
-                        (__VLS_ctx.formatFieldValue(v));
-                    }
-                }
-                if (!Object.keys(__VLS_ctx.otherBreakdownFields).length) {
-                    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
-                        ...{ class: "empty-state" },
-                    });
-                }
-            }
-            else {
-                __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
-                    ...{ class: "breakdown-raw" },
-                });
-                (__VLS_ctx.parsedBreakdown.text);
-            }
         }
     }
 }
-const __VLS_4 = {}.ElDrawer;
+if (__VLS_ctx.detail && !__VLS_ctx.loading) {
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "main-content-grid" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "main-col" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+        ...{ class: "content-card" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
+        ...{ class: "card-title" },
+    });
+    if (!__VLS_ctx.parsedBreakdown) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "empty-state" },
+        });
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "breakdown-content" },
+        });
+        if (__VLS_ctx.parsedBreakdown.kind === 'json') {
+            for (const [v, k] of __VLS_getVForSourceType((__VLS_ctx.otherBreakdownFields))) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                    key: (k),
+                    ...{ class: "breakdown-field" },
+                });
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                    ...{ class: "breakdown-field-label" },
+                });
+                (__VLS_ctx.fieldLabel(String(k)));
+                if (typeof v === 'object' && v !== null) {
+                    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
+                        ...{ class: "breakdown-field-value" },
+                    });
+                    (__VLS_ctx.formatFieldValue(v));
+                }
+                else {
+                    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
+                        ...{ class: "breakdown-field-text" },
+                    });
+                    (__VLS_ctx.formatFieldValue(v));
+                }
+            }
+            if (!Object.keys(__VLS_ctx.otherBreakdownFields).length) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
+                    ...{ class: "empty-state" },
+                });
+            }
+        }
+        else {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({
+                ...{ class: "breakdown-raw" },
+            });
+            (__VLS_ctx.parsedBreakdown.text);
+        }
+    }
+    if (__VLS_ctx.detail.phase_outputs.length) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+            ...{ class: "content-card" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
+            ...{ class: "card-title" },
+        });
+        for (const [po] of __VLS_getVForSourceType((__VLS_ctx.detail.phase_outputs))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                key: (po.id),
+                ...{ class: "phase-result" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: "phase-result-header" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "phase-result-title" },
+            });
+            (__VLS_ctx.phaseLabel(po.node_id));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "phase-result-time" },
+            });
+            (__VLS_ctx.formatTime(po.created_at));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: "phase-result-body" },
+            });
+            __VLS_asFunctionalDirective(__VLS_directives.vHtml)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.renderMarkdown(po.value || '')) }, null, null);
+        }
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+            ...{ class: "content-card" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
+            ...{ class: "card-title" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "empty-state" },
+        });
+    }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "side-col" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+        ...{ class: "content-card" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
+        ...{ class: "card-title" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "meta-list" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "meta-row" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "meta-label" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "meta-value mono" },
+    });
+    (__VLS_ctx.detail.id);
+    if (__VLS_ctx.detail.requirement_id) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "meta-row" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-label" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-value mono" },
+        });
+        (__VLS_ctx.detail.requirement_id.slice(0, 8));
+    }
+    if (__VLS_ctx.detail.rate_limited_count) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "meta-row" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-label" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-value" },
+        });
+        (__VLS_ctx.detail.rate_limited_count);
+    }
+    if (__VLS_ctx.detail.phase_outputs.length) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+            ...{ class: "content-card" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({
+            ...{ class: "card-title" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "output-index" },
+        });
+        for (const [po] of __VLS_getVForSourceType((__VLS_ctx.detail.phase_outputs))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                key: (po.id),
+                ...{ class: "output-index-item" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "output-index-label" },
+            });
+            (__VLS_ctx.phaseLabel(po.node_id));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "output-index-time" },
+            });
+            (__VLS_ctx.formatTime(po.created_at));
+        }
+    }
+}
+else if (__VLS_ctx.loading) {
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "loading-state" },
+    });
+    const __VLS_4 = {}.ElSkeleton;
+    /** @type {[typeof __VLS_components.ElSkeleton, typeof __VLS_components.elSkeleton, ]} */ ;
+    // @ts-ignore
+    const __VLS_5 = __VLS_asFunctionalComponent(__VLS_4, new __VLS_4({
+        rows: (5),
+        animated: true,
+    }));
+    const __VLS_6 = __VLS_5({
+        rows: (5),
+        animated: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_5));
+}
+const __VLS_8 = {}.ElDrawer;
 /** @type {[typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_5 = __VLS_asFunctionalComponent(__VLS_4, new __VLS_4({
+const __VLS_9 = __VLS_asFunctionalComponent(__VLS_8, new __VLS_8({
     modelValue: (__VLS_ctx.rightDrawerVisible),
     title: (__VLS_ctx.rightDrawerTab === 'log' ? '执行日志' : '对话'),
     size: "480px",
     direction: "rtl",
     ...{ class: "right-drawer" },
 }));
-const __VLS_6 = __VLS_5({
+const __VLS_10 = __VLS_9({
     modelValue: (__VLS_ctx.rightDrawerVisible),
     title: (__VLS_ctx.rightDrawerTab === 'log' ? '执行日志' : '对话'),
     size: "480px",
     direction: "rtl",
     ...{ class: "right-drawer" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_5));
-__VLS_7.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_9));
+__VLS_11.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_7.slots;
+    const { header: __VLS_thisSlot } = __VLS_11.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "drawer-tabs" },
     });
@@ -948,12 +754,12 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 if (__VLS_ctx.rightDrawerTab === 'log') {
     /** @type {[typeof LiveEventStream, ]} */ ;
     // @ts-ignore
-    const __VLS_8 = __VLS_asFunctionalComponent(LiveEventStream, new LiveEventStream({
+    const __VLS_12 = __VLS_asFunctionalComponent(LiveEventStream, new LiveEventStream({
         executionId: (__VLS_ctx.detail?.id),
     }));
-    const __VLS_9 = __VLS_8({
+    const __VLS_13 = __VLS_12({
         executionId: (__VLS_ctx.detail?.id),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_8));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_12));
 }
 else if (__VLS_ctx.mainSessionRef) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -970,130 +776,54 @@ else {
         ...{ class: "empty-state" },
     });
 }
-var __VLS_7;
+var __VLS_11;
 /** @type {[typeof ChatDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_11 = __VLS_asFunctionalComponent(ChatDrawer, new ChatDrawer({}));
-const __VLS_12 = __VLS_11({}, ...__VLS_functionalComponentArgsRest(__VLS_11));
+const __VLS_15 = __VLS_asFunctionalComponent(ChatDrawer, new ChatDrawer({}));
+const __VLS_16 = __VLS_15({}, ...__VLS_functionalComponentArgsRest(__VLS_15));
 /** @type {[typeof LogDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_14 = __VLS_asFunctionalComponent(LogDrawer, new LogDrawer({}));
-const __VLS_15 = __VLS_14({}, ...__VLS_functionalComponentArgsRest(__VLS_14));
+const __VLS_18 = __VLS_asFunctionalComponent(LogDrawer, new LogDrawer({}));
+const __VLS_19 = __VLS_18({}, ...__VLS_functionalComponentArgsRest(__VLS_18));
 /** @type {__VLS_StyleScopedClasses['task-detail']} */ ;
 /** @type {__VLS_StyleScopedClasses['breadcrumb']} */ ;
 /** @type {__VLS_StyleScopedClasses['breadcrumb-link']} */ ;
 /** @type {__VLS_StyleScopedClasses['breadcrumb-sep']} */ ;
 /** @type {__VLS_StyleScopedClasses['breadcrumb-current']} */ ;
-/** @type {__VLS_StyleScopedClasses['main-content']} */ ;
-/** @type {__VLS_StyleScopedClasses['top-cards']} */ ;
-/** @type {__VLS_StyleScopedClasses['card']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['status-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['title-bar']} */ ;
+/** @type {__VLS_StyleScopedClasses['title-bar-main']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-badge']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-icon']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['task-id']} */ ;
 /** @type {__VLS_StyleScopedClasses['task-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['task-description']} */ ;
-/** @type {__VLS_StyleScopedClasses['task-type-tag']} */ ;
-/** @type {__VLS_StyleScopedClasses['rate-limit-banner']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-grid']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['task-meta']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-sep']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-sep']} */ ;
 /** @type {__VLS_StyleScopedClasses['mono']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-stats']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['token-value']} */ ;
-/** @type {__VLS_StyleScopedClasses['action-bar']} */ ;
+/** @type {__VLS_StyleScopedClasses['title-bar-actions']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-warning']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-danger']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-gate-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-gate-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-gate-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-gate-hint']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-gate-body']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-group']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['radio-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['review-input']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
-/** @type {__VLS_StyleScopedClasses['btn-block']} */ ;
-/** @type {__VLS_StyleScopedClasses['card']} */ ;
-/** @type {__VLS_StyleScopedClasses['progress-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-flow-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-flow']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-chip']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-icon']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-node']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-iter']} */ ;
-/** @type {__VLS_StyleScopedClasses['progress-summary']} */ ;
-/** @type {__VLS_StyleScopedClasses['card']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-duration']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
+/** @type {__VLS_StyleScopedClasses['main-content-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['main-col']} */ ;
+/** @type {__VLS_StyleScopedClasses['content-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-meta']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-toggle']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-body']} */ ;
-/** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-outputs']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-output-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-node']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-iteration']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-time']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-list']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-item']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-action']} */ ;
-/** @type {__VLS_StyleScopedClasses['file-path']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['diff-block']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['pr-link']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['json-block']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section']} */ ;
-/** @type {__VLS_StyleScopedClasses['po-section-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['json-block']} */ ;
-/** @type {__VLS_StyleScopedClasses['card']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-header']} */ ;
-/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-toggle']} */ ;
-/** @type {__VLS_StyleScopedClasses['collapsible-body']} */ ;
 /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
 /** @type {__VLS_StyleScopedClasses['breakdown-content']} */ ;
 /** @type {__VLS_StyleScopedClasses['breakdown-field']} */ ;
@@ -1102,6 +832,38 @@ const __VLS_15 = __VLS_14({}, ...__VLS_functionalComponentArgsRest(__VLS_14));
 /** @type {__VLS_StyleScopedClasses['breakdown-field-text']} */ ;
 /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
 /** @type {__VLS_StyleScopedClasses['breakdown-raw']} */ ;
+/** @type {__VLS_StyleScopedClasses['content-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-time']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
+/** @type {__VLS_StyleScopedClasses['content-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
+/** @type {__VLS_StyleScopedClasses['side-col']} */ ;
+/** @type {__VLS_StyleScopedClasses['content-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-list']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['mono']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['mono']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['content-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['output-index']} */ ;
+/** @type {__VLS_StyleScopedClasses['output-index-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['output-index-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['output-index-time']} */ ;
+/** @type {__VLS_StyleScopedClasses['loading-state']} */ ;
 /** @type {__VLS_StyleScopedClasses['right-drawer']} */ ;
 /** @type {__VLS_StyleScopedClasses['drawer-tabs']} */ ;
 /** @type {__VLS_StyleScopedClasses['drawer-tab']} */ ;
@@ -1119,18 +881,12 @@ const __VLS_self = (await import('vue')).defineComponent({
             LogDrawer: LogDrawer,
             detail: detail,
             loading: loading,
-            phaseOutputsExpanded: phaseOutputsExpanded,
-            breakdownExpanded: breakdownExpanded,
             rightDrawerVisible: rightDrawerVisible,
             rightDrawerTab: rightDrawerTab,
-            gateDecision: gateDecision,
-            gateComments: gateComments,
-            gateSubmitting: gateSubmitting,
             statusText: statusText,
+            renderMarkdown: renderMarkdown,
             parsedBreakdown: parsedBreakdown,
             title: title,
-            taskType: taskType,
-            taskDescription: taskDescription,
             otherBreakdownFields: otherBreakdownFields,
             fieldLabel: fieldLabel,
             formatFieldValue: formatFieldValue,
@@ -1139,16 +895,12 @@ const __VLS_self = (await import('vue')).defineComponent({
             formatTime: formatTime,
             formatDuration: formatDuration,
             phaseStatuses: phaseStatuses,
+            phaseLabel: phaseLabel,
             pauseTask: pauseTask,
-            cancelTask: cancelTask,
             resumeTask: resumeTask,
             retryTask: retryTask,
-            submitGate: submitGate,
             openRightDrawer: openRightDrawer,
             goToCanvas: goToCanvas,
-            parseJson: parseJson,
-            highlightDiff: highlightDiff,
-            parseFileChanges: parseFileChanges,
         };
     },
 });
