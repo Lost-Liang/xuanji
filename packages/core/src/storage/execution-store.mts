@@ -327,4 +327,18 @@ export const executionStore = {
     });
     return result.count > 0;
   },
+
+  /**
+   * 递增 Agent 调用次数
+   *
+   * 在 agent-node.mts 每次调用 runLocal() 前调用，
+   * 供调度层 budget 检查（checkBudget）读取。
+   * 使用 increment 操作保证并发安全。
+   */
+  async incrementAgentInvocations(executionId: string): Promise<void> {
+    await db.task_executions.update({
+      where: { execution_id: executionId },
+      data: { agent_invocations: { increment: 1 } },
+    });
+  },
 };

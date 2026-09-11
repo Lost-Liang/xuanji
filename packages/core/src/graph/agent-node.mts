@@ -19,6 +19,7 @@
 import { interrupt } from '@langchain/langgraph';
 import { runLocal, type AdapterEvent } from '@xuanji/runner';
 import { conversationStore } from '../storage/conversation-store.mjs';
+import { executionStore } from '../storage/execution-store.mjs';
 import { ensureTaskWorktree } from './worktree.mjs';
 import { mapAdapterEvent, handleInboxAsk } from './shared-agent-utils.mjs';
 import { db } from '../db.mjs';
@@ -589,6 +590,9 @@ export function makeAgentNode(opts: {
     });
 
     try {
+      // 递增 Agent 调用计数（供调度层 budget 检查）
+      await executionStore.incrementAgentInvocations(execId);
+
       const runPromise = runLocal({
         provider,                          // 从 binding.harness 映射
         prompt: promptText,

@@ -133,6 +133,105 @@ describe('Scheduler Governance', () => {
       expect(execution!.control_status).toBe('idle');
       expect(execution!.error_message).toBeNull();
     });
+
+    it('should abort on agent_invocations exceeded', async () => {
+      const execId = `test-gov-agent-inv-${Date.now()}`;
+      testExecutionIds.push(execId);
+
+      // 创建执行记录，设置 budget_max_agent_invocations = 5
+      // agent_invocations = 7 > 5，应触发中止
+      await db.task_executions.create({
+        data: {
+          execution_id: execId,
+          subject_type: 'task',
+          subject_id: 'test-subject-agent-inv',
+          target_project_id: 'test-project',
+          target_repo_path: '/tmp/test',
+          status: 'running',
+          started_at: new Date(),
+          agent_invocations: 7,
+          budget_max_agent_invocations: 5,
+        },
+      });
+
+      // 调用 checkBudget
+      const controller = getSchedulerController();
+      await (controller as any).checkBudget(execId);
+
+      // 验证：被中止，错误消息包含次数信息
+      const execution = await db.task_executions.findUnique({
+        where: { execution_id: execId },
+        select: { control_status: true, error_message: true },
+      });
+      expect(execution!.control_status).toBe('cancel_requested');
+      expect(execution!.error_message).toContain('7');
+      expect(execution!.error_message).toContain('5');
+    });
+
+    it('should abort on wall clock exceeded', async () => {
+      const execId = `test-gov-wallclock-${Date.now()}`;
+      testExecutionIds.push(execId);
+
+      // 创建执行记录，设置 budget_max_wall_clock_minutes = 1
+      // started_at 设为 5 分钟前 → elapsed ≈ 5 > 1，应触发中止
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      await db.task_executions.create({
+        data: {
+          execution_id: execId,
+          subject_type: 'task',
+          subject_id: 'test-subject-wallclock',
+          target_project_id: 'test-project',
+          target_repo_path: '/tmp/test',
+          status: 'running',
+          started_at: fiveMinutesAgo,
+          agent_invocations: 0,
+          budget_max_wall_clock_minutes: 1,
+        },
+      });
+
+      // 调用 checkBudget
+      const controller = getSchedulerController();
+      await (controller as any).checkBudget(execId);
+
+      // 验证：被中止，错误消息包含时长信息
+      const execution = await db.task_executions.findUnique({
+        where: { execution_id: execId },
+        select: { control_status: true, error_message: true },
+      });
+      expect(execution!.control_status).toBe('cancel_requested');
+      expect(execution!.error_message).toContain('分钟');
+    });
+
+    it('should NOT abort when wall clock within budget', async () => {
+      const execId = `test-gov-wallclock-ok-${Date.now()}`;
+      testExecutionIds.push(execId);
+
+      // 创建执行记录，设置 budget_max_wall_clock_minutes = 60
+      // started_at 设为 1 分钟前 → elapsed ≈ 1 < 60，不应触发
+      await db.task_executions.create({
+        data: {
+          execution_id: execId,
+          subject_type: 'task',
+          subject_id: 'test-subject-wallclock-ok',
+          target_project_id: 'test-project',
+          target_repo_path: '/tmp/test',
+          status: 'running',
+          started_at: new Date(Date.now() - 60 * 1000),
+          agent_invocations: 0,
+          budget_max_wall_clock_minutes: 60,
+        },
+      });
+
+      const controller = getSchedulerController();
+      await (controller as any).checkBudget(execId);
+
+      const execution = await db.task_executions.findUnique({
+        where: { execution_id: execId },
+        select: { control_status: true, error_message: true },
+      });
+      expect(execution!.control_status).toBe('idle');
+      expect(execution!.error_message).toBeNull();
+    });
   });
 
   describe('session reset detection', () => {

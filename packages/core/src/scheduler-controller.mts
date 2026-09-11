@@ -155,9 +155,7 @@ class SchedulerController {
    */
   private async executeTask(schedulerGraph: any, executionId: string, taskId: string | null): Promise<void> {
     try {
-      // 执行前预算检查（防止预算超限的任务被启动）
-      await this.checkBudget(executionId);
-
+      // checkBudget 已在 runLoop 中每轮对所有 running 任务执行，此处不再重复检查
       await schedulerGraph.invoke({ executionId, taskId });
     } catch (err) {
       console.error(`[scheduler-controller] 任务执行出错: ${executionId}`, err);
