@@ -75,32 +75,32 @@ edges:
   - from: test
     to: code_review
     condition:
-      type: expression
+      type: function
       config:
-        expression: "state.results.test?.passed === true"
+        name: test_pass
 
   - from: test
     to: develop
     condition:
-      type: expression
+      type: function
       config:
-        expression: "state.results.test?.passed === false"
+        name: test_fail
     loop_max: 2
 
   # code_review 条件边：pass → final_review, issues → code_fix（最多 3 次）
   - from: code_review
     to: final_review
     condition:
-      type: expression
+      type: function
       config:
-        expression: "state.results.code_review?.approved === true"
+        name: code_review_pass
 
   - from: code_review
     to: code_fix
     condition:
-      type: expression
+      type: function
       config:
-        expression: "state.results.code_review?.approved === false"
+        name: code_review_issues
     loop_max: 3
 
   # code_fix → code_review（修复后重新审查）
