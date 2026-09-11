@@ -436,18 +436,6 @@ export function makeAgentNode(opts: {
       });
 
       if (existing) {
-        // 复用旧 phase_instance 时，如果状态是终态（failed/completed），重置为 running
-        if (existing.status === 'failed' || existing.status === 'completed') {
-          await db.phase_instances.update({
-            where: { id: existing.id },
-            data: {
-              status: 'running',
-              error_message: null,
-              completed_at: null,
-              started_at: new Date(),
-            },
-          });
-        }
         phaseInstance = { id: existing.id, sessionId: existing.session_id };
       } else {
         // 创建新的 phase instance
