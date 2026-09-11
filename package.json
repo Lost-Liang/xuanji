@@ -11,5 +11,14 @@
     "db:migrate": "pnpm --filter @xuanji/core db:migrate",
     "db:push": "pnpm --filter @xuanji/core db:push"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "vue-demi"
+    ]
+  }
 }

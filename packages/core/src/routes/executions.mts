@@ -652,3 +652,48 @@ executionsRouter.post('/:id/dialog', async (req, res) => {
     res.status(500).json({ error: '对话处理失败', detail: (err as Error).message });
   }
 });
+
+/**
+ * GET /api/executions/:id/outputs
+ * 获取执行的所有阶段产出物（供 PhaseTimelineGantt.vue 使用）
+ */
+executionsRouter.get('/:id/outputs', async (req, res) => {
+  try {
+    const execution = await db.task_executions.findUnique({
+      where: { execution_id: req.params.id },
+    });
+
+    if (!execution) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
+    const phases = await db.phase_instances.findMany({
+      where: { execution_id: req.params.id },
+      orderBy: { started_at: 'asc' },
+    });
+
+    const outputs = await db.phase_outputs.findMany({
+      where: {
+        phase_instance_id: { in: phases.map(p => p.id) },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    const list = outputs.map(o => {
+      const pi = phases.find(p => p.id === o.phase_instance_id);
+      return {
+        id: o.id,
+        node_id: pi?.phase_id,
+        iteration: pi?.attempt,
+        key: o.key,
+        value: o.value,
+        created_at: pi?.started_at?.toISOString?.() ?? null,
+      };
+    });
+
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: '查询产出物失败', detail: (err as Error).message });
+  }
+});

@@ -33,7 +33,7 @@ tasksRouter.get('/', async (req, res) => {
       take: 100,
       include: {
         tasks: {
-          select: { id: true, title: true, description: true },
+          select: { id: true, title: true, description: true, acceptance_criteria: true },
         },
       },
     });
@@ -72,7 +72,7 @@ tasksRouter.get('/:id', async (req, res) => {
       where: { execution_id: req.params.id },
       include: {
         tasks: {
-          select: { id: true, title: true, description: true },
+          select: { id: true, title: true, description: true, acceptance_criteria: true },
         },
       },
     });
@@ -85,8 +85,40 @@ tasksRouter.get('/:id', async (req, res) => {
     // 查询 phase_instances 获取 session_refs
     const phases = await db.phase_instances.findMany({
       where: { execution_id: execution.execution_id },
+      orderBy: { started_at: 'asc' },
+    });
+
+    // 查询 phase_outputs（Task 1: 填充实际数据）
+    const phaseOutputs = await db.phase_outputs.findMany({
+      where: {
+        phase_instance_id: { in: phases.map(p => p.id) },
+      },
       orderBy: { created_at: 'asc' },
     });
+
+    // 将 phase_outputs join phase_instances
+    const enrichedOutputs = phaseOutputs.map(po => {
+      const pi = phases.find(p => p.id === po.phase_instance_id)
+      return {
+        id: po.id,
+        execution_id: execution.execution_id,
+        node_id: pi?.phase_id ?? 'unknown',
+        iteration: pi?.attempt ?? 1,
+        key: po.key,
+        value: po.value,
+        created_at: po.created_at?.toISOString?.() ?? null,
+      }
+    });
+
+    // Task 2: breakdown_content 回退逻辑
+    const breakdown_content =
+      execution.tasks?.description
+      ?? (execution.tasks?.acceptance_criteria
+          ? JSON.stringify({
+              acceptance_criteria: execution.tasks.acceptance_criteria,
+              title: execution.tasks?.title,
+            })
+          : null);
 
     const item: any = {
       id: execution.execution_id,
@@ -101,14 +133,14 @@ tasksRouter.get('/:id', async (req, res) => {
       created_at: execution.created_at?.toISOString?.() ?? null,
       rate_limited_count: execution.rate_limit_count ?? null,
       rate_limited_until: execution.retry_at?.toISOString?.() ?? null,
-      breakdown_content: execution.tasks?.description ?? null,
+      breakdown_content,
       requirement_id: execution.requirement_id,
       graph_definition_id: execution.graph_definition_id ?? null,
       token_in: null,
       token_out: null,
       cost: null,
       loop_counters: null,
-      phase_outputs: [],
+      phase_outputs: enrichedOutputs,  // Task 1: 使用实际查询结果
       session_refs: phases.map((p: any) => ({
         id: p.id,
         node_id: p.phase_id,
@@ -116,6 +148,8 @@ tasksRouter.get('/:id', async (req, res) => {
         role: p.agent_used ?? 'unknown',
         omnigent_session_id: p.session_id ?? '',
         omnigent_status: p.status,
+        started_at: p.started_at?.toISOString?.() ?? null,  // Task 1: 新增时间字段
+        completed_at: p.completed_at?.toISOString?.() ?? null,  // Task 1: 新增时间字段
       })),
     };
 
