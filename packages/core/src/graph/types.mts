@@ -104,6 +104,9 @@ export interface GraphNode {
 
   // 数据流 inputs 声明（Task 5）：prompt 组装的数据来源
   inputs?: string[]  // 内置源（task/input/spec）或上游节点 id
+
+  // 准出契约（Task 4）：AI 说通过不算数，流程跑断言才算数
+  exit_contract?: ExitContract
 }
 export interface GraphEdge {
   id: string

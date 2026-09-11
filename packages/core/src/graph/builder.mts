@@ -6,7 +6,7 @@
 // - pgClient → db（Prisma 客户端）
 // - loop-paths.mts 暂未迁移，buildSubGraph 中 testing/quality/security 条件边内联处理
 // - seed-graph.mts 暂未迁移，defaultSubGraph 使用空图占位
-import { Send, StateGraph, MemorySaver, Command } from '@langchain/langgraph'
+import { Send, StateGraph, MemorySaver } from '@langchain/langgraph'
 import type { GraphDef, WorkflowDef, GraphNode } from './types.mjs'
 import { TopState, SubState } from './state-schema.mjs'
 import { makeAgentNode, buildAgentContext } from './agent-node.mjs'
@@ -133,17 +133,29 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
 
 // ─── 节点包装：自动递增 loop_counters（V4 统一）──────────────────────────
 /**
- * 包装 action：执行后自增指定 nodeId 的 loop_counter
+ * 包装 action：执行后自增指定 nodeId 的 loop_counter，并在回环重入时注入 reentry 标记
  *
  * V4 修复：
  * - 所有节点统一使用此包装（删除 FIX_LOOP_KEY）
  * - 合并 state.loop_counters 和 result.loop_counters，保留既有计数
  * - 确保 loop_counters[nodeId] 是唯一真相来源
  *
+ * Task 7 修复（4d2d1401 回归）：
+ * - 条件边 path 函数在 langgraph 0.2.x 无法通过返回 Command 写入 state
+ *   （`new Command({goto, update})` 会被静默忽略，回环边因此永远不生效）
+ * - 因此 reentry 标记改由本包装器注入：源节点执行完、路由判定前，
+ *   算出本次是否会走回环边，若会则写入 `reentry[回环目标] = true`
+ * - 条件边 path 函数随后返回普通字符串目标，标签即可被目标节点消费
+ *
  * @param action 节点 action
  * @param nodeId 节点 ID（计数器键）
+ * @param routeMeta 该节点为条件边源时的路由元数据（可选；无则不做回环判定）
  */
-export function withLoopCounter(action: (s: any, c?: any) => any, nodeId: string) {
+export function withLoopCounter(
+  action: (s: any, c?: any) => any,
+  nodeId: string,
+  routeMeta?: RouteMeta,
+) {
   return async (state: any, config: any) => {
     const r = await action(state, config)
 
@@ -153,13 +165,30 @@ export function withLoopCounter(action: (s: any, c?: any) => any, nodeId: string
       ...(r?.loop_counters || {}),
     }
 
-    return {
+    const update: Record<string, any> = {
       ...r,
       loop_counters: {
         ...existingCounters,
         [nodeId]: (existingCounters[nodeId] || 0) + 1,
       },
     }
+
+    // Task 7：回环重入标记注入。
+    // 用「已应用本次更新」的 state 做路由判定，结果必须与条件边 path 函数的判定一致。
+    if (routeMeta) {
+      const routeState = {
+        ...state,
+        ...update,
+        node_outputs: { ...(state.node_outputs || {}), ...(update.node_outputs || {}) },
+      }
+      const target = routeFromSource(routeState, routeMeta)
+      const loopBack = routeMeta.edges.find((e) => e.loop_back && e.target === target)
+      if (loopBack) {
+        update.reentry = { ...(state.reentry || {}), [target]: true }
+      }
+    }
+
+    return update
   }
 }
 
@@ -205,6 +234,31 @@ export function collectRoutes(def: WorkflowDef, _graph: GraphDef): RouteMeta[] {
   return routes
 }
 
+// ─── 数据流 inputs 可用性过滤（Task 7）───────────────────────────────────────
+const BUILTIN_INPUT_SOURCES = ['task', 'input', 'spec']
+
+/**
+ * 过滤掉「运行期尚无产出」的上游节点输入。
+ *
+ * 为什么需要：回环节点的 inputs 天然包含「回环方向的上游」，例如
+ * `develop: inputs: [task, test]`——develop 第一次执行时 test 根本还没跑过。
+ * buildAgentContext 对缺失上游是 hard throw（Task 5 契约），首次进入就会炸。
+ *
+ * 节点存在性由加载期校验兜底（引用了不存在的节点 id 会在 buildGraphFromDef 抛错），
+ * 因此这里只处理「已声明但尚未产出」的合法情况，并打日志留痕。
+ */
+export function availableInputs(state: any, inputs: string[]): string[] {
+  const available: string[] = []
+  for (const src of inputs) {
+    if (BUILTIN_INPUT_SOURCES.includes(src) || state?.node_outputs?.[src] !== undefined) {
+      available.push(src)
+    } else {
+      console.warn(`[builder] inputs 源 '${src}' 尚无产出，本次跳过（回环首次进入属正常）`)
+    }
+  }
+  return available
+}
+
 // ─── 节点 type → action 工厂 ────────────────────────────────────────────────────
 /**
  * 根据节点类型创建对应的 LangGraph action
@@ -226,9 +280,10 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         throw new Error(`agent 节点 ${node.id} 缺少 agent_binding_ids`)
       }
 
-      // Task 5: 优先使用 inputs 数组，回退到 context 字段
+      // Task 5/Task 7: 优先使用 inputs 数组，回退到 context 字段
+      // inputs 中尚未产出的上游会被过滤（回环首次进入时该上游还没跑过）
       const buildPrompt = node.inputs
-        ? (s: any) => buildAgentContext(s, node.inputs!)
+        ? (s: any) => buildAgentContext(s, availableInputs(s, node.inputs!))
         : (s: any) => buildAgentContext(s, [node.context || 'input'])
 
       return makeAgentNode({
@@ -239,6 +294,7 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         isSubgraph,
         isArchive: node.id === 'archive',
         interactionMode,
+        exitContract: node.exit_contract,   // Task 4/Task 7: 准出契约接入运行时
         buildPrompt,
       })
     }
@@ -435,18 +491,19 @@ export function buildGraphFromDef(yamlContent: string): any {
   // 2. 构建 StateGraph
   const g = new StateGraph(TopState)
 
-  // 3. 添加节点（V4：所有节点统一包装 loop_counter）
+  // 3. 收集动态条件边路由（必须先于节点包装：包装器需要路由元数据来注入 reentry）
+  const routes = collectRoutes(def, graph)
+  const routeBySource = new Map(routes.map((r) => [r.source, r]))
+  const gateNodeIds = new Set(graph.nodes.filter(n => n.type === 'gate').map(n => n.id))
+  const conditionalNodeIds = new Set(routes.map(r => r.source))
+
+  // 4. 添加节点（V4：所有节点统一包装 loop_counter；Task 7：条件边源节点同时注入 reentry）
   for (const n of graph.nodes) {
     const action = nodeAction(n, false)
     // V4 修复：所有节点统一计数，删除 FIX_LOOP_KEY
-    const wrappedAction = withLoopCounter(action, n.id)
+    const wrappedAction = withLoopCounter(action, n.id, routeBySource.get(n.id))
     g.addNode(n.id, wrappedAction)
   }
-
-  // 4. 收集动态条件边路由
-  const routes = collectRoutes(def, graph)
-  const gateNodeIds = new Set(graph.nodes.filter(n => n.type === 'gate').map(n => n.id))
-  const conditionalNodeIds = new Set(routes.map(r => r.source))
 
   // 5. 普通边（跳过 gate 和条件边源节点）
   for (const e of graph.edges) {
@@ -471,7 +528,10 @@ export function buildGraphFromDef(yamlContent: string): any {
   }
 
   // 7. 动态条件边（YAML 中 from 相同的多条边）
-  // V4 修复：回环时注入 reentry 标记
+  // Task 7 修复：path 函数只返回目标节点名（字符串）。
+  // 回环重入的 reentry 标记由步骤 4 的 withLoopCounter 包装器注入 ——
+  // langgraph 0.2.x 会静默忽略条件边 path 函数返回的 Command（goto/update 都不生效），
+  // 若在这里返回 Command，回环边永远走不通（4d2d1401 空转的物理成因之一）。
   for (const route of routes) {
     if (route.edges.length === 0) continue
     // 单条无条件边 → 优化为普通边
@@ -481,20 +541,7 @@ export function buildGraphFromDef(yamlContent: string): any {
     }
     g.addConditionalEdges(
       route.source as any,
-      ((state: any) => {
-        const target = routeFromSource(state, route)
-        const loopBack = route.edges.find(e => e.loop_back && e.target === target)
-
-        // V4 修复：回环时注入 reentry 标记（使用 Command 对象）
-        if (loopBack) {
-          return new Command({
-            goto: target,
-            update: { reentry: { [target]: true } }
-          })
-        }
-
-        return target
-      }) as any,
+      ((state: any) => routeFromSource(state, route)) as any,
     )
   }
 

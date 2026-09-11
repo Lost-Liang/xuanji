@@ -8,13 +8,24 @@
 # 3. 重构优化：代码审查确保质量
 #
 # 循环设计：
-# - test → develop：功能测试失败，回到开发（最多 2 次）
+# - test → develop：功能测试失败，回到开发重做（最多 2 次）
 # - code_review ↔ code_fix：代码质量问题修复循环（最多 3 次）
+#
+# Task 7 迁移（流程驱动流程控制）：
+# - budget：调度层监督的预算上限（agent 调用数 / 墙钟 / 单节点访问次数）
+# - inputs：节点 prompt 的数据来源。develop 声明 [task, test]，
+#           回环重入时自动携带「测试为什么失败」。
+# - 条件边 source：function 条件函数读取哪个节点的产出（Task 3 hard fail 校验）
 
 version: "1"
 id: ruoyi-dev-flow
 name: 若依研发流程
 description: TDD流程：先写测试 → 开发实现 → 测试验证 → 代码审查 → 最终审查
+
+budget:
+  max_agent_invocations: 40
+  max_wall_clock_minutes: 120
+  max_node_visits: 5
 
 nodes:
   # 1. 写测试（TDD Red 阶段）
@@ -22,7 +33,7 @@ nodes:
     type: agent
     name: 写测试
     agent_binding_ids: [test-engineer]
-    context: task
+    inputs: [task]
     write_key: results
 
   # 2. 开发（TDD Green 阶段）
@@ -30,7 +41,7 @@ nodes:
     type: agent
     name: 开发
     agent_binding_ids: [ruoyi-developer]
-    context: task
+    inputs: [task, test]   # 回环重入时携带测试失败报告（首次进入时 test 尚未产出，自动跳过）
     write_key: results
 
   # 3. 测试验证
@@ -38,7 +49,7 @@ nodes:
     type: agent
     name: 测试验证
     agent_binding_ids: [tester]
-    context: task
+    inputs: [task, develop]
     write_key: results
 
   # 4. 代码审查
@@ -46,7 +57,7 @@ nodes:
     type: agent
     name: 代码审查
     agent_binding_ids: [reviewer]
-    context: task
+    inputs: [task, develop, test]
     write_key: results
 
   # 5. 代码修复（审查发现问题时进入）
@@ -54,7 +65,7 @@ nodes:
     type: agent
     name: 代码修复
     agent_binding_ids: [code-fixer]
-    context: task
+    inputs: [task, code_review]
     write_key: results
 
   # 6. 最终审查（人审 gate）
@@ -78,6 +89,7 @@ edges:
       type: function
       config:
         name: test_pass
+        source: test
 
   - from: test
     to: develop
@@ -85,6 +97,7 @@ edges:
       type: function
       config:
         name: test_fail
+        source: test
     loop_max: 2
 
   # code_review 条件边：pass → final_review, issues → code_fix（最多 3 次）
@@ -94,6 +107,7 @@ edges:
       type: function
       config:
         name: code_review_pass
+        source: code_review
 
   - from: code_review
     to: code_fix
@@ -101,6 +115,7 @@ edges:
       type: function
       config:
         name: code_review_issues
+        source: code_review
     loop_max: 3
 
   # code_fix → code_review（修复后重新审查）

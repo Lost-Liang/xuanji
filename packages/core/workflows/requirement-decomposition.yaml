@@ -10,6 +10,12 @@ id: requirement-decomposition
 name: 需求理解与任务拆分
 description: 接收需求文本，Agent 分析并拆分为 Epic → Feature → UserStory → Task 结构化任务树
 
+# Task 7 迁移：调度层监督的预算上限（拆解流程很短，预算收紧以防失控）
+budget:
+  max_agent_invocations: 10
+  max_wall_clock_minutes: 60
+  max_node_visits: 3
+
 nodes:
   # ─── 1. 需求分析 ─────────────────────────────────────────────────────────────
   - id: requirement_analysis

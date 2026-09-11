@@ -14,6 +14,10 @@ export const TopState = Annotation.Root({
   // 并行隔离通道（spec §6.0）
   node_outputs: Annotation<Record<string, string[]>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),  // sourceId → 各轮输出文本数组（合并语义）
   node_channels: Annotation<Record<string, string>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),    // sourceId → 私有 channel key
+  // 回环重入标记（Task 2/Task 7）：nodeId → 本次是否由回环边重入该节点
+  // 条件边 path 函数无法写 state，因此由路由前执行的节点包装器注入；
+  // agent-node 读取该标记，决定「强制开新会话（重做）」还是「复用会话（续跑）」
+  reentry: Annotation<Record<string, boolean>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),
 })
 
 // 研发流程子图 state（与顶层共享 results/loop_counters/session_refs；task 独有）
@@ -25,4 +29,8 @@ export const SubState = Annotation.Root({
   // 并行隔离通道（spec §6.0）
   node_outputs: Annotation<Record<string, string[]>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),  // sourceId → 各轮输出文本数组（合并语义）
   node_channels: Annotation<Record<string, string>>({ reducer: (_prev, next) => next ?? {}, default: () => ({}) }),    // sourceId → 私有 channel key
+  // 回环重入标记（Task 2/Task 7）：nodeId → 本次是否由回环边重入该节点
+  // 条件边 path 函数无法写 state，因此由路由前执行的节点包装器注入；
+  // agent-node 读取该标记，决定「强制开新会话（重做）」还是「复用会话（续跑）」
+  reentry: Annotation<Record<string, boolean>>({ reducer: (prev, next) => ({ ...prev, ...next }), default: () => ({}) }),
 })

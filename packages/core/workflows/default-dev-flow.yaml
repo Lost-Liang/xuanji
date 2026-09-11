@@ -19,6 +19,12 @@ id: default-dev-flow
 name: 默认研发流程
 description: 开发 → 编译验证 → 测试验证 → Bug修复(最多3次) → 质量审查 → 安全审查 → 最终审查
 
+# Task 7 迁移：调度层监督的预算上限（不声明则取默认 30/120/5）
+budget:
+  max_agent_invocations: 30
+  max_wall_clock_minutes: 120
+  max_node_visits: 5
+
 nodes:
   # ─── 1. 开发阶段 ─────────────────────────────────────────────────────────────
   - id: develop
