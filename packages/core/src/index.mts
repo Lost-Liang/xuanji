@@ -24,8 +24,10 @@ export type {
 // 状态定义
 export { TopState, SubState } from './graph/state-schema.mjs';
 // 工具函数
-export { gatePath, findEntryNodes, routeFromSource, withLoopCounter, collectRoutes, buildAgentContext } from './graph/builder.mjs';
+export { gatePath, findEntryNodes, routeFromSource, withLoopCounter, collectRoutes } from './graph/builder.mjs';
 export type { RouteMeta } from './graph/builder.mjs';
+// buildAgentContext 从 agent-node.mjs 导出（Task 5）
+export { buildAgentContext } from './graph/agent-node.mjs';
 // 图构建核心函数（V4 修复：从注释恢复）
 export { buildTopGraph, buildSubGraph, buildGraphFromDef } from './graph/builder.mjs';
 // YAML 加载器

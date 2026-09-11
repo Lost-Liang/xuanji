@@ -9,7 +9,7 @@
 import { Send, StateGraph, MemorySaver, Command } from '@langchain/langgraph'
 import type { GraphDef, WorkflowDef, GraphNode } from './types.mjs'
 import { TopState, SubState } from './state-schema.mjs'
-import { makeAgentNode } from './agent-node.mjs'
+import { makeAgentNode, buildAgentContext } from './agent-node.mjs'
 import { makeGateNode } from './nodes/gate-node.mjs'
 import { makeCommandNode } from './nodes/command-node.mjs'
 import { db } from '../db.mjs'
@@ -204,95 +204,6 @@ export function collectRoutes(def: WorkflowDef, _graph: GraphDef): RouteMeta[] {
   return routes
 }
 
-// ─── 辅助函数 ───────────────────────────────────────────────────────────────────
-function safeJsonParse(str: string): any {
-  try {
-    return JSON.parse(str)
-  } catch {
-    return null
-  }
-}
-
-// ─── buildAgentContext：根据 contextKey 从 state 提取 prompt 文本（spec §6.2） ──
-/**
- * 根据 context 字段从 state 中构建 agent prompt 文本
- *
- * - context='spec'：读取 state.spec（JSON 字符串或对象），格式化为需求规格文本
- * - context='task'：读取 state.task，格式化完整的任务详情（title, description, acceptanceCriteria, acceptanceSteps）
- * - context='input'（默认）：读取 state.input，回退到 state.task.title / state.task.description
- *
- * @param state LangGraph 状态
- * @param contextKey context 字段值（'spec' | 'task' | 'input' | 其他）
- * @returns prompt 文本
- */
-export function buildAgentContext(state: any, contextKey: string): string {
-  // context='task'：格式化完整的任务详情
-  if (contextKey === 'task' && state.task) {
-    const task = state.task
-    const parts: string[] = []
-
-    parts.push(`# 任务：${task.title || '未命名任务'}`)
-
-    if (task.description) {
-      parts.push(`\n## 任务描述\n${task.description}`)
-    }
-
-    if (task.acceptance_criteria || task.acceptanceCriteria) {
-      parts.push(`\n## 验收标准\n${task.acceptance_criteria || task.acceptanceCriteria}`)
-    }
-
-    if (task.acceptance_steps || task.acceptanceSteps) {
-      const steps = task.acceptance_steps || task.acceptanceSteps
-      if (Array.isArray(steps) && steps.length > 0) {
-        parts.push(`\n## BDD 验收步骤`)
-        steps.forEach((step: string, i: number) => {
-          parts.push(`${i + 1}. ${step}`)
-        })
-      } else if (typeof steps === 'string') {
-        parts.push(`\n## BDD 验收步骤\n${steps}`)
-      }
-    }
-
-    if (task.target_repo_path || task.targetRepoPath) {
-      parts.push(`\n## 工作目录\n${task.target_repo_path || task.targetRepoPath}`)
-    }
-
-    if (task.task_type || task.taskType) {
-      parts.push(`\n## 任务类型\n${task.task_type || task.taskType}`)
-    }
-
-    return parts.join('\n')
-  }
-
-  if (contextKey === 'spec') {
-    const specData = typeof state.spec === 'string' ? safeJsonParse(state.spec) : state.spec
-    if (specData) {
-      return `基于以下需求规格进行任务拆解：\n\n${JSON.stringify(specData, null, 2)}`
-    }
-  }
-
-  // 默认：如果有 task 对象，也包含基本信息
-  if (state.task) {
-    const task = state.task
-    let context = state.input ?? task.title ?? task.description ?? ''
-
-    // 如果有验收标准或步骤，追加到上下文
-    if (task.acceptance_criteria || task.acceptanceCriteria) {
-      context += `\n\n验收标准：${task.acceptance_criteria || task.acceptanceCriteria}`
-    }
-    if (task.acceptance_steps || task.acceptanceSteps) {
-      const steps = task.acceptance_steps || task.acceptanceSteps
-      if (Array.isArray(steps) && steps.length > 0) {
-        context += `\n\n验收步骤：\n${steps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
-      }
-    }
-
-    return context
-  }
-
-  return state.input ?? ''
-}
-
 // ─── 节点 type → action 工厂 ────────────────────────────────────────────────────
 /**
  * 根据节点类型创建对应的 LangGraph action
@@ -314,7 +225,10 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         throw new Error(`agent 节点 ${node.id} 缺少 agent_binding_ids`)
       }
 
-      const contextKey = node.context || 'input'
+      // Task 5: 优先使用 inputs 数组，回退到 context 字段
+      const buildPrompt = node.inputs
+        ? (s: any) => buildAgentContext(s, node.inputs!)
+        : (s: any) => buildAgentContext(s, [node.context || 'input'])
 
       return makeAgentNode({
         bindingIds,
@@ -324,7 +238,7 @@ function nodeAction(node: GraphNode, isSubgraph = false) {
         isSubgraph,
         isArchive: node.id === 'archive',
         interactionMode,
-        buildPrompt: (s: any) => buildAgentContext(s, contextKey),
+        buildPrompt,
       })
     }
     case 'gate':
@@ -506,6 +420,16 @@ export function buildGraphFromDef(yamlContent: string): any {
   // 1. 解析 YAML（含结构校验）
   const def = loadWorkflowFromYaml(yamlContent)
   const graph = mapYamlToGraphDef(def)
+
+  // 1.5. 校验 inputs 引用（Task 5）
+  const nodeIds = new Set(graph.nodes.map(n => n.id))
+  for (const node of graph.nodes) {
+    for (const src of node.inputs ?? []) {
+      if (!['task', 'input', 'spec'].includes(src) && !nodeIds.has(src)) {
+        throw new Error(`节点 '${node.id}' 的 inputs 引用了不存在的源 '${src}'`)
+      }
+    }
+  }
 
   // 2. 构建 StateGraph
   const g = new StateGraph(TopState)

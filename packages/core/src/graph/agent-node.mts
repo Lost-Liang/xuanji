@@ -27,6 +27,8 @@ import type { SelectorRule, ExitContract } from './types.mjs';
 import { getByRole, type AgentBinding } from '../storage/agent-binding-store.mjs';
 import { readSkillContent, extractSkillBody } from '../lib/skill-content.mjs';
 import { verifyContract } from './contract-verifier.mjs';
+import { UpstreamMissingError } from './errors.mjs';
+import { sourceText } from './conditions/source-text.mjs';
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
 
@@ -34,6 +36,98 @@ import { verifyContract } from './contract-verifier.mjs';
 // 默认 1 小时（reviewer 跑 code-review/security skill 分析代码 + 输出 checklist 较久）
 // env 可覆盖
 const RUN_TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS) || 60 * 60 * 1000;
+
+// ─── 数据流 inputs 组装（Task 5）──────────────────────────────────────────────
+
+/**
+ * 根据 inputs 数组从 state 中构建 agent prompt 文本
+ *
+ * 支持的数据源：
+ * - 'task': 读取 state.task，格式化完整的任务详情
+ * - 'input': 读取 state.input
+ * - 'spec': 读取 state.spec，格式化需求规格
+ * - 其他: 上游节点 ID，从 node_outputs 中读取
+ *
+ * @param state LangGraph 状态
+ * @param inputs 数据来源数组
+ * @returns 组装后的 prompt 文本
+ */
+export function buildAgentContext(state: any, inputs: string[]): string {
+  const parts: string[] = [];
+
+  for (const src of inputs) {
+    if (src === 'task') {
+      const task = state.task;
+      if (task) {
+        const taskParts: string[] = [];
+        taskParts.push(`# 任务：${task.title || '未命名任务'}`);
+
+        if (task.description) {
+          taskParts.push(`\n## 任务描述\n${task.description}`);
+        }
+
+        if (task.acceptance_criteria || task.acceptanceCriteria) {
+          taskParts.push(`\n## 验收标准\n${task.acceptance_criteria || task.acceptanceCriteria}`);
+        }
+
+        if (task.acceptance_steps || task.acceptanceSteps) {
+          const steps = task.acceptance_steps || task.acceptanceSteps;
+          if (Array.isArray(steps) && steps.length > 0) {
+            taskParts.push(`\n## BDD 验收步骤`);
+            steps.forEach((step: string, i: number) => {
+              taskParts.push(`${i + 1}. ${step}`);
+            });
+          } else if (typeof steps === 'string') {
+            taskParts.push(`\n## BDD 验收步骤\n${steps}`);
+          }
+        }
+
+        if (task.target_repo_path || task.targetRepoPath) {
+          taskParts.push(`\n## 工作目录\n${task.target_repo_path || task.targetRepoPath}`);
+        }
+
+        if (task.task_type || task.taskType) {
+          taskParts.push(`\n## 任务类型\n${task.task_type || task.taskType}`);
+        }
+
+        parts.push(taskParts.join('\n'));
+      }
+    } else if (src === 'input') {
+      if (state.input) {
+        parts.push(state.input);
+      }
+    } else if (src === 'spec') {
+      const specData = typeof state.spec === 'string' ? safeJsonParse(state.spec) : state.spec;
+      if (specData) {
+        parts.push(`# 需求规格\n\n${JSON.stringify(specData, null, 2)}`);
+      }
+    } else {
+      // 上游节点产出
+      // 区分"缺失"和"空输出"：
+      // - 缺失：node_outputs 中没有这个 key → 抛错
+      // - 空输出：有 key 但值为空数组 → 视为有效输出（内容为空）
+      const outputs = state.node_outputs?.[src]
+      if (outputs === undefined) {
+        throw new UpstreamMissingError(src);
+      }
+      const out = sourceText(state, src);
+      parts.push(`## 上游阶段产出：${src}\n\n${out}`);
+    }
+  }
+
+  return parts.join('\n\n---\n\n');
+}
+
+/**
+ * 安全解析 JSON
+ */
+function safeJsonParse(str: string): any {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
 
 // ─── 工作目录解析 ──────────────────────────────────────────────────────────────
 

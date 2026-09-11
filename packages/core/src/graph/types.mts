@@ -101,6 +101,9 @@ export interface GraphNode {
 
   // 控制 agent 读取的 state 通道，默认 'input'（spec §4.A）
   context?: string
+
+  // 数据流 inputs 声明（Task 5）：prompt 组装的数据来源
+  inputs?: string[]  // 内置源（task/input/spec）或上游节点 id
 }
 export interface GraphEdge {
   id: string
@@ -174,6 +177,7 @@ export interface WorkflowNode {
   python_config?: { timeout_seconds: number; encoding: string }   // 未来扩展占位，保留类型不实现
   context?: string                    // 控制 agent 读取的 state 通道，默认 'input'
   exit_contract?: ExitContract        // 准出契约（Task 4）
+  inputs?: string[]                   // prompt 组装的数据来源（Task 5）：内置源（task/input/spec）或上游节点 id
 }
 
 // 作者边：字段用 from/to（映射前绝不读 source/target），loop_max 只落在条件回环边上

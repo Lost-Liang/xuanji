@@ -175,7 +175,7 @@ describe('builder.mts 核心函数', () => {
   });
 
   describe('buildAgentContext', () => {
-    it('should read state.spec when context=spec', () => {
+    it('should read state.spec when inputs=["spec"]', () => {
       const state = {
         spec: JSON.stringify({
           business_goal: '业务目标',
@@ -183,32 +183,21 @@ describe('builder.mts 核心函数', () => {
         }),
       };
 
-      const result = buildAgentContext(state, 'spec');
+      const result = buildAgentContext(state, ['spec']);
 
-      expect(result).toContain('基于以下需求规格进行任务拆解');
+      expect(result).toContain('需求规格');
       expect(result).toContain('业务目标');
       expect(result).toContain('scope');
     });
 
-    it('should read state.input when context=input (default)', () => {
+    it('should read state.input when inputs=["input"]', () => {
       const state = {
         input: '原始需求文本',
       };
 
-      const result = buildAgentContext(state, 'input');
+      const result = buildAgentContext(state, ['input']);
 
       expect(result).toBe('原始需求文本');
-    });
-
-    it('should fallback to input when spec is invalid JSON', () => {
-      const state = {
-        spec: 'invalid json',
-        input: 'fallback text',
-      };
-
-      const result = buildAgentContext(state, 'spec');
-
-      expect(result).toBe('fallback text');
     });
 
     it('should handle spec as an object (not string)', () => {
@@ -216,23 +205,26 @@ describe('builder.mts 核心函数', () => {
         spec: { business_goal: '直接对象' },
       };
 
-      const result = buildAgentContext(state, 'spec');
+      const result = buildAgentContext(state, ['spec']);
 
-      expect(result).toContain('基于以下需求规格进行任务拆解');
+      expect(result).toContain('需求规格');
       expect(result).toContain('直接对象');
     });
 
-    it('should fallback to task.title then task.description', () => {
+    it('should read task info when inputs=["task"]', () => {
       const stateWithTaskTitle = { task: { title: '任务标题', description: '任务描述' } };
-      expect(buildAgentContext(stateWithTaskTitle, 'input')).toBe('任务标题');
+      const result = buildAgentContext(stateWithTaskTitle, ['task']);
+      expect(result).toContain('任务标题');
+      expect(result).toContain('任务描述');
 
       const stateWithTaskDesc = { task: { description: '任务描述' } };
-      expect(buildAgentContext(stateWithTaskDesc, 'input')).toBe('任务描述');
+      const result2 = buildAgentContext(stateWithTaskDesc, ['task']);
+      expect(result2).toContain('任务描述');
     });
 
     it('should return empty string when no data available', () => {
       const state = {};
-      expect(buildAgentContext(state, 'input')).toBe('');
+      expect(buildAgentContext(state, ['input'])).toBe('');
     });
   });
 
