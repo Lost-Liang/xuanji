@@ -6,7 +6,7 @@
 // - pgClient → db（Prisma 客户端）
 // - loop-paths.mts 暂未迁移，buildSubGraph 中 testing/quality/security 条件边内联处理
 // - seed-graph.mts 暂未迁移，defaultSubGraph 使用空图占位
-import { Send, StateGraph, MemorySaver } from '@langchain/langgraph'
+import { Send, StateGraph, MemorySaver, Command } from '@langchain/langgraph'
 import type { GraphDef, WorkflowDef, GraphNode } from './types.mjs'
 import { TopState, SubState } from './state-schema.mjs'
 import { makeAgentNode } from './agent-node.mjs'
@@ -32,16 +32,9 @@ const defaultSubGraph: GraphDef = {
   version: 1,
 }
 
-// ─── 循环节点 → 计数器键 映射（spec §4.5） ─────────────────────────────────────
-// fix 节点执行后自增对应 check 节点的 loop_counter，供 routeFromSource 判断是否继续循环
-const FIX_LOOP_KEY: Record<string, string> = {
-  // V3 遗留
-  bug_fix: 'compile_check',
-  quality_issue_fix: 'quality_check',
-  security_issue_fix: 'security_check',
-  // V4 新设计
-  code_fix: 'code_review',  // 代码审查循环
-}
+// ─── 循环节点计数器统一管理（V4 修复）──────────────────────────────────────
+// 所有节点都通过 withLoopCounter 包装，统一递增 loop_counters
+// 删除 V3 的 FIX_LOOP_KEY 映射表，避免遗漏
 
 // ─── 条件边源节点集合（spec §4.5） ─────────────────────────────────────────────
 // 这些节点不使用普通 addEdge，而使用 addConditionalEdges（V3 buildSubGraph 用）
@@ -72,10 +65,17 @@ export interface RouteMeta {
   }>
 }
 
-// ─── 动态条件边路由函数（spec §6.2） ────────────────────────────────────────────
+// ─── 动态条件边路由函数（V4 修正）─────────────────────────────────────────────
 /**
  * 根据状态和路由元数据决定下一个节点
  * 优先级：非回环条件边 → 回环条件边（未超限）→ 默认边 → __end__
+ *
+ * V4 修正：
+ * - 回环边界判定：visits <= limit（而非 done < limit）
+ * - visits = loop_counters[source]（已完成的执行次数）
+ * - 第 1 次完成 visits=1，若 loop_max=2，1 <= 2 → 回环
+ * - 第 2 次完成 visits=2，若 loop_max=2，2 <= 2 → 回环
+ * - 第 3 次完成 visits=3，若 loop_max=2，3 > 2 → 耗尽
  */
 export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number = 3): string {
   const nonDefault = meta.edges.filter((e) => !e.is_default && !e.loop_back)
@@ -94,9 +94,13 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
 
   // 回环边（修复循环）
   if (loopBack) {
-    const done = state.loop_counters?.[meta.source] ?? 0
+    const visits = state.loop_counters?.[meta.source] ?? 0
     const limit = loopBack.loop_max ?? DEFAULT_MAX
-    if (done < limit) {
+    // V4 修正：visits < limit 而非 visits <= limit
+    // 第 1 次完成（visits=1），1 < 3 → 回环
+    // 第 2 次完成（visits=2），2 < 3 → 回环
+    // 第 3 次完成（visits=3），3 < 3 为 false → 耗尽
+    if (visits < limit) {
       if (loopBack.condition) {
         if (loopBack.condition.type === 'keyword') {
           if (evaluateKeywordCondition(sourceText(state, meta.source), loopBack.condition.config)) return loopBack.target
@@ -114,19 +118,33 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
   return d ? d.target : '__end__'
 }
 
-// ─── fix 节点包装：自动递增 loop_counters（spec §4.5） ──────────────────────────
+// ─── 节点包装：自动递增 loop_counters（V4 统一）──────────────────────────
 /**
- * 包装 action：执行后自增指定 checkId 的 loop_counter
- * 用于修复节点（bug_fix/quality_issue_fix/security_issue_fix）
+ * 包装 action：执行后自增指定 nodeId 的 loop_counter
+ *
+ * V4 修复：
+ * - 所有节点统一使用此包装（删除 FIX_LOOP_KEY）
+ * - 合并 state.loop_counters 和 result.loop_counters，保留既有计数
+ * - 确保 loop_counters[nodeId] 是唯一真相来源
+ *
+ * @param action 节点 action
+ * @param nodeId 节点 ID（计数器键）
  */
-export function withLoopCounter(action: (s: any, c?: any) => any, checkId: string) {
+export function withLoopCounter(action: (s: any, c?: any) => any, nodeId: string) {
   return async (state: any, config: any) => {
     const r = await action(state, config)
+
+    // 合并 state 和 result 的 loop_counters
+    const existingCounters = {
+      ...(state.loop_counters || {}),
+      ...(r?.loop_counters || {}),
+    }
+
     return {
       ...r,
       loop_counters: {
-        ...(r?.loop_counters || {}),
-        [checkId]: (state.loop_counters?.[checkId] || 0) + 1,
+        ...existingCounters,
+        [nodeId]: (existingCounters[nodeId] || 0) + 1,
       },
     }
   }
@@ -419,24 +437,12 @@ export function buildTopGraph(def: GraphDef, subDef?: GraphDef): any {
 export function buildSubGraph(def: GraphDef): any {
   const g = new StateGraph(SubState)
 
-  // 添加节点（fix 节点包装 loop_counter 自增）
+  // 添加节点（V4：所有节点统一包装 loop_counter）
   for (const n of def.nodes) {
-    let action = nodeAction(n, true)
-    const fixKey = FIX_LOOP_KEY[n.id]
-    if (fixKey) {
-      const base = action
-      action = async (state: any, config: any) => {
-        const r = (await base(state, config)) as any
-        return {
-          ...r,
-          loop_counters: {
-            ...((r as any)?.loop_counters || {}),
-            [fixKey]: ((state as any).loop_counters?.[fixKey] || 0) + 1,
-          },
-        }
-      }
-    }
-    g.addNode(n.id, action)
+    const action = nodeAction(n, true)
+    // V4 修复：所有节点统一计数，删除 FIX_LOOP_KEY
+    const wrappedAction = withLoopCounter(action, n.id)
+    g.addNode(n.id, wrappedAction)
   }
 
   const nodeIds = new Set(def.nodes.map(n => n.id))
@@ -492,14 +498,12 @@ export function buildGraphFromDef(yamlContent: string): any {
   // 2. 构建 StateGraph
   const g = new StateGraph(TopState)
 
-  // 3. 添加节点
+  // 3. 添加节点（V4：所有节点统一包装 loop_counter）
   for (const n of graph.nodes) {
-    let action = nodeAction(n, false)
-    const fixKey = FIX_LOOP_KEY[n.id]
-    if (fixKey) {
-      action = withLoopCounter(action, fixKey)
-    }
-    g.addNode(n.id, action)
+    const action = nodeAction(n, false)
+    // V4 修复：所有节点统一计数，删除 FIX_LOOP_KEY
+    const wrappedAction = withLoopCounter(action, n.id)
+    g.addNode(n.id, wrappedAction)
   }
 
   // 4. 收集动态条件边路由
@@ -530,6 +534,7 @@ export function buildGraphFromDef(yamlContent: string): any {
   }
 
   // 7. 动态条件边（YAML 中 from 相同的多条边）
+  // V4 修复：回环时注入 reentry 标记
   for (const route of routes) {
     if (route.edges.length === 0) continue
     // 单条无条件边 → 优化为普通边
@@ -539,7 +544,20 @@ export function buildGraphFromDef(yamlContent: string): any {
     }
     g.addConditionalEdges(
       route.source as any,
-      (state: any) => routeFromSource(state, route),
+      ((state: any) => {
+        const target = routeFromSource(state, route)
+        const loopBack = route.edges.find(e => e.loop_back && e.target === target)
+
+        // V4 修复：回环时注入 reentry 标记（使用 Command 对象）
+        if (loopBack) {
+          return new Command({
+            goto: target,
+            update: { reentry: { [target]: true } }
+          })
+        }
+
+        return target
+      }) as any,
     )
   }
 

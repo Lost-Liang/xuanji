@@ -363,7 +363,8 @@ export function makeAgentNode(opts: {
       : topExecId;
 
     // 循环节点第几轮（fix 节点 action 末尾自增）
-    const iteration = (state.loop_counters?.[opts.nodeId] || 0);
+    // V4 修正：命名改为 visits（已完成次数），更清晰
+    const visits = state.loop_counters?.[opts.nodeId] ?? 0
 
     // ── 从 DB 读取 Binding 配置 ───────────────────────────────────────────────
     let bindings: AgentBinding[] = [];
@@ -431,7 +432,7 @@ export function makeAgentNode(opts: {
         where: {
           execution_id: execId,
           phase_id: opts.nodeId,
-          attempt: iteration + 1,
+          attempt: visits + 1,  // V4 修正：attempt = visits + 1
         },
       });
 
@@ -445,7 +446,7 @@ export function makeAgentNode(opts: {
             execution_id: execId,
             phase_id: opts.nodeId,
             task_id: task?.id ?? null,
-            attempt: iteration + 1,
+            attempt: visits + 1,  // V4 修正：attempt = visits + 1
             status: 'running',
             started_at: new Date(),
           },
@@ -463,8 +464,21 @@ export function makeAgentNode(opts: {
       execShortid,
     });
 
-    // ── 会话恢复（用于 429 重试后继续）────────────────────────────────────────
-    const existingSessionId = phaseInstance?.sessionId;
+    // ── 会话恢复决策（V4 修复）────────────────────────────────────────────────────
+    // V4 修复：区分回环重入 vs 串行续跑
+    // - 回环重入（reentry 标记）→ 强制开新会话，AI 不复述旧答案
+    // - 串行续跑（429 重试/gate resume）→ 复用会话，AI 继续上次工作
+    const isReentry = state.reentry?.[opts.nodeId] === true;
+
+    // 清除 reentry 标记（一次性消费）
+    if (isReentry && state.reentry) {
+      delete state.reentry[opts.nodeId];
+    }
+
+    // 决定是否复用 session
+    const existingSessionId = isReentry
+      ? undefined  // 回环重入 → 强制开新会话
+      : phaseInstance?.sessionId;  // 串行续跑 → 复用
 
     // ── 执行 Agent ───────────────────────────────────────────────────────────
     let output = '';
