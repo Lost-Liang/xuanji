@@ -425,6 +425,7 @@ export function makeAgentNode(opts: {
 
           // 映射并保存对话事件
           const mapped = mapAdapterEvent(event);
+          if (!mapped) return;
           await conversationStore.saveEvent({
             execution_id: execId,
             session_id: currentSessionId ?? undefined,

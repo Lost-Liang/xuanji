@@ -35,13 +35,18 @@ export function mapAdapterEvent(event: AdapterEvent): {
   eventType: string;
   role?: string;
   payload: Prisma.InputJsonValue;
-} {
+} | null {
   switch (event.type) {
     case 'system':
-      return {
-        eventType: 'model_started',
-        payload: { sessionId: event.sessionId } as Prisma.InputJsonValue,
-      };
+      // 只在会话初始化时记录
+      if (event.subtype === 'init') {
+        return {
+          eventType: 'model_started',
+          payload: { sessionId: event.sessionId } as Prisma.InputJsonValue,
+        };
+      }
+      // 其他 system 事件不记录
+      return null;
     case 'assistant':
       return {
         eventType: 'model_delta',

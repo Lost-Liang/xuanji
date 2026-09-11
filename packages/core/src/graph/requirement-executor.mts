@@ -116,6 +116,7 @@ export async function executeRequirement(
         // 保存对话事件
         try {
           const mapped = mapAdapterEvent(event);
+          if (!mapped) return;
           await conversationStore.saveEvent({
             execution_id: executionId,
             session_id: currentSessionId ?? undefined,
