@@ -17,6 +17,7 @@ import { getCondition } from './conditions/index.mjs'
 import { evaluateKeywordCondition } from './conditions/keyword-evaluator.mjs'
 import { loadWorkflowFromYaml, mapYamlToGraphDef } from './yaml-loader.mjs'
 import { sourceText } from './conditions/source-text.mjs'
+import { WorkflowValidationError } from './errors.mjs'
 
 // ─── Checkpointer（V4 临时方案：MemorySaver；TODO 接入 Prisma checkpoint） ──────
 const checkpointer = new MemorySaver()
@@ -426,7 +427,7 @@ export function buildGraphFromDef(yamlContent: string): any {
   for (const node of graph.nodes) {
     for (const src of node.inputs ?? []) {
       if (!['task', 'input', 'spec'].includes(src) && !nodeIds.has(src)) {
-        throw new Error(`节点 '${node.id}' 的 inputs 引用了不存在的源 '${src}'`)
+        throw new WorkflowValidationError(`节点 '${node.id}' 的 inputs 引用了不存在的源 '${src}'`)
       }
     }
   }
