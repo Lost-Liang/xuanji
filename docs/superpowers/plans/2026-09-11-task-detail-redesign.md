@@ -153,14 +153,7 @@ describe('GET /api/tasks/:id - phase_outputs', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pnpm --filter @xuanji/core test test/routes/tasks-outputs.test.mts`
-Expected: PASS（测试只验证数据库查询，不涉及路由）
-
-注意：这个测试验证数据库查询逻辑，不涉及路由层。路由层的手动测试在 Task 5 进行。
-
-- [ ] **Step 3: Implement phase_outputs query in route**
+- [ ] **Step 2: Implement phase_outputs query in route**
 
 修改 `packages/core/src/routes/tasks.mts` 的 `GET /:id` 端点（约 line 85-122）：
 
@@ -279,7 +272,7 @@ Fixes P2: Phase 产出物区始终显示'暂无产出物'"
 - Consumes: `tasks.description` 和 `tasks.acceptance_criteria` 字段
 - Produces: `breakdown_content` 字段，优先 description，回退到 acceptance_criteria 包装的 JSON
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the test**
 
 创建测试文件 `packages/core/test/routes/tasks-breakdown-fallback.test.mts`:
 
@@ -354,12 +347,7 @@ describe('GET /api/tasks/:id - breakdown_content fallback', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pnpm --filter @xuanji/core test test/routes/tasks-breakdown-fallback.test.mts`
-Expected: PASS（测试只验证逻辑，不涉及路由）
-
-- [ ] **Step 3: Implement fallback logic in route**
+- [ ] **Step 2: Implement fallback logic in route**
 
 修改 `packages/core/src/routes/tasks.mts` 的 `breakdown_content` 字段（约 line 104）：
 
@@ -429,7 +417,7 @@ Fixes P3: 拆分内容区始终显示'暂无结构化拆分信息'"
 
 **注意**：此端点为 `PhaseTimelineGantt.vue` 组件使用，当前该组件调用此端点但后端未实现。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the test**
 
 创建测试文件 `packages/core/test/routes/execution-outputs.test.mts`:
 
@@ -512,12 +500,7 @@ describe('GET /api/executions/:id/outputs', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pnpm --filter @xuanji/core test test/routes/execution-outputs.test.mts`
-Expected: PASS（测试只验证数据库查询）
-
-- [ ] **Step 3: Implement the endpoint**
+- [ ] **Step 2: Implement the endpoint**
 
 在 `packages/core/src/routes/executions.mts` 末尾添加新端点：
 
@@ -668,18 +651,16 @@ git commit -m "chore(dashboard): add marked + dompurify for markdown rendering
 
 ---
 
-## Task 6: 前端重写 TaskDetail.vue 布局
+## Task 6a: 前端重写 Zone A 标题条
 
 **Files:**
-- Modify: `packages/dashboard/src/views/TaskDetail.vue`（整体重写）
+- Modify: `packages/dashboard/src/views/TaskDetail.vue`（部分）
 
 **Interfaces:**
 - Consumes: `TaskDetail` 类型（来自 Task 4）
-- Produces: 新的三区布局页面
+- Produces: 单行标题条 UI
 
-**注意**：这是最大的任务，需要整体重写。建议分步骤进行，每步验证。
-
-- [ ] **Step 1: Rewrite Zone A (标题条)**
+- [ ] **Step 1: Replace top-cards with title bar**
 
 替换现有的 `top-cards` 双卡结构为单行标题条：
 
@@ -770,7 +751,35 @@ git commit -m "chore(dashboard): add marked + dompurify for markdown rendering
 }
 ```
 
-- [ ] **Step 2: Rewrite Zone B (流程条)**
+- [ ] **Step 2: Verify title bar in browser**
+
+打开 `http://localhost:5173/tasks/728fbb58-bd42-4492-9424-38500eaa4532`，验证：
+- [ ] 标题条显示状态徽章 + 标题 + 时间 + ID
+- [ ] 操作按钮正确显示
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/dashboard/src/views/TaskDetail.vue
+git commit -m "feat(dashboard): Zone A - single title bar
+
+Replace dual status+progress cards with compact title bar.
+
+Fixes P4: 双卡并列浪费空间"
+```
+
+---
+
+## Task 6b: 前端重写 Zone B 流程条
+
+**Files:**
+- Modify: `packages/dashboard/src/views/TaskDetail.vue`（部分）
+
+**Interfaces:**
+- Consumes: `session_refs` 中的 `started_at`/`completed_at`（来自 Task 1）
+- Produces: 水平流程条 UI + `phaseStatuses` 计算属性
+
+- [ ] **Step 1: Rewrite phaseStatuses computed property**
 
 替换现有的 `phaseStatuses` 计算属性和模板：
 
@@ -921,7 +930,40 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
 }
 ```
 
-- [ ] **Step 3: Rewrite Zone C (主内容区)**
+- [ ] **Step 2: Add template and styles**
+
+添加 Zone B 的模板和样式（见上文）
+
+- [ ] **Step 3: Verify flow bar in browser**
+
+打开页面验证：
+- [ ] 流程条只显示 3 个已执行阶段（write_tests / develop / test）
+- [ ] 每个阶段带耗时标签
+- [ ] 不显示 code_review、code_fix、final_review
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/dashboard/src/views/TaskDetail.vue
+git commit -m "feat(dashboard): Zone B - phase flow bar
+
+Show only executed phases with durations. Remove N/M fraction.
+
+Fixes P1: 3/6 阶段完成显示冲突"
+```
+
+---
+
+## Task 6c: 前端重写 Zone C 主内容区 + markdown 渲染
+
+**Files:**
+- Modify: `packages/dashboard/src/views/TaskDetail.vue`（部分）
+
+**Interfaces:**
+- Consumes: `phase_outputs`（来自 Task 1）、`breakdown_content`（来自 Task 2）、marked + DOMPurify（来自 Task 5）
+- Produces: 双列主内容区 + markdown 渲染
+
+- [ ] **Step 1: Add markdown rendering function with error handling**
 
 添加 Zone C 的双列布局：
 
@@ -1129,49 +1171,134 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
 }
 ```
 
-- [ ] **Step 4: Add markdown rendering function**
+- [ ] **Step 2: Add Zone C template and styles**
 
-在 `<script setup>` 中添加：
+添加 Zone C 的双列布局（使用上面的 markdown 渲染函数）：
 
-```ts
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+```vue
+<!-- Zone C: 主内容区 -->
+<div class="main-content-grid" v-if="detail && !loading">
+  <!-- 左列 -->
+  <div class="main-col">
+    <!-- 任务要求卡 -->
+    <section class="content-card">
+      <h2 class="card-title">任务要求</h2>
+      <div v-if="!parsedBreakdown" class="empty-state">此任务未提供详细要求</div>
+      <div v-else class="breakdown-content">
+        <template v-if="parsedBreakdown.kind === 'json'">
+          <div v-for="(v, k) in otherBreakdownFields" :key="k" class="breakdown-field">
+            <span class="breakdown-field-label">{{ fieldLabel(String(k)) }}</span>
+            <pre v-if="typeof v === 'object' && v !== null" class="breakdown-field-value">{{ formatFieldValue(v) }}</pre>
+            <p v-else class="breakdown-field-text">{{ formatFieldValue(v) }}</p>
+          </div>
+          <p v-if="!Object.keys(otherBreakdownFields).length" class="empty-state">无其他拆分字段</p>
+        </template>
+        <pre v-else class="breakdown-raw">{{ parsedBreakdown.text }}</pre>
+      </div>
+    </section>
 
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+    <!-- 阶段结果卡 -->
+    <section v-if="detail.phase_outputs.length" class="content-card">
+      <h2 class="card-title">阶段结果</h2>
+      <div v-for="po in detail.phase_outputs" :key="po.id" class="phase-result">
+        <div class="phase-result-header">
+          <span class="phase-result-title">{{ phaseLabel(po.node_id) }}</span>
+          <span class="phase-result-time">{{ formatTime(po.created_at) }}</span>
+        </div>
+        <div class="phase-result-body" v-html="renderMarkdown(po.value || '')"></div>
+      </div>
+    </section>
+    <section v-else class="content-card">
+      <h2 class="card-title">阶段结果</h2>
+      <div class="empty-state">此任务无阶段产出记录</div>
+    </section>
+  </div>
 
-function renderMarkdown(md: string): string {
-  if (!md) return ''
-  const html = marked.parse(md) as string
-  return DOMPurify.sanitize(html)
-}
+  <!-- 右列 -->
+  <div class="side-col">
+    <!-- 元信息卡 -->
+    <section class="content-card">
+      <h2 class="card-title">元信息</h2>
+      <div class="meta-list">
+        <div class="meta-row">
+          <span class="meta-label">执行 ID</span>
+          <span class="meta-value mono">{{ detail.id }}</span>
+        </div>
+        <div v-if="detail.requirement_id" class="meta-row">
+          <span class="meta-label">需求 ID</span>
+          <span class="meta-value mono">{{ detail.requirement_id.slice(0, 8) }}...</span>
+        </div>
+        <div v-if="detail.rate_limited_count" class="meta-row">
+          <span class="meta-label">限流次数</span>
+          <span class="meta-value">{{ detail.rate_limited_count }}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 产出物索引卡 -->
+    <section v-if="detail.phase_outputs.length" class="content-card">
+      <h2 class="card-title">产出物索引</h2>
+      <div class="output-index">
+        <div v-for="po in detail.phase_outputs" :key="po.id" class="output-index-item">
+          <span class="output-index-label">{{ phaseLabel(po.node_id) }}</span>
+          <span class="output-index-time">{{ formatTime(po.created_at) }}</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<div v-else-if="loading" class="loading-state">
+  <el-skeleton :rows="5" animated />
+</div>
 ```
 
-- [ ] **Step 5: Verify manually in browser**
+（样式见前文 Zone C 样式部分）
 
-打开 `http://localhost:5173/tasks/728fbb58-bd42-4492-9424-38500eaa4532` 验证：
+- [ ] **Step 3: Verify Zone C in browser**
 
-- [ ] 标题条正确显示状态、标题、时间
-- [ ] 流程条只显示 3 个已执行阶段，每个带耗时
-- [ ] 任务要求区显示验收标准
-- [ ] 阶段结果区展示 3 条 markdown 内容
-- [ ] 右侧元信息卡显示 Token/会话 ID 等
+打开页面验证：
+- [ ] 任务要求区显示验收标准（来自 acceptance_criteria）
+- [ ] 阶段结果区展示 3 条 markdown，内容可读
+- [ ] 右侧元信息卡显示执行 ID
+- [ ] 产出物索引卡正确显示
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add packages/dashboard/src/views/TaskDetail.vue packages/dashboard/package.json
-git commit -m "feat(dashboard): redesign TaskDetail page
+git add packages/dashboard/src/views/TaskDetail.vue
+git commit -m "feat(dashboard): Zone C - main content with markdown rendering
 
-- Zone A: Single title bar (status + title + time + actions)
-- Zone B: Phase flow showing only executed phases with durations
-- Zone C: Two-column layout (task requirements + phase results | metadata)
-- Render phase_outputs as markdown using marked + DOMPurify
-- Fallback breakdown_content to acceptance_criteria
+- Task requirements card with fallback to acceptance_criteria
+- Phase results rendered as markdown (marked + DOMPurify)
+- Two-column layout (65%/35%) with responsive stacking
+- Add loading skeleton state
 
-Fixes P1, P4, P5 from spec"
+Fixes P3, P5: breakdown_content fallback + visible AI work"
+```
+
+---
+
+## Task 6d: 前端构建验证
+
+**Files:** 无（纯验证任务）
+
+- [ ] **Step 1: Build frontend**
+
+Run: `pnpm --filter @xuanji/dashboard build`
+Expected: 构建成功，无 TypeScript 错误
+
+- [ ] **Step 2: Run backend tests**
+
+Run: `pnpm --filter @xuanji/core test`
+Expected: 所有测试通过（包括 Task 1, 2, 3 的新测试）
+
+- [ ] **Step 3: Commit any fixes**
+
+```bash
+git add -A
+git commit -m "fix: address build/test issues from verification
+
+[describe any fixes made]"
 ```
 
 ---
@@ -1231,18 +1358,21 @@ git commit -m "fix(dashboard): address visual issues from manual testing
 | 3 | 后端 /outputs 端点 | 无 |
 | 4 | 前端 API 类型更新 | 无 |
 | 5 | 安装 marked + DOMPurify | 无 |
-| 6 | 前端重写布局 | 1, 2, 4, 5 |
-| 7 | 手动测试 | 6 |
+| 6a | 前端 Zone A 标题条 | 4 |
+| 6b | 前端 Zone B 流程条 | 1, 4 |
+| 6c | 前端 Zone C 主内容区 + markdown | 1, 2, 5 |
+| 6d | 前端构建验证 | 6a, 6b, 6c |
+| 7 | 手动测试 | 6d |
 
-**并行机会**：Task 1, 2, 3, 4, 5 可以并行；Task 6 依赖 1, 2, 4, 5；Task 7 依赖 6。
+**并行机会**：Task 1-5 可并行；Task 6a 依赖 4；Task 6b 依赖 1, 4；Task 6c 依赖 1, 2, 5；Task 6d 依赖 6a/b/c；Task 7 依赖 6d。
 
 ## Spec 覆盖验证
 
 | Spec 问题 | Plan 任务 | 修复方式 |
 |-----------|-----------|---------|
-| P1: 3/6 阶段显示冲突 | Task 6 Zone B | `phaseStatuses` 只渲染 `session_refs` 中有的阶段，去掉 N/M 分数 |
-| P2: phase_outputs 为空 | Task 1 + Task 6 | 后端查询 phase_outputs 表；前端渲染 markdown |
-| P3: breakdown_content 为空 | Task 2 + Task 6 | 后端回退到 acceptance_criteria；前端已有渲染逻辑 |
-| P4: 双卡并列浪费空间 | Task 6 Zone A | 合并为单行标题条 |
-| P5: AI 工作藏抽屉 | Task 6 Zone C | 阶段结果直接展示在主内容区 |
-| P6: stage 字段未更新 | Task 6 Zone A | **隐式修复**：新 UI 不再显示 `current_node_id`，改为显示时间/ID |
+| P1: 3/6 阶段显示冲突 | Task 6b | `phaseStatuses` 只渲染 `session_refs` 中有的阶段，去掉 N/M 分数 |
+| P2: phase_outputs 为空 | Task 1 + Task 6c | 后端查询 phase_outputs 表；前端渲染 markdown |
+| P3: breakdown_content 为空 | Task 2 + Task 6c | 后端回退到 acceptance_criteria；前端已有渲染逻辑 |
+| P4: 双卡并列浪费空间 | Task 6a | 合并为单行标题条 |
+| P5: AI 工作藏抽屉 | Task 6c | 阶段结果直接展示在主内容区 |
+| P6: stage 字段未更新 | Task 6a | **隐式修复**：新 UI 不再显示 `current_node_id`，改为显示时间/ID |
