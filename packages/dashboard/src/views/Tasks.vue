@@ -359,6 +359,8 @@ function duration(start: string | null, end: string | null): string {
                 <h3 class="card-title">{{ taskTitle(task) }}</h3>
                 <div class="card-meta">
                   <span class="card-id">#{{ task.id.slice(-8) }}</span>
+                  <span v-if="task.started_at" class="card-time">{{ formatTime(task.started_at) }}</span>
+                  <span v-if="task.started_at" class="card-duration">用时 {{ duration(task.started_at, task.finished_at) }}</span>
                   <span v-if="task.current_node_id" class="card-node">{{ task.current_node_id }}</span>
                   <span v-if="task.rate_limited_count && group === 'rate_limited'" class="card-limit">
                     限流 {{ task.rate_limited_count }} 次
@@ -681,14 +683,14 @@ function duration(start: string | null, end: string | null): string {
   cursor: default;
 }
 
-.group-header.running { border-left: 3px solid var(--st-running); }
-.group-header.rate_limited { border-left: 3px solid var(--st-paused); }
-.group-header.paused { border-left: 3px solid var(--st-paused); }
-.group-header.draft { border-left: 3px solid #8b5cf6; }
-.group-header.failed { border-left: 3px solid var(--st-failed); }
-.group-header.pending { border-left: 3px solid var(--faint); }
-.group-header.completed { border-left: 3px solid var(--st-done); }
-.group-header.cancelled { border-left: 3px solid var(--muted); }
+.group-header.running { background: color-mix(in srgb, var(--st-running) 10%, var(--surface)); }
+.group-header.rate_limited { background: color-mix(in srgb, var(--st-paused) 10%, var(--surface)); }
+.group-header.paused { background: color-mix(in srgb, var(--st-paused) 10%, var(--surface)); }
+.group-header.draft { background: color-mix(in srgb, #8b5cf6 10%, var(--surface)); }
+.group-header.failed { background: color-mix(in srgb, var(--st-failed) 10%, var(--surface)); }
+.group-header.pending { background: color-mix(in srgb, var(--faint) 10%, var(--surface)); }
+.group-header.completed { background: color-mix(in srgb, var(--st-done) 10%, var(--surface)); }
+.group-header.cancelled { background: color-mix(in srgb, var(--muted) 10%, var(--surface)); }
 
 .group-icon {
   width: 8px;

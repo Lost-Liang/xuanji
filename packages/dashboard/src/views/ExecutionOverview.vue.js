@@ -6,6 +6,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { execApi } from '../api/agent-bindings';
+import { api as taskApi } from '../api/tasks';
 import StateTransitionDag from '../components/execution/StateTransitionDag.vue';
 import PhaseTimelineGantt from '../components/execution/PhaseTimelineGantt.vue';
 import LiveEventStream from '../components/execution/LiveEventStream.vue';
@@ -21,6 +22,22 @@ function statusText(status) {
         rate_limited: '限流中',
     };
     return map[status] || status;
+}
+// 格式化时间
+function formatTime(ts) {
+    if (!ts)
+        return '-';
+    return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+}
+// 用时计算
+function elapsed(start) {
+    if (!start)
+        return '-';
+    const startTime = new Date(start).getTime();
+    const diff = Math.floor((Date.now() - startTime) / 1000);
+    const min = Math.floor(diff / 60);
+    const sec = diff % 60;
+    return min > 0 ? `${min}分${sec}秒` : `${sec}秒`;
 }
 // 进度：phase_count 作为已完成 phase 计数（简化，无总 phase 分母时显示绝对值）
 function progressPct(row) {
@@ -50,6 +67,37 @@ async function loadList() {
     }
     finally {
         loading.value = false;
+    }
+}
+// 干预操作
+async function pauseExec(id) {
+    try {
+        await taskApi.pause(id);
+        ElMessage.success('已暂停');
+        loadList();
+    }
+    catch {
+        ElMessage.error('暂停失败');
+    }
+}
+async function resumeExec(id) {
+    try {
+        await taskApi.resume(id);
+        ElMessage.success('已继续');
+        loadList();
+    }
+    catch {
+        ElMessage.error('继续失败');
+    }
+}
+async function cancelExec(id) {
+    try {
+        await taskApi.cancel(id);
+        ElMessage.success('已取消');
+        loadList();
+    }
+    catch {
+        ElMessage.error('取消失败');
     }
 }
 async function openDetail(row) {
@@ -174,6 +222,18 @@ for (const [row] of __VLS_getVForSourceType((__VLS_ctx.list))) {
         ...{ class: "meta-badge" },
     });
     (row.id.slice(-8));
+    if (row.started_at) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-time" },
+        });
+        (__VLS_ctx.formatTime(row.started_at));
+    }
+    if (row.started_at && row.status === 'running') {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-elapsed" },
+        });
+        (__VLS_ctx.elapsed(row.started_at));
+    }
     if (row.current_node_id) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
             ...{ class: "meta-node" },
@@ -197,6 +257,120 @@ for (const [row] of __VLS_getVForSourceType((__VLS_ctx.list))) {
         ...{ class: "progress-text" },
     });
     (__VLS_ctx.progressPct(row));
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ onClick: () => { } },
+        ...{ class: "card-actions" },
+    });
+    if (row.status === 'running') {
+        const __VLS_0 = {}.ElButton;
+        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+        // @ts-ignore
+        const __VLS_1 = __VLS_asFunctionalComponent(__VLS_0, new __VLS_0({
+            ...{ 'onClick': {} },
+            type: "warning",
+            size: "small",
+        }));
+        const __VLS_2 = __VLS_1({
+            ...{ 'onClick': {} },
+            type: "warning",
+            size: "small",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_1));
+        let __VLS_4;
+        let __VLS_5;
+        let __VLS_6;
+        const __VLS_7 = {
+            onClick: (...[$event]) => {
+                if (!(row.status === 'running'))
+                    return;
+                __VLS_ctx.pauseExec(row.id);
+            }
+        };
+        __VLS_3.slots.default;
+        var __VLS_3;
+    }
+    if (row.status === 'paused' || row.status === 'rate_limited') {
+        const __VLS_8 = {}.ElButton;
+        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+        // @ts-ignore
+        const __VLS_9 = __VLS_asFunctionalComponent(__VLS_8, new __VLS_8({
+            ...{ 'onClick': {} },
+            type: "success",
+            size: "small",
+        }));
+        const __VLS_10 = __VLS_9({
+            ...{ 'onClick': {} },
+            type: "success",
+            size: "small",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_9));
+        let __VLS_12;
+        let __VLS_13;
+        let __VLS_14;
+        const __VLS_15 = {
+            onClick: (...[$event]) => {
+                if (!(row.status === 'paused' || row.status === 'rate_limited'))
+                    return;
+                __VLS_ctx.resumeExec(row.id);
+            }
+        };
+        __VLS_11.slots.default;
+        var __VLS_11;
+    }
+    if (row.status === 'failed') {
+        const __VLS_16 = {}.ElButton;
+        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+        // @ts-ignore
+        const __VLS_17 = __VLS_asFunctionalComponent(__VLS_16, new __VLS_16({
+            ...{ 'onClick': {} },
+            type: "primary",
+            size: "small",
+        }));
+        const __VLS_18 = __VLS_17({
+            ...{ 'onClick': {} },
+            type: "primary",
+            size: "small",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_17));
+        let __VLS_20;
+        let __VLS_21;
+        let __VLS_22;
+        const __VLS_23 = {
+            onClick: (...[$event]) => {
+                if (!(row.status === 'failed'))
+                    return;
+                __VLS_ctx.resumeExec(row.id);
+            }
+        };
+        __VLS_19.slots.default;
+        var __VLS_19;
+    }
+    if (row.status === 'running' || row.status === 'paused') {
+        const __VLS_24 = {}.ElButton;
+        /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+        // @ts-ignore
+        const __VLS_25 = __VLS_asFunctionalComponent(__VLS_24, new __VLS_24({
+            ...{ 'onClick': {} },
+            type: "danger",
+            size: "small",
+            plain: true,
+        }));
+        const __VLS_26 = __VLS_25({
+            ...{ 'onClick': {} },
+            type: "danger",
+            size: "small",
+            plain: true,
+        }, ...__VLS_functionalComponentArgsRest(__VLS_25));
+        let __VLS_28;
+        let __VLS_29;
+        let __VLS_30;
+        const __VLS_31 = {
+            onClick: (...[$event]) => {
+                if (!(row.status === 'running' || row.status === 'paused'))
+                    return;
+                __VLS_ctx.cancelExec(row.id);
+            }
+        };
+        __VLS_27.slots.default;
+        var __VLS_27;
+    }
 }
 if (__VLS_ctx.selectedId) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -209,31 +383,31 @@ if (__VLS_ctx.selectedId) {
         ...{ class: "detail-title" },
     });
     (__VLS_ctx.selectedId.slice(-8));
-    const __VLS_0 = {}.ElButton;
+    const __VLS_32 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
-    const __VLS_1 = __VLS_asFunctionalComponent(__VLS_0, new __VLS_0({
+    const __VLS_33 = __VLS_asFunctionalComponent(__VLS_32, new __VLS_32({
         ...{ 'onClick': {} },
         link: true,
         size: "small",
     }));
-    const __VLS_2 = __VLS_1({
+    const __VLS_34 = __VLS_33({
         ...{ 'onClick': {} },
         link: true,
         size: "small",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
-    let __VLS_4;
-    let __VLS_5;
-    let __VLS_6;
-    const __VLS_7 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_33));
+    let __VLS_36;
+    let __VLS_37;
+    let __VLS_38;
+    const __VLS_39 = {
         onClick: (...[$event]) => {
             if (!(__VLS_ctx.selectedId))
                 return;
             __VLS_ctx.selectedId = '';
         }
     };
-    __VLS_3.slots.default;
-    var __VLS_3;
+    __VLS_35.slots.default;
+    var __VLS_35;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "detail-block" },
     });
@@ -242,12 +416,12 @@ if (__VLS_ctx.selectedId) {
     });
     /** @type {[typeof StateTransitionDag, ]} */ ;
     // @ts-ignore
-    const __VLS_8 = __VLS_asFunctionalComponent(StateTransitionDag, new StateTransitionDag({
+    const __VLS_40 = __VLS_asFunctionalComponent(StateTransitionDag, new StateTransitionDag({
         executionId: (__VLS_ctx.selectedId),
     }));
-    const __VLS_9 = __VLS_8({
+    const __VLS_41 = __VLS_40({
         executionId: (__VLS_ctx.selectedId),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_8));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_40));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "detail-block" },
     });
@@ -256,12 +430,12 @@ if (__VLS_ctx.selectedId) {
     });
     /** @type {[typeof PhaseTimelineGantt, ]} */ ;
     // @ts-ignore
-    const __VLS_11 = __VLS_asFunctionalComponent(PhaseTimelineGantt, new PhaseTimelineGantt({
+    const __VLS_43 = __VLS_asFunctionalComponent(PhaseTimelineGantt, new PhaseTimelineGantt({
         executionId: (__VLS_ctx.selectedId),
     }));
-    const __VLS_12 = __VLS_11({
+    const __VLS_44 = __VLS_43({
         executionId: (__VLS_ctx.selectedId),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_11));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_43));
     if (__VLS_ctx.subExecs.length) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "detail-block" },
@@ -270,55 +444,55 @@ if (__VLS_ctx.selectedId) {
             ...{ class: "block-title" },
         });
         (__VLS_ctx.subExecs.length);
-        const __VLS_14 = {}.ElTable;
+        const __VLS_46 = {}.ElTable;
         /** @type {[typeof __VLS_components.ElTable, typeof __VLS_components.elTable, typeof __VLS_components.ElTable, typeof __VLS_components.elTable, ]} */ ;
         // @ts-ignore
-        const __VLS_15 = __VLS_asFunctionalComponent(__VLS_14, new __VLS_14({
+        const __VLS_47 = __VLS_asFunctionalComponent(__VLS_46, new __VLS_46({
             data: (__VLS_ctx.subExecs),
             size: "small",
         }));
-        const __VLS_16 = __VLS_15({
+        const __VLS_48 = __VLS_47({
             data: (__VLS_ctx.subExecs),
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_15));
-        __VLS_17.slots.default;
-        const __VLS_18 = {}.ElTableColumn;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_47));
+        __VLS_49.slots.default;
+        const __VLS_50 = {}.ElTableColumn;
         /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
         // @ts-ignore
-        const __VLS_19 = __VLS_asFunctionalComponent(__VLS_18, new __VLS_18({
+        const __VLS_51 = __VLS_asFunctionalComponent(__VLS_50, new __VLS_50({
             label: "实例",
             prop: "id",
             minWidth: "160",
         }));
-        const __VLS_20 = __VLS_19({
+        const __VLS_52 = __VLS_51({
             label: "实例",
             prop: "id",
             minWidth: "160",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_19));
-        __VLS_21.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_51));
+        __VLS_53.slots.default;
         {
-            const { default: __VLS_thisSlot } = __VLS_21.slots;
+            const { default: __VLS_thisSlot } = __VLS_53.slots;
             const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
             __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
                 ...{ class: "mono" },
             });
             (row.id.slice(-8));
         }
-        var __VLS_21;
-        const __VLS_22 = {}.ElTableColumn;
+        var __VLS_53;
+        const __VLS_54 = {}.ElTableColumn;
         /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
         // @ts-ignore
-        const __VLS_23 = __VLS_asFunctionalComponent(__VLS_22, new __VLS_22({
+        const __VLS_55 = __VLS_asFunctionalComponent(__VLS_54, new __VLS_54({
             label: "状态",
             width: "120",
         }));
-        const __VLS_24 = __VLS_23({
+        const __VLS_56 = __VLS_55({
             label: "状态",
             width: "120",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_23));
-        __VLS_25.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_55));
+        __VLS_57.slots.default;
         {
-            const { default: __VLS_thisSlot } = __VLS_25.slots;
+            const { default: __VLS_thisSlot } = __VLS_57.slots;
             const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
             __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
                 ...{ class: "status-dot" },
@@ -326,34 +500,34 @@ if (__VLS_ctx.selectedId) {
             });
             (__VLS_ctx.statusText(row.status));
         }
-        var __VLS_25;
-        const __VLS_26 = {}.ElTableColumn;
+        var __VLS_57;
+        const __VLS_58 = {}.ElTableColumn;
         /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
         // @ts-ignore
-        const __VLS_27 = __VLS_asFunctionalComponent(__VLS_26, new __VLS_26({
+        const __VLS_59 = __VLS_asFunctionalComponent(__VLS_58, new __VLS_58({
             label: "当前节点",
             prop: "current_node_id",
             minWidth: "140",
         }));
-        const __VLS_28 = __VLS_27({
+        const __VLS_60 = __VLS_59({
             label: "当前节点",
             prop: "current_node_id",
             minWidth: "140",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_27));
-        const __VLS_30 = {}.ElTableColumn;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_59));
+        const __VLS_62 = {}.ElTableColumn;
         /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
         // @ts-ignore
-        const __VLS_31 = __VLS_asFunctionalComponent(__VLS_30, new __VLS_30({
+        const __VLS_63 = __VLS_asFunctionalComponent(__VLS_62, new __VLS_62({
             label: "开始",
             prop: "started_at",
             minWidth: "160",
         }));
-        const __VLS_32 = __VLS_31({
+        const __VLS_64 = __VLS_63({
             label: "开始",
             prop: "started_at",
             minWidth: "160",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_31));
-        var __VLS_17;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_63));
+        var __VLS_49;
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "detail-block" },
@@ -363,12 +537,12 @@ if (__VLS_ctx.selectedId) {
     });
     /** @type {[typeof LiveEventStream, ]} */ ;
     // @ts-ignore
-    const __VLS_34 = __VLS_asFunctionalComponent(LiveEventStream, new LiveEventStream({
+    const __VLS_66 = __VLS_asFunctionalComponent(LiveEventStream, new LiveEventStream({
         executionId: (__VLS_ctx.selectedId),
     }));
-    const __VLS_35 = __VLS_34({
+    const __VLS_67 = __VLS_66({
         executionId: (__VLS_ctx.selectedId),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_34));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_66));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "detail-block deferred" },
     });
@@ -399,11 +573,14 @@ if (__VLS_ctx.selectedId) {
 /** @type {__VLS_StyleScopedClasses['status-tag']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-meta']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-badge']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-time']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-elapsed']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-node']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-count']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-bar']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-fill']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-text']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-actions']} */ ;
 /** @type {__VLS_StyleScopedClasses['detail-section']} */ ;
 /** @type {__VLS_StyleScopedClasses['detail-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['detail-title']} */ ;
@@ -433,9 +610,14 @@ const __VLS_self = (await import('vue')).defineComponent({
             selectedId: selectedId,
             subExecs: subExecs,
             statusText: statusText,
+            formatTime: formatTime,
+            elapsed: elapsed,
             progressPct: progressPct,
             summary: summary,
             loadList: loadList,
+            pauseExec: pauseExec,
+            resumeExec: resumeExec,
+            cancelExec: cancelExec,
             openDetail: openDetail,
         };
     },

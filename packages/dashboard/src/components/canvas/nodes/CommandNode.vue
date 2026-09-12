@@ -1,7 +1,7 @@
 <template>
   <div class="vf-node t-command" :class="['st-' + (data.status || 'pending'), { sel: selected }]">
     <Handle type="target" :position="Position.Left" />
-    <div class="vn-kind"><span class="vn-ic">▸</span>command · {{ data.status || 'pending' }}</div>
+    <div class="vn-kind"><span class="vn-ic">▸</span>command · {{ nodeStatusLabel(data.status) }}</div>
     <div class="vn-lbl">{{ data.label || 'command' }}</div>
     <div class="vn-sub" v-if="data.command">{{ data.command }}</div>
     <div class="vn-badge" v-if="data.badge">{{ data.badge }}</div>
@@ -10,5 +10,6 @@
 </template>
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
+import { nodeStatusLabel } from '../../../lib/status-label'
 defineProps<{ id: string; data: any; selected?: boolean }>()
 </script>

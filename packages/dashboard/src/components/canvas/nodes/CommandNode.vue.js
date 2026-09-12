@@ -1,5 +1,6 @@
 /// <reference types="../../../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
 import { Handle, Position } from '@vue-flow/core';
+import { nodeStatusLabel } from '../../../lib/status-label';
 const __VLS_props = defineProps();
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
@@ -26,7 +27,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
     ...{ class: "vn-ic" },
 });
-(__VLS_ctx.data.status || 'pending');
+(__VLS_ctx.nodeStatusLabel(__VLS_ctx.data.status));
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "vn-lbl" },
 });
@@ -67,6 +68,7 @@ const __VLS_self = (await import('vue')).defineComponent({
         return {
             Handle: Handle,
             Position: Position,
+            nodeStatusLabel: nodeStatusLabel,
         };
     },
     __typeProps: {},

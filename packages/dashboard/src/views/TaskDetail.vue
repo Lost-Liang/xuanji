@@ -143,21 +143,25 @@ function formatDuration(start: string | null, end: string | null): string {
 // 和新版工作流（develop/compile_check/test_check/quality_review/security_review/final_review）
 const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review']
 
-// 计算阶段状态（Task 6b: 只显示已执行阶段，带耗时）
+// 计算阶段状态（Task 6b: 完整流程展示，含循环标识和时间）
 interface PhaseStatus {
   id: string
   label: string
   status: 'done' | 'running' | 'pending' | 'failed' | 'skipped'
   iteration: number
   duration: string | null
+  timeText: string   // 统一时间文本：已完成=耗时，执行中=进行中，待执行=空
+  isLooped: boolean  // 此节点有来自前一个节点的循环边
+  loopedToNext: boolean  // 从当前节点到下一个节点有循环边
 }
 
 const phaseStatuses = computed<PhaseStatus[]>(() => {
   const d = detail.value
   if (!d) return []
 
-  // 从工作流定义获取阶段列表
+  // 从工作流定义获取阶段列表和边
   const workflowNodes = workflow.value?.definition_json?.nodes || []
+  const workflowEdges = workflow.value?.definition_json?.edges || []
 
   // 构建状态映射（从 session_refs，使用新的 started_at/completed_at 字段）
   const statusMap = new Map<string, { status: string; iteration: number; started_at: string | null; completed_at: string | null }>()
@@ -180,22 +184,62 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
     ? workflowNodes.map((n: any) => n.id)
     : phaseOrder
 
-  // 只保留有记录的阶段（不展示未执行的阶段）
-  return order
-    .filter((id: string) => statusMap.has(id))
-    .map((id: string) => {
-      const info = statusMap.get(id)!
+  // 找出循环边：目标节点在源节点之前的边（向后循环）
+  const backwardEdges = new Set<string>()
+  for (const edge of workflowEdges) {
+    const si = order.indexOf(edge.source)
+    const ti = order.indexOf(edge.target)
+    if (si >= 0 && ti >= 0 && ti <= si) {
+      // 边指向自己或前面的节点 → 循环
+      backwardEdges.add(edge.source)
+    }
+  }
+
+  // 找到最后一个已执行阶段的位置
+  let lastExecutedIndex = -1
+  for (let i = order.length - 1; i >= 0; i--) {
+    if (statusMap.has(order[i])) {
+      lastExecutedIndex = i
+      break
+    }
+  }
+
+  return order.map((id: string, idx: number) => {
+    const info = statusMap.get(id)
+    if (info) {
       const duration = info.started_at && info.completed_at
         ? formatDuration(info.started_at, info.completed_at)
         : null
+      // timeText: 已完成=耗时，执行中=进行中
+      const timeText = info.status === 'completed'
+        ? (duration || '')
+        : info.status === 'running'
+          ? '进行中'
+          : ''
       return {
         id,
         label: phaseLabel(id),
         status: info.status as PhaseStatus['status'],
         iteration: info.iteration,
         duration,
+        timeText,
+        isLooped: false, // 简化：不在节点上标记，在连接线上标记
+        loopedToNext: backwardEdges.has(id),
       }
-    })
+    } else {
+      const isPending = idx > lastExecutedIndex
+      return {
+        id,
+        label: phaseLabel(id),
+        status: isPending ? 'pending' : 'skipped',
+        iteration: 0,
+        duration: null,
+        timeText: '',
+        isLooped: false,
+        loopedToNext: backwardEdges.has(id),
+      }
+    }
+  })
 })
 
 function phaseLabel(id: string): string {
@@ -369,19 +413,32 @@ function parseJson(v: any): any {
       <div class="phase-flow">
         <template v-for="(phase, idx) in phaseStatuses" :key="phase.id">
           <div class="phase-node">
-            <div class="phase-dot" :class="phase.status">
-              <template v-if="phase.status === 'done'">✓</template>
-              <template v-else-if="phase.status === 'failed'">✗</template>
-              <template v-else-if="phase.status === 'running'">●</template>
-            </div>
             <div class="phase-label">{{ phase.label }}</div>
-            <div v-if="phase.duration" class="phase-duration">{{ phase.duration }}</div>
+            <div class="phase-row">
+              <div class="phase-dot" :class="[phase.status, { 'is-looped': phase.isLooped }]">
+                <template v-if="phase.status === 'done'">
+                  <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5L5 9L9.5 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </template>
+                <template v-else-if="phase.status === 'failed'">
+                  <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </template>
+                <template v-else-if="phase.status === 'running'">
+                  <span class="running-dot"></span>
+                </template>
+              </div>
+              <div
+                v-if="idx < phaseStatuses.length - 1"
+                class="phase-connector"
+                :class="[phase.status, { 'is-looped': phase.loopedToNext }]"
+              >
+                <svg v-if="phase.loopedToNext" class="loop-arrow" width="14" height="14" viewBox="0 0 14 14">
+                  <path d="M7 2C4 2 2 4.5 2 7C2 9.5 4 12 7 12C9 12 10.5 10.5 11 9.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                  <path d="M8.5 9.5L11 9.5L11 7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            </div>
+            <div class="phase-time">{{ phase.timeText }}</div>
           </div>
-          <div
-            v-if="idx < phaseStatuses.length - 1"
-            class="phase-connector"
-            :class="{ done: phase.status === 'done' }"
-          ></div>
         </template>
       </div>
     </section>
@@ -635,31 +692,41 @@ function parseJson(v: any): any {
   border-radius: var(--radius);
   padding: 16px 20px;
   margin-bottom: 16px;
+  overflow-x: auto;
 }
 
 .phase-flow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
+  min-width: fit-content;
 }
 
 .phase-node {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-width: 80px;
+  gap: 0;
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+/* 行 = 圆点 + 连接线在同一水平线 */
+.phase-row {
+  display: flex;
+  align-items: center;
+  height: 24px;
 }
 
 .phase-dot {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .phase-dot.done {
@@ -676,33 +743,74 @@ function parseJson(v: any): any {
 
 .phase-dot.running {
   background: rgba(34, 211, 238, 0.15);
-  color: var(--st-running);
-  border: 1px solid var(--st-running);
+  border: 2px solid var(--st-running);
+}
+
+.running-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st-running);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-.phase-label {
-  font-size: 12px;
-  color: var(--muted);
-  text-align: center;
+.phase-dot.pending {
+  background: transparent;
+  border: 1.5px solid rgba(100, 116, 139, 0.35);
 }
 
-.phase-duration {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--faint);
+.phase-dot.skipped {
+  background: transparent;
+  border: 1px solid rgba(100, 116, 139, 0.15);
 }
 
+/* ===== 连接线 ===== */
 .phase-connector {
   flex: 1;
+  min-width: 32px;
   height: 2px;
   background: var(--border);
-  margin: 0 8px;
-  margin-bottom: 30px;
+  position: relative;
+  align-self: center;
 }
 
 .phase-connector.done {
   background: var(--st-done);
+}
+
+.phase-connector.running {
+  background: var(--st-running);
+}
+
+.phase-connector.pending {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+/* 循环箭头标识 */
+.loop-arrow {
+  position: absolute;
+  right: -7px;
+  top: -14px;
+  color: var(--faint);
+  opacity: 0.6;
+}
+
+/* ===== 标签 & 时间 ===== */
+.phase-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 8px;
+  white-space: nowrap;
+}
+
+.phase-time {
+  font-size: 10px;
+  color: var(--faint);
+  text-align: center;
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
 /* ========== Zone C: 主内容区 ========== */
@@ -798,11 +906,11 @@ function parseJson(v: any): any {
 
 /* ========== 阶段结果 ========== */
 .phase-result {
-  background: var(--surface);
-  border-left: 3px solid var(--ai);
+  background: color-mix(in srgb, var(--ai) 10%, var(--surface));
   border-radius: var(--radius-sm);
   padding: 12px 16px;
   margin-bottom: 12px;
+  border-top: 2px solid var(--ai);
 }
 
 .phase-result:last-child {

@@ -6,6 +6,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { execApi, type ExecutionListItem, type SubExecution } from '../api/agent-bindings'
+import { api as taskApi } from '../api/tasks'
 import StateTransitionDag from '../components/execution/StateTransitionDag.vue'
 import PhaseTimelineGantt from '../components/execution/PhaseTimelineGantt.vue'
 import LiveEventStream from '../components/execution/LiveEventStream.vue'
@@ -23,6 +24,22 @@ function statusText(status: string): string {
     rate_limited: '限流中',
   }
   return map[status] || status
+}
+
+// 格式化时间
+function formatTime(ts: string | null): string {
+  if (!ts) return '-'
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+// 用时计算
+function elapsed(start: string | null): string {
+  if (!start) return '-'
+  const startTime = new Date(start).getTime()
+  const diff = Math.floor((Date.now() - startTime) / 1000)
+  const min = Math.floor(diff / 60)
+  const sec = diff % 60
+  return min > 0 ? `${min}分${sec}秒` : `${sec}秒`
 }
 
 // 进度：phase_count 作为已完成 phase 计数（简化，无总 phase 分母时显示绝对值）
@@ -51,6 +68,37 @@ async function loadList() {
     ElMessage.error('加载执行列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 干预操作
+async function pauseExec(id: string) {
+  try {
+    await taskApi.pause(id)
+    ElMessage.success('已暂停')
+    loadList()
+  } catch {
+    ElMessage.error('暂停失败')
+  }
+}
+
+async function resumeExec(id: string) {
+  try {
+    await taskApi.resume(id)
+    ElMessage.success('已继续')
+    loadList()
+  } catch {
+    ElMessage.error('继续失败')
+  }
+}
+
+async function cancelExec(id: string) {
+  try {
+    await taskApi.cancel(id)
+    ElMessage.success('已取消')
+    loadList()
+  } catch {
+    ElMessage.error('取消失败')
   }
 }
 
@@ -99,12 +147,21 @@ onMounted(() => loadList())
         </div>
         <div class="card-meta">
           <span class="meta-badge">#{{ row.id.slice(-8) }}</span>
+          <span v-if="row.started_at" class="meta-time">{{ formatTime(row.started_at) }}</span>
+          <span v-if="row.started_at && row.status === 'running'" class="meta-elapsed">已运行 {{ elapsed(row.started_at) }}</span>
           <span v-if="row.current_node_id" class="meta-node">当前阶段: {{ row.current_node_id }}</span>
           <span class="meta-count">{{ row.task_count }} 任务 / {{ row.phase_count }} phase</span>
         </div>
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: progressPct(row) + '%' }" :class="row.status"></div>
           <span class="progress-text">{{ progressPct(row) }}%</span>
+        </div>
+        <!-- 干预操作按钮 -->
+        <div class="card-actions" @click.stop>
+          <el-button v-if="row.status === 'running'" type="warning" size="small" @click="pauseExec(row.id)">暂停</el-button>
+          <el-button v-if="row.status === 'paused' || row.status === 'rate_limited'" type="success" size="small" @click="resumeExec(row.id)">继续</el-button>
+          <el-button v-if="row.status === 'failed'" type="primary" size="small" @click="resumeExec(row.id)">重试</el-button>
+          <el-button v-if="row.status === 'running' || row.status === 'paused'" type="danger" size="small" plain @click="cancelExec(row.id)">取消</el-button>
         </div>
       </div>
     </div>
@@ -200,6 +257,11 @@ onMounted(() => loadList())
 .exec-card:hover { border-color: var(--el-color-primary); }
 .exec-card.active { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px var(--el-color-primary-light-9); }
 
+.card-actions {
+  display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .card-title { font-size: 15px; font-weight: 500; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 12px; }
 
@@ -214,7 +276,7 @@ onMounted(() => loadList())
 .status-tag.paused { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 
 .card-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--el-text-color-placeholder); margin-bottom: 10px; }
-.meta-badge { font-family: 'SF Mono', Monaco, Consolas, monospace; padding: 1px 5px; border-radius: 3px; background: var(--el-fill-color); }
+.meta-badge { font-family: var(--font-mono); padding: 1px 5px; border-radius: 3px; background: var(--el-fill-color); }
 .meta-node { color: var(--el-text-color-secondary); }
 
 .progress-bar {
@@ -249,7 +311,7 @@ onMounted(() => loadList())
   background: var(--el-fill-color-light); border-radius: 8px; font-size: 13px;
 }
 
-.mono { font-family: 'SF Mono', Monaco, Consolas, monospace; }
+.mono { font-family: var(--font-mono); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 .status-dot.running { background: var(--el-color-primary); }
 .status-dot.completed { background: var(--el-color-success); }

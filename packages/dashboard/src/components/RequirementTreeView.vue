@@ -592,7 +592,6 @@ function hasDraftTasks(tree: RequirementTree): boolean {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-left: 3px solid transparent;
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -611,12 +610,7 @@ function hasDraftTasks(tree: RequirementTree): boolean {
   50% { background: color-mix(in srgb, var(--st-running, #22D3EE) 15%, transparent); }
 }
 
-/* 层级左竖条颜色 */
-.level-requirement { border-left-color: var(--accent, #22D3EE); }
-.level-epic { border-left-color: var(--st-done, #22C55E); }
-.level-feature { border-left-color: var(--st-paused, #F59E0B); }
-.level-story { border-left-color: var(--ai, #7C3AED); }
-.level-task { border-left-color: var(--st-pending, #64748B); }
+/* 层级通过 .level-badge 颜色区分，无需边框 */
 
 .toggle-icon {
   width: 16px;

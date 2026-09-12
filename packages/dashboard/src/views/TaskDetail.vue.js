@@ -141,8 +141,9 @@ const phaseStatuses = computed(() => {
     const d = detail.value;
     if (!d)
         return [];
-    // 从工作流定义获取阶段列表
+    // 从工作流定义获取阶段列表和边
     const workflowNodes = workflow.value?.definition_json?.nodes || [];
+    const workflowEdges = workflow.value?.definition_json?.edges || [];
     // 构建状态映射（从 session_refs，使用新的 started_at/completed_at 字段）
     const statusMap = new Map();
     // 从 session_refs 获取状态
@@ -161,21 +162,60 @@ const phaseStatuses = computed(() => {
     const order = workflowNodes.length > 0
         ? workflowNodes.map((n) => n.id)
         : phaseOrder;
-    // 只保留有记录的阶段（不展示未执行的阶段）
-    return order
-        .filter((id) => statusMap.has(id))
-        .map((id) => {
+    // 找出循环边：目标节点在源节点之前的边（向后循环）
+    const backwardEdges = new Set();
+    for (const edge of workflowEdges) {
+        const si = order.indexOf(edge.source);
+        const ti = order.indexOf(edge.target);
+        if (si >= 0 && ti >= 0 && ti <= si) {
+            // 边指向自己或前面的节点 → 循环
+            backwardEdges.add(edge.source);
+        }
+    }
+    // 找到最后一个已执行阶段的位置
+    let lastExecutedIndex = -1;
+    for (let i = order.length - 1; i >= 0; i--) {
+        if (statusMap.has(order[i])) {
+            lastExecutedIndex = i;
+            break;
+        }
+    }
+    return order.map((id, idx) => {
         const info = statusMap.get(id);
-        const duration = info.started_at && info.completed_at
-            ? formatDuration(info.started_at, info.completed_at)
-            : null;
-        return {
-            id,
-            label: phaseLabel(id),
-            status: info.status,
-            iteration: info.iteration,
-            duration,
-        };
+        if (info) {
+            const duration = info.started_at && info.completed_at
+                ? formatDuration(info.started_at, info.completed_at)
+                : null;
+            // timeText: 已完成=耗时，执行中=进行中
+            const timeText = info.status === 'completed'
+                ? (duration || '')
+                : info.status === 'running'
+                    ? '进行中'
+                    : '';
+            return {
+                id,
+                label: phaseLabel(id),
+                status: info.status,
+                iteration: info.iteration,
+                duration,
+                timeText,
+                isLooped: false, // 简化：不在节点上标记，在连接线上标记
+                loopedToNext: backwardEdges.has(id),
+            };
+        }
+        else {
+            const isPending = idx > lastExecutedIndex;
+            return {
+                id,
+                label: phaseLabel(id),
+                status: isPending ? 'pending' : 'skipped',
+                iteration: 0,
+                duration: null,
+                timeText: '',
+                isLooped: false,
+                loopedToNext: backwardEdges.has(id),
+            };
+        }
     });
 });
 function phaseLabel(id) {
@@ -184,6 +224,7 @@ function phaseLabel(id) {
         test: '测试', review: '审查', deploy: '部署', archive: '归档',
         // 新版工作流节点
         develop: '开发', compile_check: '编译', test_check: '测试',
+        write_tests: '写测试', // 添加 write_tests 映射
         quality_review: '质量审查', security_review: '安全审查', final_review: '终审',
         bug_fix: '修复', quality_issue_fix: '质量修复', security_issue_fix: '安全修复',
     };
@@ -354,8 +395,15 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['failed']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
 /** @type {__VLS_StyleScopedClasses['running']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['pending']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
 /** @type {__VLS_StyleScopedClasses['done']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
+/** @type {__VLS_StyleScopedClasses['running']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
+/** @type {__VLS_StyleScopedClasses['pending']} */ ;
 /** @type {__VLS_StyleScopedClasses['main-content-grid']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-result']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-result-body']} */ ;
@@ -492,36 +540,86 @@ if (__VLS_ctx.detail && __VLS_ctx.phaseStatuses.length) {
         ...{ class: "phase-flow" },
     });
     for (const [phase, idx] of __VLS_getVForSourceType((__VLS_ctx.phaseStatuses))) {
-        (phase.id);
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "phase-node" },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "phase-dot" },
-            ...{ class: (phase.status) },
-        });
-        if (phase.status === 'done') {
-        }
-        else if (phase.status === 'failed') {
-        }
-        else if (phase.status === 'running') {
-        }
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "phase-label" },
         });
         (phase.label);
-        if (phase.duration) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "phase-duration" },
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "phase-row" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "phase-dot" },
+            ...{ class: ([phase.status, { 'is-looped': phase.isLooped }]) },
+        });
+        if (phase.status === 'done') {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
+                width: "12",
+                height: "12",
+                viewBox: "0 0 12 12",
             });
-            (phase.duration);
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
+                d: "M2.5 6.5L5 9L9.5 3",
+                stroke: "currentColor",
+                'stroke-width': "2",
+                fill: "none",
+                'stroke-linecap': "round",
+                'stroke-linejoin': "round",
+            });
+        }
+        else if (phase.status === 'failed') {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
+                width: "12",
+                height: "12",
+                viewBox: "0 0 12 12",
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
+                d: "M3 3L9 9M9 3L3 9",
+                stroke: "currentColor",
+                'stroke-width': "2",
+                'stroke-linecap': "round",
+            });
+        }
+        else if (phase.status === 'running') {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "running-dot" },
+            });
         }
         if (idx < __VLS_ctx.phaseStatuses.length - 1) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
                 ...{ class: "phase-connector" },
-                ...{ class: ({ done: phase.status === 'done' }) },
+                ...{ class: ([phase.status, { 'is-looped': phase.loopedToNext }]) },
             });
+            if (phase.loopedToNext) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
+                    ...{ class: "loop-arrow" },
+                    width: "14",
+                    height: "14",
+                    viewBox: "0 0 14 14",
+                });
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
+                    d: "M7 2C4 2 2 4.5 2 7C2 9.5 4 12 7 12C9 12 10.5 10.5 11 9.5",
+                    stroke: "currentColor",
+                    'stroke-width': "1.5",
+                    fill: "none",
+                    'stroke-linecap': "round",
+                });
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.path)({
+                    d: "M8.5 9.5L11 9.5L11 7",
+                    stroke: "currentColor",
+                    'stroke-width': "1.5",
+                    fill: "none",
+                    'stroke-linecap': "round",
+                    'stroke-linejoin': "round",
+                });
+            }
         }
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "phase-time" },
+        });
+        (phase.timeText);
     }
 }
 if (__VLS_ctx.detail && !__VLS_ctx.loading) {
@@ -816,10 +914,13 @@ const __VLS_19 = __VLS_18({}, ...__VLS_functionalComponentArgsRest(__VLS_18));
 /** @type {__VLS_StyleScopedClasses['phase-flow-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-flow']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-node']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['phase-duration']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['running-dot']} */ ;
 /** @type {__VLS_StyleScopedClasses['phase-connector']} */ ;
+/** @type {__VLS_StyleScopedClasses['loop-arrow']} */ ;
+/** @type {__VLS_StyleScopedClasses['phase-time']} */ ;
 /** @type {__VLS_StyleScopedClasses['main-content-grid']} */ ;
 /** @type {__VLS_StyleScopedClasses['main-col']} */ ;
 /** @type {__VLS_StyleScopedClasses['content-card']} */ ;

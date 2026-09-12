@@ -327,7 +327,7 @@ onUnmounted(() => {
   color: var(--el-text-color-secondary);
 }
 .mono-id {
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 2px 6px;
   background: var(--el-fill-color);

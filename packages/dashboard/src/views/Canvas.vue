@@ -85,6 +85,8 @@
             {{ rtMeta.status === 'running' ? '运行中' : rtMeta.status === 'completed' ? '已完成' : rtMeta.status === 'paused' ? '已暂停' : rtMeta.status === 'failed' ? '失败' : rtMeta.status }}
           </el-tag>
         </div>
+        <div class="panel-row" v-if="rtMeta.started_at"><span class="label">开始时间</span><span class="value">{{ formatTime(rtMeta.started_at) }}</span></div>
+        <div class="panel-row" v-if="rtMeta.started_at && rtMeta.status === 'running'"><span class="label">已运行</span><span class="value">{{ elapsed(rtMeta.started_at) }}</span></div>
         <div class="panel-row" v-if="rtMeta.token_in != null"><span class="label">Token</span><span class="value">{{ rtMeta.token_in }} / {{ rtMeta.token_out }}</span></div>
         <div class="panel-row" v-if="rtMeta.current_node_id"><span class="label">当前节点</span><span class="value">{{ rtMeta.current_node_id }}</span></div>
       </template>
@@ -178,6 +180,22 @@ function nodeStatusLabel(type: string | undefined, s: string | undefined): strin
   return statusLabel(s)
 }
 
+// 格式化时间
+function formatTime(ts: string | null): string {
+  if (!ts) return '-'
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+// 用时计算
+function elapsed(start: string | null): string {
+  if (!start) return '-'
+  const startTime = new Date(start).getTime()
+  const diff = Math.floor((Date.now() - startTime) / 1000)
+  const min = Math.floor(diff / 60)
+  const sec = diff % 60
+  return min > 0 ? `${min}分${sec}秒` : `${sec}秒`
+}
+
 // 获取节点的友好名称（用于边面板显示）
 function getNodeLabel(nodeId: string): string {
   const node = nodes.value.find(n => n.id === nodeId)
@@ -233,7 +251,7 @@ const connected = ref(false)
 // node_id → status（pending/running/done/failed/paused）；用 ref Map（照 framework applyState）
 const runtimePhases = ref<Map<string, string>>(new Map())
 // GET /:id 轮询得到的 execution 级元数据
-const rtMeta = ref<{ status: string; token_in: number | null; token_out: number | null; current_node_id?: string; loop_counters?: Record<string, number> } | null>(null)
+const rtMeta = ref<{ status: string; token_in: number | null; token_out: number | null; current_node_id?: string; loop_counters?: Record<string, number>; started_at?: string } | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function onModeChange(m: 'static' | 'runtime') {
@@ -253,7 +271,7 @@ async function connectExecution() {
     const er = await fetch(`/api/executions/${encodeURIComponent(executionId.value)}`)
     if (!er.ok) { alert('execution 查询失败: ' + er.status); return }
     const erow = await er.json()
-    rtMeta.value = { status: erow.status, token_in: erow.token_in ?? null, token_out: erow.token_out ?? null, current_node_id: erow.current_node_id, loop_counters: erow.loop_counters || {} }
+    rtMeta.value = { status: erow.status, token_in: erow.token_in ?? null, token_out: erow.token_out ?? null, current_node_id: erow.current_node_id, loop_counters: erow.loop_counters || {}, started_at: erow.started_at }
     const defId = erow.graph_definition_id
 
     // 情况 1：有 graph_definition_id（工作流驱动的执行）
@@ -472,7 +490,7 @@ async function pollExecution() {
     const r = await fetch(`/api/executions/${encodeURIComponent(executionId.value)}`)
     if (!r.ok) return
     const row = await r.json()
-    rtMeta.value = { status: row.status, token_in: row.token_in ?? null, token_out: row.token_out ?? null, current_node_id: row.current_node_id, loop_counters: row.loop_counters || {} }
+    rtMeta.value = { status: row.status, token_in: row.token_in ?? null, token_out: row.token_out ?? null, current_node_id: row.current_node_id, loop_counters: row.loop_counters || {}, started_at: row.started_at }
     // phase_nodes 是 { phaseId: status } 对象，直接使用其状态值
     if (row.phase_nodes && typeof row.phase_nodes === 'object') {
       for (const [nid, status] of Object.entries(row.phase_nodes)) {

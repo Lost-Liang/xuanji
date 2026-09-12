@@ -165,35 +165,36 @@ onMounted(loadWorkflows)
 
 .toolbar {
   display: flex; gap: 12px; align-items: center; justify-content: space-between;
-  padding: 16px 20px; background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color); border-radius: 12px; margin-bottom: 12px;
+  padding: 16px 20px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px;
 }
-.toolbar .title { font-size: 18px; font-weight: 600; color: var(--el-text-color-primary); }
+.toolbar .title { font-size: 18px; font-weight: 600; font-family: var(--font-ui); color: var(--text); }
 .toolbar .actions { display: flex; gap: 8px; align-items: center; }
 
 .btn-secondary {
-  padding: 8px 18px; border: 1px solid var(--el-border-color); border-radius: 8px;
-  background: var(--el-bg-color-overlay); color: var(--el-text-color-primary);
+  padding: 8px 18px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
   cursor: pointer; font-size: 14px;
 }
-.btn-secondary:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
-.tabs { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color); border-radius: 12px; padding: 12px; }
+.tabs { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
 
 .count {
-  display: inline-block; padding: 2px 8px; border-radius: 4px;
-  background: var(--el-fill-color-light); font-size: 13px; font-weight: 500;
+  display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
+  background: var(--surface); font-size: 13px; font-weight: 500;
+  font-family: var(--font-mono);
 }
 
 .node-types {
-  font-size: 12px; color: var(--el-text-color-secondary);
+  font-size: 12px; color: var(--muted);
 }
 
 :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: transparent;
-  --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  --el-table-row-hover-bg-color: var(--surface);
 }
-:deep(.el-table th.el-table__cell) { font-weight: 600; font-size: 12px; color: var(--el-text-color-secondary); }
+:deep(.el-table th.el-table__cell) { font-weight: 600; font-size: 12px; color: var(--muted); }
 </style>

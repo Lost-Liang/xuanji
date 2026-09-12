@@ -609,6 +609,18 @@ for (const [group] of __VLS_getVForSourceType((__VLS_ctx.priorityGroups))) {
                 ...{ class: "card-id" },
             });
             (task.id.slice(-8));
+            if (task.started_at) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                    ...{ class: "card-time" },
+                });
+                (__VLS_ctx.formatTime(task.started_at));
+            }
+            if (task.started_at) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                    ...{ class: "card-duration" },
+                });
+                (__VLS_ctx.duration(task.started_at, task.finished_at));
+            }
             if (task.current_node_id) {
                 __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
                     ...{ class: "card-node" },
@@ -894,6 +906,8 @@ const __VLS_4 = __VLS_3({}, ...__VLS_functionalComponentArgsRest(__VLS_3));
 /** @type {__VLS_StyleScopedClasses['card-title']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-meta']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-id']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-time']} */ ;
+/** @type {__VLS_StyleScopedClasses['card-duration']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-node']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-limit']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-actions']} */ ;
@@ -966,6 +980,8 @@ const __VLS_self = (await import('vue')).defineComponent({
             confirmTask: confirmTask,
             executeTask: executeTask,
             deleteTask: deleteTask,
+            formatTime: formatTime,
+            duration: duration,
         };
     },
 });

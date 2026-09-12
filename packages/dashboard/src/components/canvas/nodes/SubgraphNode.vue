@@ -1,7 +1,7 @@
 <template>
   <div class="vf-node t-subgraph" :class="['st-' + (data.status || 'pending'), { sel: selected }]">
     <Handle type="target" :position="Position.Left" />
-    <div class="vn-kind"><span class="vn-ic">◈</span>subgraph · {{ data.status || 'pending' }}</div>
+    <div class="vn-kind"><span class="vn-ic">◈</span>subgraph · {{ nodeStatusLabel(data.status) }}</div>
     <div class="vn-lbl">{{ data.label || 'subgraph' }}</div>
     <div class="vn-sub" v-if="data.subgraph_id">{{ data.subgraph_id }}</div>
     <div class="vn-badge" v-if="data.badge">{{ data.badge }}</div>
@@ -10,5 +10,6 @@
 </template>
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
+import { nodeStatusLabel } from '../../../lib/status-label'
 defineProps<{ id: string; data: any; selected?: boolean }>()
 </script>

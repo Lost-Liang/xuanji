@@ -43,6 +43,22 @@ function nodeStatusLabel(type, s) {
         return '待人审';
     return statusLabel(s);
 }
+// 格式化时间
+function formatTime(ts) {
+    if (!ts)
+        return '-';
+    return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+}
+// 用时计算
+function elapsed(start) {
+    if (!start)
+        return '-';
+    const startTime = new Date(start).getTime();
+    const diff = Math.floor((Date.now() - startTime) / 1000);
+    const min = Math.floor(diff / 60);
+    const sec = diff % 60;
+    return min > 0 ? `${min}分${sec}秒` : `${sec}秒`;
+}
 // 获取节点的友好名称（用于边面板显示）
 function getNodeLabel(nodeId) {
     const node = nodes.value.find(n => n.id === nodeId);
@@ -121,7 +137,7 @@ async function connectExecution() {
             return;
         }
         const erow = await er.json();
-        rtMeta.value = { status: erow.status, token_in: erow.token_in ?? null, token_out: erow.token_out ?? null, current_node_id: erow.current_node_id, loop_counters: erow.loop_counters || {} };
+        rtMeta.value = { status: erow.status, token_in: erow.token_in ?? null, token_out: erow.token_out ?? null, current_node_id: erow.current_node_id, loop_counters: erow.loop_counters || {}, started_at: erow.started_at };
         const defId = erow.graph_definition_id;
         // 情况 1：有 graph_definition_id（工作流驱动的执行）
         if (defId) {
@@ -334,7 +350,7 @@ async function pollExecution() {
         if (!r.ok)
             return;
         const row = await r.json();
-        rtMeta.value = { status: row.status, token_in: row.token_in ?? null, token_out: row.token_out ?? null, current_node_id: row.current_node_id, loop_counters: row.loop_counters || {} };
+        rtMeta.value = { status: row.status, token_in: row.token_in ?? null, token_out: row.token_out ?? null, current_node_id: row.current_node_id, loop_counters: row.loop_counters || {}, started_at: row.started_at };
         // phase_nodes 是 { phaseId: status } 对象，直接使用其状态值
         if (row.phase_nodes && typeof row.phase_nodes === 'object') {
             for (const [nid, status] of Object.entries(row.phase_nodes)) {
@@ -1219,6 +1235,30 @@ if (__VLS_ctx.mode === 'runtime') {
         __VLS_105.slots.default;
         (__VLS_ctx.rtMeta.status === 'running' ? '运行中' : __VLS_ctx.rtMeta.status === 'completed' ? '已完成' : __VLS_ctx.rtMeta.status === 'paused' ? '已暂停' : __VLS_ctx.rtMeta.status === 'failed' ? '失败' : __VLS_ctx.rtMeta.status);
         var __VLS_105;
+        if (__VLS_ctx.rtMeta.started_at) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: "panel-row" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "label" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "value" },
+            });
+            (__VLS_ctx.formatTime(__VLS_ctx.rtMeta.started_at));
+        }
+        if (__VLS_ctx.rtMeta.started_at && __VLS_ctx.rtMeta.status === 'running') {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: "panel-row" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "label" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                ...{ class: "value" },
+            });
+            (__VLS_ctx.elapsed(__VLS_ctx.rtMeta.started_at));
+        }
         if (__VLS_ctx.rtMeta.token_in != null) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
                 ...{ class: "panel-row" },
@@ -1477,6 +1517,12 @@ if (__VLS_ctx.mode === 'runtime' && __VLS_ctx.connected) {
 /** @type {__VLS_StyleScopedClasses['panel-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['label']} */ ;
 /** @type {__VLS_StyleScopedClasses['value']} */ ;
+/** @type {__VLS_StyleScopedClasses['panel-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['label']} */ ;
+/** @type {__VLS_StyleScopedClasses['value']} */ ;
+/** @type {__VLS_StyleScopedClasses['panel-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['label']} */ ;
+/** @type {__VLS_StyleScopedClasses['value']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel-title']} */ ;
 /** @type {__VLS_StyleScopedClasses['node-list']} */ ;
 /** @type {__VLS_StyleScopedClasses['node-list-item']} */ ;
@@ -1528,6 +1574,8 @@ const __VLS_self = (await import('vue')).defineComponent({
             selectNodeById: selectNodeById,
             statusLabel: statusLabel,
             nodeStatusLabel: nodeStatusLabel,
+            formatTime: formatTime,
+            elapsed: elapsed,
             graphDefs: graphDefs,
             selectedGraphId: selectedGraphId,
             loadSelectedGraph: loadSelectedGraph,

@@ -456,7 +456,7 @@ onMounted(() => {
   color: var(--el-text-color-primary);
 }
 .mono-id {
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 2px 8px;
   background: var(--el-fill-color);
@@ -478,15 +478,15 @@ onMounted(() => {
   padding: 10px 14px;
   border-radius: 8px;
   background: var(--el-fill-color-light);
-  border-left: 3px solid var(--el-border-color);
+  border-top: 2px solid var(--el-border-color);
 }
-.tl-card.node-text { border-left-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.tl-card.node-tool { border-left-color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
-.tl-card.node-inbox { border-left-color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
-.tl-card.node-user { border-left-color: var(--el-color-success); background: var(--el-color-success-light-9); }
-.tl-card.node-final { border-left-color: var(--el-color-success); background: var(--el-color-success-light-9); }
-.tl-card.node-error { border-left-color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
-.tl-card.node-system { border-left-color: var(--el-border-color); opacity: 0.75; }
+.tl-card.node-text { border-top-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.tl-card.node-tool { border-top-color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.tl-card.node-inbox { border-top-color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.tl-card.node-user { border-top-color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.tl-card.node-final { border-top-color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.tl-card.node-error { border-top-color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
+.tl-card.node-system { border-top-color: var(--el-border-color); opacity: 0.75; }
 
 .tl-role {
   font-size: 12px;
@@ -497,7 +497,7 @@ onMounted(() => {
   letter-spacing: 0.05em;
 }
 .tl-role code {
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--el-color-warning);
   background: transparent;
   padding: 0 2px;
@@ -519,7 +519,7 @@ onMounted(() => {
 }
 .tl-text.tl-error-text {
   color: var(--el-color-danger);
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -539,7 +539,7 @@ onMounted(() => {
   background: var(--el-bg-color-overlay);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;

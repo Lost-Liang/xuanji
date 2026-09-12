@@ -60,16 +60,23 @@ onMounted(loadProjects)
       <el-button type="primary" @click="showDialog = true">添加项目</el-button>
     </header>
 
-    <el-table :data="projects" v-loading="loading" stripe>
-      <el-table-column prop="name" label="名称" />
-      <el-table-column prop="path" label="路径" />
-      <el-table-column prop="description" label="描述" />
-      <el-table-column label="操作" width="100">
-        <template #default="{ row }">
-          <el-button type="danger" text @click="deleteProject(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-wrap">
+      <el-table :data="projects" v-loading="loading">
+        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="path" label="路径" min-width="200">
+          <template #default="{ row }">
+            <span class="mono-path">{{ row.path }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button type="danger" link @click="deleteProject(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!loading && projects.length === 0" description="暂无项目，点击上方按钮添加" />
+    </div>
 
     <!-- 添加对话框 -->
     <el-dialog v-model="showDialog" title="添加项目" width="500px">
@@ -95,6 +102,7 @@ onMounted(loadProjects)
 <style scoped>
 .projects-page {
   padding: 20px;
+  min-height: calc(100vh - 120px);
 }
 .page-header {
   display: flex;
@@ -104,6 +112,31 @@ onMounted(loadProjects)
 }
 .page-header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+}
+.table-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.mono-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+:deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--surface);
+}
+:deep(.el-table th.el-table__cell) {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
 }
 </style>
