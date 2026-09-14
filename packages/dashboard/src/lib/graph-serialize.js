@@ -30,16 +30,22 @@ export function toVueFlow(def) {
     }
     return {
         nodes: def.nodes.map(n => ({ id: n.id, type: n.type, position: { x: 0, y: 0 }, data: { ...n } })),
-        edges: def.edges.map(e => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            type: isLoopEdge.has(e.id) ? 'bezier' : 'smoothstep', // 循环边用 bezier，普通边用 smoothstep
-            markerEnd: 'arrowclosed',
-            data: {
-                condition: e.condition,
-                loop_max: e.loop_max,
-            },
-        })),
+        edges: def.edges.map(e => {
+            const isLoop = isLoopEdge.has(e.id);
+            return {
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                type: 'smoothstep', // 统一使用 smoothstep
+                markerEnd: 'arrowclosed',
+                // 循环边使用虚线样式区分
+                style: isLoop ? { strokeDasharray: '5,5', strokeWidth: 2 } : {},
+                data: {
+                    condition: e.condition,
+                    loop_max: e.loop_max,
+                    isLoopEdge: isLoop,
+                },
+            };
+        }),
     };
 }
