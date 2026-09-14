@@ -61,8 +61,6 @@
           </template>
         </div>
         <div class="toolbar-right">
-          <el-button size="small" @click="debugLog">调试</el-button>
-          <el-button size="small" @click="sayHello">Hello</el-button>
           <el-button v-if="mode === 'static'" size="small" type="primary" class="save-btn" @click="save">保存</el-button>
         </div>
       </div>
@@ -839,24 +837,6 @@ function updateEdgeLoopMax(loopMax: number) {
       }
     }
   }
-}
-function sayHello() {
-  ElMessage.info('Hello 👋')
-}
-function debugLog() {
-  console.log("=== Canvas 调试信息 ===")
-  console.log("模式:", mode.value)
-  console.log("节点数量:", nodes.value.length)
-  console.log("节点列表:", nodes.value)
-  console.log("边数量:", edges.value.length)
-  console.log("边列表:", edges.value)
-  if (mode.value === "runtime") {
-    console.log("执行ID:", executionId.value)
-    console.log("连接状态:", connected.value)
-    console.log("执行元数据:", rtMeta.value)
-    console.log("运行阶段:", runtimePhases.value)
-  }
-  console.log("=== 调试信息结束 ===")
 }
 
 async function save() {
