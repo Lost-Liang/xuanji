@@ -40,12 +40,13 @@ export function toVueFlow(def) {
                 target: e.target,
                 type: isReverse ? 'default' : 'smoothstep',
                 markerEnd: 'arrowclosed',
-                // 反向边（循环）使用 Bottom→Top，与正向边 Right→Left 错开
+                // 循环边使用 Bottom→Bottom，从下方绕路形成 U 形回路，避免交叉
                 sourcePosition: isReverse ? 'bottom' : 'right',
-                targetPosition: isReverse ? 'top' : 'left',
-                // 指定 handle id，让 VueFlow 使用正确的 handle 计算路径
+                targetPosition: isReverse ? 'bottom' : 'left',
                 sourceHandle: isReverse ? 'bottom' : null,
-                targetHandle: isReverse ? 'top' : null,
+                targetHandle: isReverse ? 'bottom' : null,
+                // 循环边使用大曲率，从下方绕远路
+                pathOptions: isReverse ? { curvature: 0.8 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
