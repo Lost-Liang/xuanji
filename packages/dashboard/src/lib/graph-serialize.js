@@ -38,8 +38,8 @@ export function toVueFlow(def) {
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                // 正向边使用 smoothstep（折线），循环边使用 loop-edge（SVG Arc）
-                type: isReverse ? 'loop-edge' : 'smoothstep',
+                // 正向边和循环边都使用 smoothstep（折线）
+                type: 'smoothstep',
                 markerEnd: 'arrowclosed',
                 // 循环边使用 Top→Top，从上方绕路
                 sourcePosition: isReverse ? 'top' : 'right',
