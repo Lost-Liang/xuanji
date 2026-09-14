@@ -47,7 +47,7 @@ export function toVueFlow(def) {
                 sourceHandle: isReverse ? 'top' : null,
                 targetHandle: isReverse ? 'top' : null,
                 // smoothstep 折线的偏移量，让循环边向上绕更远
-                pathOptions: isReverse ? { offset: 60 } : undefined,
+                pathOptions: isReverse ? { offset: 120 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
