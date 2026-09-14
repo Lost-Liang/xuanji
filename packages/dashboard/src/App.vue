@@ -31,43 +31,11 @@
         <div class="crumb">
           控制台<span class="sep">/</span><b>{{ currentTitle }}</b>
         </div>
-        <div class="topbar-right">
-          <button class="btn btn-primary" @click="$router.push('/requirements')">+ 新建需求</button>
-          
-          <!-- 登录/用户信息区域 -->
-          <div class="user-area">
-            <template v-if="isLoggedIn">
-              <el-dropdown trigger="click" @command="handleUserCommand">
-                <div class="user-info">
-                  <div class="user-avatar">
-                    {{ currentUser?.displayName?.charAt(0).toUpperCase() || 'U' }}
-                  </div>
-                  <span class="user-name">{{ currentUser?.displayName }}</span>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                    <el-dropdown-item command="settings">设置</el-dropdown-item>
-                    <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </template>
-            <template v-else>
-              <button class="btn btn-login" @click="showLoginDialog = true">
-                登录
-              </button>
-            </template>
-          </div>
-        </div>
       </div>
       <div class="content">
         <router-view />
       </div>
     </main>
-    
-    <!-- 登录对话框 -->
-    <LoginDialog v-model="showLoginDialog" @success="handleLoginSuccess" />
   </div>
 </template>
 
@@ -75,9 +43,6 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Odometer, Document, List, Monitor, Setting, Collection, Operation, ChatDotRound, Folder } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import LoginDialog from './components/LoginDialog.vue'
-import { currentUser, isLoggedIn, logout, checkAuth } from './stores/user'
 
 const route = useRoute()
 
@@ -118,31 +83,6 @@ const currentTitle = computed(() => {
   return titleMap[route.path] ?? ''
 })
 
-// 登录对话框
-const showLoginDialog = ref(false)
-
-function handleLoginSuccess() {
-  ElMessage.success('欢迎回来！')
-}
-
-// 用户下拉菜单处理
-function handleUserCommand(command: string) {
-  switch (command) {
-    case 'profile':
-      // TODO: 跳转到个人中心
-      ElMessage.info('个人中心功能开发中...')
-      break
-    case 'settings':
-      // TODO: 跳转到设置
-      ElMessage.info('设置功能开发中...')
-      break
-    case 'logout':
-      logout()
-      ElMessage.success('已退出登录')
-      break
-  }
-}
-
 // Host 状态
 const hostStatus = ref<'online' | 'offline' | 'checking'>('checking')
 const hostStatusText = computed(() => {
@@ -167,9 +107,6 @@ let timer: ReturnType<typeof setInterval>
 onMounted(() => {
   checkHostStatus()
   timer = setInterval(checkHostStatus, 30000)
-  
-  // 检查登录状态
-  checkAuth()
 })
 onUnmounted(() => clearInterval(timer))
 </script>
@@ -312,71 +249,6 @@ onUnmounted(() => clearInterval(timer))
 }
 .crumb b { color: var(--text); font-weight: 600; }
 .crumb .sep { color: var(--faint); }
-.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-
-.btn {
-  font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 12.5px;
-  padding: 7px 13px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent);
-  cursor: pointer;
-  transition: background .16s, border-color .16s;
-}
-.btn-primary {
-  background: var(--accent);
-  color: #001016;
-}
-.btn-primary:hover {
-  background: #06B6D4;
-  border-color: #06B6D4;
-}
-.btn-login {
-  background: transparent;
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.btn-login:hover {
-  background: var(--accent);
-  color: #001016;
-}
-
-/* 用户区域 */
-.user-area {
-  display: flex;
-  align-items: center;
-}
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background .16s;
-}
-.user-info:hover {
-  background: var(--surface);
-}
-.user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--ai));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #001016;
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.user-name {
-  font-size: 13px;
-  color: var(--text);
-  font-weight: 500;
-}
 
 .content {
   flex: 1;
