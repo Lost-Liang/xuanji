@@ -38,11 +38,14 @@ export function toVueFlow(def) {
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                type: 'smoothstep',
+                type: isReverse ? 'default' : 'smoothstep',
                 markerEnd: 'arrowclosed',
                 // 反向边（循环）使用 Bottom→Top，与正向边 Right→Left 错开
                 sourcePosition: isReverse ? 'bottom' : 'right',
                 targetPosition: isReverse ? 'top' : 'left',
+                // 指定 handle id，让 VueFlow 使用正确的 handle 计算路径
+                sourceHandle: isReverse ? 'bottom' : null,
+                targetHandle: isReverse ? 'top' : null,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,

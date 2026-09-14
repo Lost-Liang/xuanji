@@ -1,11 +1,13 @@
 <template>
   <div class="vf-node t-command" :class="['st-' + (data.status || 'pending'), { sel: selected }]">
     <Handle type="target" :position="Position.Left" />
+    <Handle type="source" :position="Position.Right" />
+    <Handle type="target" :position="Position.Top" id="top" />
+    <Handle type="source" :position="Position.Bottom" id="bottom" />
     <div class="vn-kind"><span class="vn-ic">▸</span>command · {{ nodeStatusLabel(data.status) }}</div>
     <div class="vn-lbl">{{ data.label || 'command' }}</div>
     <div class="vn-sub" v-if="data.command">{{ data.command }}</div>
     <div class="vn-badge" v-if="data.badge">{{ data.badge }}</div>
-    <Handle type="source" :position="Position.Right" />
   </div>
 </template>
 <script setup lang="ts">
