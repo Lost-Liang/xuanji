@@ -14,13 +14,27 @@ export function toGraphDef(nodes, edges, name, pluginId) {
     };
 }
 export function toVueFlow(def) {
+    // 检测循环边（双向边）
+    const edgeKeys = new Set();
+    const isLoopEdge = new Set();
+    // 第一遍：收集所有边的 key
+    for (const e of def.edges) {
+        edgeKeys.add(`${e.source}-${e.target}`);
+    }
+    // 第二遍：检测循环（如果存在反向边）
+    for (const e of def.edges) {
+        const reverseKey = `${e.target}-${e.source}`;
+        if (edgeKeys.has(reverseKey)) {
+            isLoopEdge.add(e.id);
+        }
+    }
     return {
         nodes: def.nodes.map(n => ({ id: n.id, type: n.type, position: { x: 0, y: 0 }, data: { ...n } })),
         edges: def.edges.map(e => ({
             id: e.id,
             source: e.source,
             target: e.target,
-            type: 'particle',
+            type: isLoopEdge.has(e.id) ? 'bezier' : 'smoothstep', // 循环边用 bezier，普通边用 smoothstep
             markerEnd: 'arrowclosed',
             data: {
                 condition: e.condition,
