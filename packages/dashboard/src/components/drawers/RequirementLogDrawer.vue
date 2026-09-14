@@ -79,19 +79,19 @@ function statusText(status: string | null): string {
         >
           <div class="session-meta">
             <span class="phase-name">{{ s.node_id }}</span>
-            <el-tag size="small" :type="s.omnigent_status === 'running' ? 'warning' : 'info'">
-              {{ statusText(s.omnigent_status) }}
+            <el-tag size="small" :type="s.status === 'running' ? 'warning' : 'info'">
+              {{ statusText(s.status) }}
             </el-tag>
             <span class="muted">attempt {{ s.iteration }}</span>
           </div>
           <div class="session-id-row">
-            <code class="session-id">{{ s.omnigent_session_id || '（未匹配到 session）' }}</code>
+            <code class="session-id">{{ s.session_id || '（未匹配到 session）' }}</code>
             <el-button
-              v-if="s.omnigent_session_id"
+              v-if="s.session_id"
               size="small"
               link
               type="primary"
-              @click="copySession(s.omnigent_session_id)"
+              @click="copySession(s.session_id)"
             >复制</el-button>
           </div>
         </div>

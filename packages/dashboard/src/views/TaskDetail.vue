@@ -178,7 +178,7 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
     const existing = statusMap.get(sr.node_id)
     if (!existing || sr.iteration > existing.iteration) {
       statusMap.set(sr.node_id, {
-        status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
+        status: sr.status === 'completed' ? 'done' : sr.status,
         iteration: sr.iteration || 0,
         started_at: sr.started_at,
         completed_at: sr.completed_at,
@@ -203,16 +203,16 @@ const phaseStatuses = computed<PhaseStatus[]>(() => {
       ? formatDuration(sr.started_at, sr.completed_at)
       : null
 
-    const timeText = sr.omnigent_status === 'completed'
+    const timeText = sr.status === 'completed'
       ? (duration || '')
-      : sr.omnigent_status === 'running'
+      : sr.status === 'running'
         ? '进行中'
         : ''
 
     return {
       id: sr.node_id,
       label: phaseLabel(sr.node_id),
-      status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status as PhaseStatus['status'],
+      status: sr.status === 'completed' ? 'done' : sr.status as PhaseStatus['status'],
       iteration: sr.iteration || 0,
       duration,
       timeText,

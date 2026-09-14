@@ -33,10 +33,10 @@ export interface SessionRef {
   node_id: string
   iteration: number
   role: string
-  omnigent_session_id: string
-  omnigent_status: string
-  started_at: string | null      // 新增：阶段开始时间
-  completed_at: string | null    // 新增：阶段完成时间
+  session_id: string        // V4: Claude Code CLI 会话 ID
+  status: string
+  started_at: string | null
+  completed_at: string | null
 }
 
 export interface TaskDetail {

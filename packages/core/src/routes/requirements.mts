@@ -169,8 +169,8 @@ requirementsRouter.get('/:id', async (req, res) => {
         node_id: p.phase_id,
         iteration: p.attempt,
         role: p.agent_used ?? 'unknown',
-        omnigent_session_id: p.session_id ?? '',
-        omnigent_status: p.status,
+        session_id: p.session_id ?? '',  // V4: Claude Code CLI 会话 ID
+        status: p.status,
       }));
     } catch {
       // 忽略

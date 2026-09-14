@@ -146,10 +146,10 @@ tasksRouter.get('/:id', async (req, res) => {
         node_id: p.phase_id,
         iteration: p.attempt,
         role: p.agent_used ?? 'unknown',
-        omnigent_session_id: p.session_id ?? '',
-        omnigent_status: p.status,
-        started_at: p.started_at?.toISOString?.() ?? null,  // Task 1: 新增时间字段
-        completed_at: p.completed_at?.toISOString?.() ?? null,  // Task 1: 新增时间字段
+        session_id: p.session_id ?? '',  // V4: Claude Code CLI 会话 ID
+        status: p.status,
+        started_at: p.started_at?.toISOString?.() ?? null,
+        completed_at: p.completed_at?.toISOString?.() ?? null,
       })),
     };
 

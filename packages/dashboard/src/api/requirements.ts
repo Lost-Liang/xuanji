@@ -24,8 +24,8 @@ export interface SessionRef {
   node_id: string
   iteration: number
   role: string
-  omnigent_session_id: string
-  omnigent_status: string
+  session_id: string      // V4: Claude Code CLI 会话 ID
+  status: string
 }
 
 export interface RequirementDetail {

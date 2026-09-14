@@ -161,7 +161,7 @@ const phaseStatuses = computed(() => {
         const existing = statusMap.get(sr.node_id);
         if (!existing || sr.iteration > existing.iteration) {
             statusMap.set(sr.node_id, {
-                status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
+                status: sr.status === 'completed' ? 'done' : sr.status,
                 iteration: sr.iteration || 0,
                 started_at: sr.started_at,
                 completed_at: sr.completed_at,
@@ -182,15 +182,15 @@ const phaseStatuses = computed(() => {
         const duration = sr.started_at && sr.completed_at
             ? formatDuration(sr.started_at, sr.completed_at)
             : null;
-        const timeText = sr.omnigent_status === 'completed'
+        const timeText = sr.status === 'completed'
             ? (duration || '')
-            : sr.omnigent_status === 'running'
+            : sr.status === 'running'
                 ? '进行中'
                 : '';
         return {
             id: sr.node_id,
             label: phaseLabel(sr.node_id),
-            status: sr.omnigent_status === 'completed' ? 'done' : sr.omnigent_status,
+            status: sr.status === 'completed' ? 'done' : sr.status,
             iteration: sr.iteration || 0,
             duration,
             timeText,
@@ -691,6 +691,16 @@ if (__VLS_ctx.detail && !__VLS_ctx.loading) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
         ...{ class: "meta-value mono" },
     });
+    (__VLS_ctx.detail.thread_id);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "meta-row" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "meta-label" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "meta-value mono" },
+    });
     (__VLS_ctx.detail.id);
     if (__VLS_ctx.detail.requirement_id) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -892,6 +902,10 @@ const __VLS_19 = __VLS_18({}, ...__VLS_functionalComponentArgsRest(__VLS_18));
 /** @type {__VLS_StyleScopedClasses['content-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-title']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-list']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['meta-value']} */ ;
+/** @type {__VLS_StyleScopedClasses['mono']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-row']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-label']} */ ;
 /** @type {__VLS_StyleScopedClasses['meta-value']} */ ;

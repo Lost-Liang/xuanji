@@ -115,14 +115,14 @@ if (__VLS_ctx.detail && __VLS_ctx.detail.session_refs.length > 0) {
         // @ts-ignore
         const __VLS_10 = __VLS_asFunctionalComponent(__VLS_9, new __VLS_9({
             size: "small",
-            type: (s.omnigent_status === 'running' ? 'warning' : 'info'),
+            type: (s.status === 'running' ? 'warning' : 'info'),
         }));
         const __VLS_11 = __VLS_10({
             size: "small",
-            type: (s.omnigent_status === 'running' ? 'warning' : 'info'),
+            type: (s.status === 'running' ? 'warning' : 'info'),
         }, ...__VLS_functionalComponentArgsRest(__VLS_10));
         __VLS_12.slots.default;
-        (__VLS_ctx.statusText(s.omnigent_status));
+        (__VLS_ctx.statusText(s.status));
         var __VLS_12;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
             ...{ class: "muted" },
@@ -134,8 +134,8 @@ if (__VLS_ctx.detail && __VLS_ctx.detail.session_refs.length > 0) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.code, __VLS_intrinsicElements.code)({
             ...{ class: "session-id" },
         });
-        (s.omnigent_session_id || '（未匹配到 session）');
-        if (s.omnigent_session_id) {
+        (s.session_id || '（未匹配到 session）');
+        if (s.session_id) {
             const __VLS_13 = {}.ElButton;
             /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
             // @ts-ignore
@@ -158,9 +158,9 @@ if (__VLS_ctx.detail && __VLS_ctx.detail.session_refs.length > 0) {
                 onClick: (...[$event]) => {
                     if (!(__VLS_ctx.detail && __VLS_ctx.detail.session_refs.length > 0))
                         return;
-                    if (!(s.omnigent_session_id))
+                    if (!(s.session_id))
                         return;
-                    __VLS_ctx.copySession(s.omnigent_session_id);
+                    __VLS_ctx.copySession(s.session_id);
                 }
             };
             __VLS_16.slots.default;
