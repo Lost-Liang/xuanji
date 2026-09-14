@@ -77,7 +77,8 @@ export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
         id: e.id,
         source: e.source,
         target: e.target,
-        type: 'smoothstep',
+        // 循环边使用 default 类型（贝塞尔曲线），正向边使用 smoothstep
+        type: isReverse ? 'default' : 'smoothstep',
         markerEnd: 'arrowclosed',
         // 反向边（循环）使用 Bottom→Top，与正向边 Right→Left 错开
         sourcePosition: isReverse ? 'bottom' : 'right',
