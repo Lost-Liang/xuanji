@@ -41,13 +41,13 @@ export function toVueFlow(def) {
                 // 正向边和循环边都使用 smoothstep（折线）
                 type: 'smoothstep',
                 markerEnd: 'arrowclosed',
-                // 循环边使用 Top→Top，从上方绕路形成平滑曲线
+                // 循环边使用 Top→Top，从上方绕路
                 sourcePosition: isReverse ? 'top' : 'right',
                 targetPosition: isReverse ? 'top' : 'left',
                 sourceHandle: isReverse ? 'top' : null,
                 targetHandle: isReverse ? 'top' : null,
-                // 贝塞尔曲线使用曲率参数，让循环边绕远路
-                pathOptions: isReverse ? { curvature: 1.0 } : undefined,
+                // smoothstep 折线的偏移量，让循环边向上绕更远
+                pathOptions: isReverse ? { offset: 60 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
