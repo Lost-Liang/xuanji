@@ -47,7 +47,7 @@ export function toVueFlow(def) {
                 sourceHandle: isReverse ? 'top' : null,
                 targetHandle: isReverse ? 'top' : null,
                 // 贝塞尔曲线使用曲率参数，让循环边绕远路
-                pathOptions: isReverse ? { curvature: 0.6 } : undefined,
+                pathOptions: isReverse ? { curvature: 1.0 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
