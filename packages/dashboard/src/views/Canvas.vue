@@ -2,7 +2,7 @@
   <div class="canvas-wrap">
     <div class="canvas-main">
       <VueFlow v-model:nodes="nodes" v-model:edges="edges"
-        :default-edge-options="{ markerEnd: 'arrowclosed', type: 'smoothstep', animated: false }"
+        :default-edge-options="{ markerEnd: 'arrowclosed', animated: false }"
         :nodes-connectable="mode === 'static'"
         :nodes-draggable="mode === 'static'"
         :elements-deletable="mode === 'static'"
