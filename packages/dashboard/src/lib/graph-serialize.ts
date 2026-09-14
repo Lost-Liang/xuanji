@@ -51,38 +51,42 @@ export function toGraphDef(nodes: Node[], edges: Edge[], name: string, pluginId:
 
 export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
   // 检测循环边（双向边）
-  const edgeKeys = new Set<string>()
-  const isLoopEdge = new Set<string>()
+  const edgeMap = new Map<string, string>() // key -> edge id
+  const reverseEdgeIds = new Set<string>() // 反向边的 id
 
-  // 第一遍：收集所有边的 key
+  // 第一遍：收集所有边的 key → id 映射
   for (const e of def.edges) {
-    edgeKeys.add(`${e.source}-${e.target}`)
+    edgeMap.set(`${e.source}-${e.target}`, e.id)
   }
 
-  // 第二遍：检测循环（如果存在反向边）
+  // 第二遍：检测循环，标记反向边
   for (const e of def.edges) {
     const reverseKey = `${e.target}-${e.source}`
-    if (edgeKeys.has(reverseKey)) {
-      isLoopEdge.add(e.id)
+    const reverseId = edgeMap.get(reverseKey)
+    // 如果存在反向边，且当前边的 id > 反向边的 id（按字母顺序），则当前边是反向边
+    if (reverseId && e.id > reverseId) {
+      reverseEdgeIds.add(e.id)
     }
   }
 
   return {
     nodes: def.nodes.map(n => ({ id: n.id, type: n.type, position: { x: 0, y: 0 }, data: { ...n } })),
     edges: def.edges.map(e => {
-      const isLoop = isLoopEdge.has(e.id)
+      const isReverse = reverseEdgeIds.has(e.id)
       return {
         id: e.id,
         source: e.source,
         target: e.target,
-        type: 'smoothstep',  // 统一使用 smoothstep
+        type: 'smoothstep',
         markerEnd: 'arrowclosed',
-        // 循环边添加特殊 className
-        className: isLoop ? 'loop-edge' : undefined,
+        // 反向边（循环）使用 Bottom→Top，与正向边 Right→Left 错开
+        sourcePosition: isReverse ? 'bottom' : 'right',
+        targetPosition: isReverse ? 'top' : 'left',
+        className: isReverse ? 'loop-edge' : undefined,
         data: {
           condition: e.condition,
           loop_max: e.loop_max,
-          isLoopEdge: isLoop,
+          isLoopEdge: isReverse,
         },
       }
     }),
