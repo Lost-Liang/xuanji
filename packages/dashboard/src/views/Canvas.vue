@@ -16,6 +16,7 @@
         <template #node-gate="props"><GateNode v-bind="props" /></template>
         <template #node-command="props"><CommandNode v-bind="props" /></template>
         <template #node-subgraph="props"><SubgraphNode v-bind="props" /></template>
+        <template #edge-loop-edge="props"><LoopEdge v-bind="props" /></template>
       </VueFlow>
       <!-- 右键菜单 -->
       <ul v-if="ctxMenu.show" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
@@ -137,6 +138,7 @@ import AgentNode from '../components/canvas/nodes/AgentNode.vue'
 import GateNode from '../components/canvas/nodes/GateNode.vue'
 import CommandNode from '../components/canvas/nodes/CommandNode.vue'
 import SubgraphNode from '../components/canvas/nodes/SubgraphNode.vue'
+import LoopEdge from '../components/canvas/edges/LoopEdge.vue'
 import NodeEditModal from '../components/canvas/NodeEditModal.vue'
 import LiveEventStream from '../components/execution/LiveEventStream.vue'
 import { layoutDagre } from '../lib/dagre-layout'

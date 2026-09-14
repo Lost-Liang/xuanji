@@ -38,8 +38,8 @@ export function toVueFlow(def) {
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                // 正向边使用 smoothstep（折线），循环边使用 default（贝塞尔曲线）
-                type: isReverse ? 'default' : 'smoothstep',
+                // 正向边使用 smoothstep（折线），循环边使用自定义 loop-edge（贝塞尔曲线）
+                type: isReverse ? 'loop-edge' : 'smoothstep',
                 markerEnd: 'arrowclosed',
                 // 循环边使用 Top→Top，从上方绕路形成平滑曲线
                 sourcePosition: isReverse ? 'top' : 'right',
