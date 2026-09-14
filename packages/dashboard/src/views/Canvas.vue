@@ -567,16 +567,20 @@ function applyState() {
     const newAnimated = targetStatus === 'running'
 
     // 确定边的状态 class
-    let edgeClass = ''
+    let statusClass = ''
     if (targetStatus === 'done' && sourceStatus === 'done') {
-      edgeClass = 'st-done'
+      statusClass = 'st-done'
     } else if (targetStatus === 'running') {
-      edgeClass = 'st-running'
+      statusClass = 'st-running'
     }
 
-    if (e.animated !== newAnimated || e.class !== edgeClass) {
+    // 保留原始的 class（如 loop-edge），追加状态 class
+    const originalClass = e.data?.isLoopEdge ? 'loop-edge' : ''
+    const newClass = [originalClass, statusClass].filter(Boolean).join(' ')
+
+    if (e.animated !== newAnimated || e.class !== newClass) {
       edgesChanged = true
-      edges.value[i] = { ...e, animated: newAnimated, class: edgeClass }
+      edges.value[i] = { ...e, animated: newAnimated, class: newClass || undefined }
     }
   }
 
