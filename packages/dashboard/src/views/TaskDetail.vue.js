@@ -42,6 +42,17 @@ const selectedPhaseOutputs = computed(() => {
         return [];
     return detail.value.phase_outputs.filter(po => po.node_id === selected.id);
 });
+// 当前选中阶段的 Claude Code 会话 ID
+const selectedPhaseSessionId = computed(() => {
+    if (!detail.value)
+        return null;
+    const selected = phaseStatuses.value[selectedPhaseIndex.value];
+    if (!selected)
+        return null;
+    // 从 session_refs 中找到匹配的会话（按 node_id + iteration 匹配）
+    const sr = detail.value.session_refs.find(s => s.node_id === selected.id && s.iteration === selected.iteration);
+    return sr?.session_id || null;
+});
 // 点击流程节点
 function selectPhase(index) {
     selectedPhaseIndex.value = index;
@@ -682,16 +693,18 @@ if (__VLS_ctx.detail && !__VLS_ctx.loading) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "meta-list" },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "meta-row" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-label" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "meta-value mono" },
-    });
-    (__VLS_ctx.detail.thread_id);
+    if (__VLS_ctx.selectedPhaseSessionId) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "meta-row" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-label" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "meta-value mono" },
+        });
+        (__VLS_ctx.selectedPhaseSessionId);
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "meta-row" },
     });
@@ -946,6 +959,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             selectedPhaseIndex: selectedPhaseIndex,
             statusText: statusText,
             selectedPhaseOutputs: selectedPhaseOutputs,
+            selectedPhaseSessionId: selectedPhaseSessionId,
             selectPhase: selectPhase,
             renderMarkdown: renderMarkdown,
             parsedBreakdown: parsedBreakdown,

@@ -46,6 +46,18 @@ const selectedPhaseOutputs = computed(() => {
   return detail.value.phase_outputs.filter(po => po.node_id === selected.id)
 })
 
+// 当前选中阶段的 Claude Code 会话 ID
+const selectedPhaseSessionId = computed(() => {
+  if (!detail.value) return null
+  const selected = phaseStatuses.value[selectedPhaseIndex.value]
+  if (!selected) return null
+  // 从 session_refs 中找到匹配的会话（按 node_id + iteration 匹配）
+  const sr = detail.value.session_refs.find(
+    s => s.node_id === selected.id && s.iteration === selected.iteration
+  )
+  return sr?.session_id || null
+})
+
 // 点击流程节点
 function selectPhase(index: number) {
   selectedPhaseIndex.value = index
@@ -459,9 +471,9 @@ function parseJson(v: any): any {
         <section class="content-card">
           <h2 class="card-title">元信息</h2>
           <div class="meta-list">
-            <div class="meta-row">
+            <div v-if="selectedPhaseSessionId" class="meta-row">
               <span class="meta-label">会话 ID</span>
-              <span class="meta-value mono">{{ detail.thread_id }}</span>
+              <span class="meta-value mono">{{ selectedPhaseSessionId }}</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">执行 ID</span>
