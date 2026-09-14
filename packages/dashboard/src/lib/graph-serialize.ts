@@ -77,8 +77,8 @@ export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
         target: e.target,
         type: 'smoothstep',  // 统一使用 smoothstep
         markerEnd: 'arrowclosed',
-        // 循环边添加特殊 class
-        class: isLoop ? 'loop-edge' : '',
+        // 循环边添加特殊 className
+        className: isLoop ? 'loop-edge' : undefined,
         data: {
           condition: e.condition,
           loop_max: e.loop_max,
