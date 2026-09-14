@@ -3,7 +3,7 @@ import dagre, { graphlib } from '@dagrejs/dagre';
 const NODE_W = 180, NODE_H = 64;
 export function layoutDagre(nodes, edges, dir = 'LR') {
     const g = new graphlib.Graph({ directed: true, compound: true });
-    g.setGraph({ rankdir: dir, nodesep: 40, edgesep: 20, ranksep: 60, marginx: 20, marginy: 20 });
+    g.setGraph({ rankdir: dir, nodesep: 80, edgesep: 40, ranksep: 100, marginx: 40, marginy: 40 });
     g.setDefaultEdgeLabel(() => ({}));
     for (const n of nodes)
         g.setNode(n.id, { width: NODE_W, height: NODE_H });
