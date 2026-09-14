@@ -424,14 +424,24 @@ function applyState() {
             };
         }
     }
-    // 优化：只更新 animated 属性变化的边
+    // 优化：只更新 animated 属性和 class 变化的边
     let edgesChanged = false;
     for (let i = 0; i < edges.value.length; i++) {
         const e = edges.value[i];
-        const newAnimated = runtimePhases.value.get(e.target) === 'running';
-        if (e.animated !== newAnimated) {
+        const targetStatus = runtimePhases.value.get(e.target);
+        const sourceStatus = runtimePhases.value.get(e.source);
+        const newAnimated = targetStatus === 'running';
+        // 确定边的状态 class
+        let edgeClass = '';
+        if (targetStatus === 'done' && sourceStatus === 'done') {
+            edgeClass = 'st-done';
+        }
+        else if (targetStatus === 'running') {
+            edgeClass = 'st-running';
+        }
+        if (e.animated !== newAnimated || e.class !== edgeClass) {
             edgesChanged = true;
-            edges.value[i] = { ...e, animated: newAnimated };
+            edges.value[i] = { ...e, animated: newAnimated, class: edgeClass };
         }
     }
     // 如果有变化，触发响应式更新（通过重新赋值整个数组）
