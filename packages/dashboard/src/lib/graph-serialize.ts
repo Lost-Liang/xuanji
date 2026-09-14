@@ -77,8 +77,8 @@ export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
         target: e.target,
         type: 'smoothstep',  // 统一使用 smoothstep
         markerEnd: 'arrowclosed',
-        // 循环边使用虚线样式区分
-        style: isLoop ? { strokeDasharray: '5,5', strokeWidth: 2 } : {},
+        // 循环边添加特殊 class
+        class: isLoop ? 'loop-edge' : '',
         data: {
           condition: e.condition,
           loop_max: e.loop_max,
