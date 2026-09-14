@@ -198,7 +198,6 @@ html, body {
 .vue-flow__viewport { z-index: 1; }
 .vue-flow__handle { width: 7px; height: 7px; background: var(--border); border: none; border-radius: 50%; }
 .vue-flow__handle:hover { background: var(--accent); }
-.vue-flow__edge-path { stroke: var(--border); stroke-width: 1.4; }
 .vue-flow__controls { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .vue-flow__controls-button { background: var(--panel); border-bottom: 1px solid var(--border); color: var(--muted); }
 .vue-flow__controls-button:hover { background: var(--surface); color: var(--text); }
@@ -279,10 +278,16 @@ html, body {
    简化动画效果
    ========================================================================= */
 
-/* 运行节点简单高亮 */
+/* 运行节点发光效果 */
 .vf-node.st-running {
   border-color: var(--st-running);
-  box-shadow: 0 0 0 1px var(--st-running), 0 0 12px rgba(34, 211, 238, 0.2);
+  box-shadow: 0 0 0 1px var(--st-running), 0 0 20px rgba(34, 211, 238, 0.4), 0 0 40px rgba(34, 211, 238, 0.2);
+  animation: node-glow 2s ease-in-out infinite;
+}
+
+@keyframes node-glow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--st-running), 0 0 20px rgba(34, 211, 238, 0.4), 0 0 40px rgba(34, 211, 238, 0.2); }
+  50% { box-shadow: 0 0 0 1px var(--st-running), 0 0 30px rgba(34, 211, 238, 0.6), 0 0 60px rgba(34, 211, 238, 0.3); }
 }
 
 /* 选中节点样式 */
@@ -290,10 +295,30 @@ html, body {
   box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3);
 }
 
-/* 边动画 */
+/* 边基础样式 */
+.vue-flow__edge-path {
+  stroke: var(--border);
+  stroke-width: 1.4;
+  transition: stroke 0.3s, stroke-width 0.3s;
+}
+
+/* 边动画 - 流动发光 效果 */
 .vue-flow__edge.animated .vue-flow__edge-path {
   stroke: var(--st-running);
-  stroke-width: 1.5;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.6));
+  stroke-dasharray: 5;
+  animation: flow-dash 1s linear infinite;
+}
+
+@keyframes flow-dash {
+  to { stroke-dashoffset: -10; }
+}
+
+/* 完成状态的边 */
+.vue-flow__edge.st-done .vue-flow__edge-path {
+  stroke: var(--st-done);
+  stroke-width: 1.6;
 }
 
 /* hover 效果 */
