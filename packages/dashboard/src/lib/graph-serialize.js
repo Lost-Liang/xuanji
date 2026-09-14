@@ -38,15 +38,16 @@ export function toVueFlow(def) {
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                type: isReverse ? 'default' : 'smoothstep',
+                // 循环边使用 smoothstep + 大偏移，形成折线回路
+                type: 'smoothstep',
                 markerEnd: 'arrowclosed',
-                // 循环边使用 Bottom→Bottom，从下方绕路形成 U 形回路，避免交叉
+                // 循环边使用 Bottom→Bottom，从下方绕路
                 sourcePosition: isReverse ? 'bottom' : 'right',
                 targetPosition: isReverse ? 'bottom' : 'left',
                 sourceHandle: isReverse ? 'bottom' : null,
                 targetHandle: isReverse ? 'bottom' : null,
-                // 循环边使用大曲率，从下方绕远路
-                pathOptions: isReverse ? { curvature: 0.8 } : undefined,
+                // 循环边使用大偏移量，避免与节点重合
+                pathOptions: isReverse ? { offset: 60, borderRadius: 8 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
