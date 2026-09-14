@@ -4,25 +4,31 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { BaseEdge, getBezierPath, EdgeProps } from '@vue-flow/core'
+import { BaseEdge, EdgeProps, Position } from '@vue-flow/core'
 
 const props = defineProps<EdgeProps>()
 
-// 强制循环边向上绕路，控制点 y 坐标比节点顶部高 80px
+// 手动计算贝塞尔曲线路径，强制控制点向上偏移
 const edgePathParams = computed(() => {
-  const sourceY = props.sourceY
-  const targetY = props.targetY
-  // 控制点向上偏移 80px
-  const controlOffset = -80
-  return getBezierPath({
-    sourceX: props.sourceX,
-    sourceY: sourceY,
-    sourcePosition: props.sourcePosition,
-    targetX: props.targetX,
-    targetY: targetY,
-    targetPosition: props.targetPosition,
-    curvature: 0.8,
-  })
+  const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = props
+
+  // 控制点向上偏移 100px，确保循环边从上方绕路
+  const controlOffset = -100
+
+  // 计算控制点
+  const sourceControlX = sourceX
+  const sourceControlY = sourceY + controlOffset
+  const targetControlX = targetX
+  const targetControlY = targetY + controlOffset
+
+  // 计算标签位置（曲线中点）
+  const midX = (sourceX + targetX) / 2
+  const midY = Math.min(sourceY, targetY) + controlOffset
+
+  // 构建贝塞尔曲线路径
+  const path = `M${sourceX},${sourceY} C${sourceControlX},${sourceControlY} ${targetControlX},${targetControlY} ${targetX},${targetY}`
+
+  return [path, midX, midY]
 })
 
 const edgePath = computed(() => edgePathParams.value[0])
