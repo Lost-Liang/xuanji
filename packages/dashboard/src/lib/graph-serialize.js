@@ -46,8 +46,8 @@ export function toVueFlow(def) {
                 targetPosition: isReverse ? 'bottom' : 'left',
                 sourceHandle: isReverse ? 'bottom' : null,
                 targetHandle: isReverse ? 'bottom' : null,
-                // 循环边使用大偏移量，避免与节点重合
-                pathOptions: isReverse ? { offset: 60, borderRadius: 8 } : undefined,
+                // 循环边使用大偏移量（100px），避免与节点重合
+                pathOptions: isReverse ? { offset: 100, borderRadius: 8 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
