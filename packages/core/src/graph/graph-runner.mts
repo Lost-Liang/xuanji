@@ -316,12 +316,27 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
 
     // 其他错误
     console.error(`[graph-runner] 执行出错:`, err);
+    const errorMsg = (err as Error)?.message || '执行失败';
+
+    // 检查是否为限流错误（429）
+    if (isRateLimitError(errorMsg) && lease) {
+      const retryCount = await getRetryCount(executionId);
+      if (retryCount < 4) {
+        const retryAt = computeRetryAt(retryCount);
+        await executionStore.setRateLimited(executionId, retryAt, errorMsg);
+        await executionStore.releaseLeaseKeepStatus(executionId, lease);
+        console.log(`[graph-runner] 限流，${retryAt.toISOString()} 后重试（第 ${retryCount + 1} 次）`);
+        return;
+      }
+      // 超过 4 次重试，继续走 fail 流程
+      console.warn(`[graph-runner] 限流重试已达上限（${retryCount} 次），标记为失败`);
+    }
 
     // 提取错误详情
     const errorDetails = extractErrorDetails(err);
 
     // 使用 failWithEvent 记录失败（带事件留痕）
-    await executionStore.failWithEvent(executionId, err?.message || '执行失败', errorDetails);
+    await executionStore.failWithEvent(executionId, errorMsg, errorDetails);
   } finally {
     clearInterval(heartbeatInterval);
     // A4: 清理 AbortController 映射
