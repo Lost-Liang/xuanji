@@ -87,14 +87,17 @@ export async function loadFlow(flowId: string): Promise<{ yamlContent: string; g
       where: { id: flowId },
     });
     if (row?.definition_json) {
-      // 用户流没有 YAML，构造一个 YAML 字符串供 buildGraphFromDef 使用
-      // 这里简化处理，实际需要将 definitionJson 转回 YAML
-      // TODO: 支持 DB 用户流执行
-      console.warn(`[graph-runner] DB 用户流执行暂不支持: ${flowId}`);
-      return null;
+      // definition_json 是 WorkflowDef 的 JSON 格式
+      const workflowDef = row.definition_json as unknown as WorkflowDef;
+      const graphDef = mapYamlToGraphDef(workflowDef);
+      // 生成 YAML 字符串供 buildGraphFromDef 使用
+      // 由于 buildGraphFromDef 内部会解析 YAML，我们直接用 workflowDef 生成一个等效结构
+      const yamlContent = JSON.stringify(workflowDef);  // 简化：用 JSON 替代 YAML
+      console.log(`[graph-runner] 从 DB 加载用户工作流: ${flowId}`);
+      return { yamlContent, graphDef };
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn(`[graph-runner] 从 DB 加载工作流失败: ${flowId}`, err);
   }
 
   console.warn(`[graph-runner] 流程定义不存在: ${flowId}`);
