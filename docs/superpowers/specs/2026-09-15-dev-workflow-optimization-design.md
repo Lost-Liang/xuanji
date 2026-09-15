@@ -81,7 +81,7 @@ nodes:
     type: agent
     name: 开发
     agent_binding_ids: [ruoyi-developer]
-    inputs: [task, test]
+    inputs: [task, run_initial_tests]  # 从失败的测试中了解需求
     write_key: results
 
   # 4. 编译检查（智能判断前后端）
@@ -155,15 +155,14 @@ edges:
         name: test_fail
         source: run_initial_tests
 
-  # 初始测试通过 → 需要重写测试（测试有问题）
+  # 初始测试通过 → 跳过 TDD，直接进入开发（代码可能已存在）
   - from: run_initial_tests
-    to: write_tests
+    to: develop
     condition:
       type: function
       config:
         name: test_pass
         source: run_initial_tests
-    loop_max: 1
 
   # 开发 → 编译检查
   - from: develop
@@ -224,6 +223,7 @@ edges:
       config:
         name: security_issues
         source: security_scan
+    loop_max: 2
 
   # 代码审查通过 → 最终审查
   - from: code_review
@@ -248,6 +248,25 @@ edges:
   - from: code_fix
     to: compile_check
 
+  # 回归测试通过 → 重新审查
+  - from: regression_test
+    to: code_review
+    condition:
+      type: function
+      config:
+        name: test_pass
+        source: regression_test
+
+  # 回归测试失败 → 回到修复（说明修复引入了新问题）
+  - from: regression_test
+    to: code_fix
+    condition:
+      type: function
+      config:
+        name: test_fail
+        source: regression_test
+    loop_max: 2
+
   # 最终审查 → 结束
   - from: final_review
     to: __end__
@@ -260,20 +279,22 @@ start:
 
 ```
 write_tests → run_initial_tests → develop → compile_check → test
-       ↑______________|                ↑__________|        ↓
-                                                         security_scan
-                                                              ↓
-                                                         code_review
-                                                         /        \
-                                                    pass/          \issues
-                                                       ↓            ↓
-                                                  final_review  code_fix
-                                                       ↓            ↓
-                                                     __end__  compile_check
-                                                                  ↓
-                                                             regression_test
-                                                                  ↓
-                                                             code_review
+              |       pass↓        ↑    ↑         |         ↓
+              └─────────┴──────────┘    |    security_scan
+                                        |      ↓         ↓ issues
+                                        |  code_review ←─┘
+                                        |  /         \
+                                   pass/  /           \issues
+                                      ↓  /             ↓
+                              final_review         code_fix
+                                   ↓                   ↓
+                                __end__          compile_check
+                                                      ↓
+                                               regression_test
+                                                 ↓         ↓ fail
+                                            pass/          └──→ code_fix
+                                               ↓
+                                          code_review
 ```
 
 ---
@@ -348,6 +369,39 @@ write_tests → run_initial_tests → develop → compile_check → test
 - 通过 state 累积所有修复记录
 - 让 agent 了解之前的修复决策，避免矛盾
 
+**实现机制**：
+
+在 `state-schema.mts` 中扩展 TopState：
+
+```typescript
+export const TopState = Annotation.Root({
+  // ... 已有字段
+  code_fix_history: Annotation<Array<{
+    attempt: number
+    issues: any[]
+    fixes_applied: string
+    review_result: string
+  }>>({
+    reducer: (prev, next) => [...prev, ...next],
+    default: () => []
+  })
+})
+```
+
+在 `code_fix` 节点的 `buildReturn` 中写入历史：
+
+```typescript
+return {
+  results: [{ node_id: 'code_fix', output, ... }],
+  code_fix_history: [{
+    attempt: state.loop_counters?.code_fix ?? 1,
+    issues: state.code_review_issues,
+    fixes_applied: output,
+    review_result: ''
+  }]
+}
+```
+
 ---
 
 ## 五、条件函数扩展
@@ -357,7 +411,7 @@ write_tests → run_initial_tests → develop → compile_check → test
 ```typescript
 // default-conditions.mts
 
-// 编译类
+// 编译类（复用 parseOutput）
 export const compilePass: ConditionFunction = (text) => {
   const result = parseOutput(text)
   return result?.ok === true
@@ -368,7 +422,7 @@ export const compileFail: ConditionFunction = (text) => {
   return result === null || result.ok === false
 }
 
-// 安全类
+// 安全类（复用 parseOutput）
 export const securityPass: ConditionFunction = (text) => {
   const result = parseOutput(text)
   return result?.ok === true
@@ -377,6 +431,20 @@ export const securityPass: ConditionFunction = (text) => {
 export const securityIssues: ConditionFunction = (text) => {
   const result = parseOutput(text)
   return result === null || result.ok === false
+}
+
+// 注册函数
+export function initDefaultConditions(): void {
+  registerCondition('compile_pass', compilePass)
+  registerCondition('compile_fail', compileFail)
+  registerCondition('test_pass', testPass)
+  registerCondition('test_fail', testFail)
+  registerCondition('security_pass', securityPass)
+  registerCondition('security_issues', securityIssues)
+  registerCondition('quality_pass', qualityPass)
+  registerCondition('quality_issues', qualityIssues)
+  registerCondition('code_review_pass', codeReviewPass)
+  registerCondition('code_review_issues', codeReviewIssues)
 }
 ```
 
@@ -447,6 +515,13 @@ if (visits < limit) {
 ### 7.1 compiler.md
 
 ```markdown
+---
+id: compiler
+name: 编译检查 Agent
+description: 智能判断前后端并执行编译验证
+skillId: null
+---
+
 # 编译检查 Agent
 
 你负责验证代码能否编译通过。
@@ -454,58 +529,96 @@ if (visits < limit) {
 ## 工作路径
 
 - 后端：`/workspace/RuoYi-Cloud-Plus`
-- 前端：`/workspace/plus-ui`
+- 前端：`/workspace/RuoYi-Cloud-Plus/ruoyi-ui`
 
 ## 任务类型判断
 
 从 `develop` 阶段的输出中读取 `files_created` 和 `files_modified`：
 
 - **后端**：包含 `.java`、`.xml` 文件
-  → `mvn compile -pl <module> -am`
+  → `cd /workspace/RuoYi-Cloud-Plus && mvn compile -pl <module> -am`
 - **前端**：包含 `.vue`、`.ts` 文件
-  → `pnpm exec vue-tsc --noEmit`
+  → `cd /workspace/RuoYi-Cloud-Plus/ruoyi-ui && pnpm exec vue-tsc --noEmit`
 - **全栈**：两者都有 → 先后端，再前端
 
 ## 执行步骤
 
-1. 分析 develop 输出，确定任务类型
-2. cd 到对应目录
-3. 执行编译命令
-4. 收集错误信息
-5. 输出 JSON
+1. 分析 develop 输出，提取 `files_created` 和 `files_modified`
+2. 根据文件扩展名判断任务类型
+3. cd 到对应目录
+4. 执行编译命令，捕获 stdout 和 stderr
+5. 解析错误信息，提取文件名和行号
+6. 输出结构化 JSON
+
+## 错误处理
+
+- 后端编译失败：提取 `[ERROR]` 行，解析文件路径和错误信息
+- 前端编译失败：提取 TypeScript 错误，格式化为可读信息
+- 目录不存在：返回 `ok: false, summary: "工作目录不存在"`
 
 ## 输出格式
 
 \`\`\`json
 {
   "ok": true/false,
-  "backend": { "ok": true, "errors": [] },
-  "frontend": { "ok": true, "errors": [] },
-  "files_checked": ["backend:3", "frontend:5"],
+  "backend": { 
+    "ok": true, 
+    "errors": [
+      { "file": "BookController.java", "line": 45, "message": "类型 BookVO 未找到" }
+    ]
+  },
+  "frontend": { 
+    "ok": true, 
+    "errors": [] 
+  },
+  "files_checked": { "backend": 3, "frontend": 5 },
   "summary": "编译通过" 或 "后端编译失败：类型 BookVO 未找到"
 }
 \`\`\`
+
+**字段说明**：
+- `ok`：总体编译结果（必填）
+- `backend/frontend`：分项结果，null 表示未检查
+- `summary`：一句话总结（必填）
 ```
 
 ### 7.2 security-scanner.md
 
 ```markdown
+---
+id: security-scanner
+name: 安全扫描 Agent
+description: 自动检测 XSS、SQL 注入等安全漏洞
+skillId: null
+---
+
 # 安全扫描 Agent
 
 你负责扫描代码中的安全漏洞。
 
 ## 扫描范围
 
-- XSS（跨站脚本攻击）
-- SQL 注入
-- 敏感信息泄露
-- 不安全的依赖
+- **XSS（跨站脚本攻击）**：未转义的用户输入、innerHTML 使用
+- **SQL 注入**：字符串拼接 SQL、MyBatis 的 `${}` 使用
+- **敏感信息泄露**：console.log 输出密码、密钥硬编码
+- **不安全的依赖**：已知漏洞的依赖版本
 
 ## 执行方式
 
-1. 使用 ESLint security 规则扫描前端代码
-2. 使用 semgrep 扫描后端代码
-3. 检查敏感配置文件
+### 前端扫描
+```bash
+cd /workspace/RuoYi-Cloud-Plus/ruoyi-ui
+pnpm exec eslint --format json src/**/*.{vue,ts}
+```
+
+### 后端扫描
+```bash
+cd /workspace/RuoYi-Cloud-Plus
+# 检查 MyBatis XML 中的 ${}
+grep -rn '\${}' --include="*.xml" src/main/resources/mapper/
+# 检查硬编码密钥
+grep -rn -E '(password|secret|key)\s*=\s*"[^"]+"' src/main/java/
+```
 
 ## 输出格式
 
@@ -518,12 +631,18 @@ if (visits < limit) {
       "line": 123,
       "severity": "high",
       "type": "XSS",
-      "message": "未转义的用户输入直接拼接到 HTML"
+      "message": "未转义的用户输入直接拼接到 HTML",
+      "suggestion": "使用 textContent 或 DOMPurify.sanitize()"
     }
   ],
   "summary": "发现 1 个高危安全问题"
 }
 \`\`\`
+
+**字段说明**：
+- `ok`：总体结果，有 high/critical 问题则为 false
+- `issues`：问题列表，按 severity 排序
+- `summary`：一句话总结（必填）
 ```
 
 ---
@@ -545,12 +664,34 @@ if (visits < limit) {
 
 ## 九、验收标准
 
-1. **TDD 验证**：`run_initial_tests` 阶段测试必须失败才能继续
-2. **编译验证**：前后端分别编译，失败立即回退
-3. **安全验证**：安全扫描发现问题直接回退开发
-4. **修复验证**：`code_fix` 后必须通过回归测试
-5. **人审不跳过**：`final_review` gate 必须被触发
-6. **日志可追溯**：路由决策有详细日志
+1. **TDD 验证**：
+   - `run_initial_tests` 输出 `{ ok: false, failed_count: > 0 }`
+   - `develop` 的 inputs 包含 `run_initial_tests` 的失败信息
+   - 如果初始测试意外通过，流程跳到 `develop`（而非卡住）
+
+2. **编译验证**：
+   - 前后端分别编译，输出 `backend.ok` 和 `frontend.ok`
+   - 编译失败时，`ok: false` 且 errors 数组非空
+   - 失败立即回退到 `develop`，最多回退 2 次
+
+3. **安全验证**：
+   - 安全扫描发现 high/critical 问题时，`ok: false`
+   - 发现问题直接回退到 `develop`，最多回退 2 次
+
+4. **修复验证**：
+   - `code_fix` 后进入 `compile_check` → `regression_test`
+   - 回归测试失败时回到 `code_fix`，最多回退 2 次
+   - 回归测试通过后重新进入 `code_review`
+
+5. **人审不跳过**：
+   - `code_review` 输出 `ok: true` 时，路由到 `final_review`
+   - `final_review` phase_instances 记录存在
+   - 流程 status 为 'paused'，等待人审
+
+6. **日志可追溯**：
+   - 路由日志包含：`source`、`condition`、`result`、`target`
+   - 每个条件判断有独立日志行，格式：`[router] eval {condition_name}({source}) = {result}, target={target}`
+   - `loop_counters` 变化有日志记录
 
 ---
 
