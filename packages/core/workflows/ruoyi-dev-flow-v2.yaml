@@ -22,7 +22,7 @@ nodes:
     agent_binding_ids: [test-engineer]
     inputs: [task]
     write_key: results
-    position: { x: 0, y: 100 }
+    position: { x: 400, y: 50 }
     prompt: |
       根据任务需求编写测试用例。
       期望：测试应该失败（因为代码还没写）
@@ -34,7 +34,7 @@ nodes:
     agent_binding_ids: [tester]
     inputs: [task, write_tests]
     write_key: results
-    position: { x: 220, y: 100 }
+    position: { x: 400, y: 170 }
     prompt: |
       运行刚写好的测试。
       期望：测试失败（ok: false, failed_count > 0）
@@ -46,7 +46,7 @@ nodes:
     agent_binding_ids: [ruoyi-developer]
     inputs: [task, run_initial_tests]
     write_key: results
-    position: { x: 440, y: 100 }
+    position: { x: 400, y: 290 }
     prompt: |
       根据失败的测试实现功能，让测试通过。
       参考 run_initial_tests 的失败信息了解需求。
@@ -58,7 +58,7 @@ nodes:
     agent_binding_ids: [compiler]
     inputs: [task, develop]
     write_key: results
-    position: { x: 660, y: 100 }
+    position: { x: 400, y: 410 }
     prompt: |
       验证代码能否编译通过。
       前后端分离项目，根据文件类型智能判断。
@@ -70,7 +70,7 @@ nodes:
     agent_binding_ids: [tester]
     inputs: [task, develop]
     write_key: results
-    position: { x: 880, y: 100 }
+    position: { x: 400, y: 530 }
     prompt: |
       运行完整测试套件。
       期望：测试通过（ok: true）
@@ -82,7 +82,7 @@ nodes:
     agent_binding_ids: [security-scanner]
     inputs: [task, develop]
     write_key: results
-    position: { x: 1100, y: 100 }
+    position: { x: 400, y: 650 }
     prompt: |
       扫描代码中的安全漏洞。
       检测：XSS、SQL 注入、敏感信息泄露
@@ -94,7 +94,7 @@ nodes:
     agent_binding_ids: [reviewer]
     inputs: [task, develop, test, security_scan]
     write_key: results
-    position: { x: 1320, y: 100 }
+    position: { x: 400, y: 770 }
     prompt: |
       五维度代码审查（正确性、安全性、性能、可维护性、规范性）。
       参考测试和安全扫描结果。
@@ -106,7 +106,7 @@ nodes:
     agent_binding_ids: [code-fixer]
     inputs: [task, code_review, code_fix_history]
     write_key: results
-    position: { x: 880, y: 350 }
+    position: { x: 650, y: 530 }
     prompt: |
       修复 code_review 发现的问题。
       参考 code_fix_history 避免重复修改。
@@ -118,7 +118,7 @@ nodes:
     agent_binding_ids: [tester]
     inputs: [task, code_fix]
     write_key: results
-    position: { x: 1100, y: 350 }
+    position: { x: 650, y: 650 }
     prompt: |
       验证修复是否成功，是否引入新问题。
       运行完整测试套件。
@@ -127,7 +127,7 @@ nodes:
   - id: final_review
     type: gate
     name: 最终审查
-    position: { x: 1540, y: 100 }
+    position: { x: 400, y: 890 }
 
 edges:
   # TDD Red: 写测试 → 运行测试
