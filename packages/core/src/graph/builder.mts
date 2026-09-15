@@ -151,7 +151,7 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
           console.log(`[router]   Evaluating loop ${loopBack.condition.config.name}(${sourceId})`)
           const result = fn(text)
           console.log(`[router]   result: ${result}`)
-          if (fn(text)) {
+          if (result) {
             console.log(`[router] >>> Looped back to ${loopBack.target}`)
             return loopBack.target
           }
