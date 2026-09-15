@@ -8,8 +8,6 @@ import { mkdir, cp } from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { requirementStore } from '../storage/requirement-store.mjs';
-import { executionStore } from '../storage/execution-store.mjs';
-import { graphRunner } from '../graph/graph-runner.mjs';
 import { db } from '../db.mjs';
 
 // 获取当前文件目录（ESM 兼容）
@@ -545,104 +543,62 @@ requirementsRouter.get('/:id/tree', async (req, res) => {
  * POST /api/requirements/:id/execute
  * 触发需求执行
  *
- * 流程：CAS 抢占需求状态 → 创建执行实例（status='pending'）→ 异步调用 graphRunner
- * 执行 requirement-decomposition 工作流，由 onFlowComplete 落地拆分出的任务树。
- *
- * 为什么不经过调度器：需求拆解是整条流水线的入口（每个需求只发生一次），
- * 丢进调度器只会和下游任务抢并发槽位，拿不到并发收益。防重靠对
- * requirements.status 的 CAS 更新（条件与前端 canExecute 一致），
- * 原子性地挡住 Dashboard 连点造成的并发启动。
- *
- * 注意：执行实例必须建成 status='pending'——graphRunner.acquireLease 只抢占
- * pending/rate_limited 状态的执行，建成 draft 会连租约都拿不到。
+ * 不再直接调用 graphRunner，而是更新执行状态为 pending，
+ * 由调度器自动拾取，确保并发控制（MAX_CONCURRENT）生效。
+ * 前端通过 SSE 监听执行进度（已有机制）。
  */
 requirementsRouter.post('/:id/execute', async (req, res) => {
   try {
     const requirementId = req.params.id;
     const requirement = await requirementStore.getById(requirementId);
-
     if (!requirement) {
-      res.status(404).json({ error: '需求不存在' });
-      return;
+      return res.status(404).json({ error: '需求不存在' });
     }
 
-    // CAS 抢占：仅当需求处于可触发状态时置为 running
-    // 条件与前端 canExecute 保持一致（draft/pending/failed/cancelled/stopped 可触发）
-    const claimed = await db.requirements.updateMany({
+    // 查找最新的执行实例
+    const execution = await db.task_executions.findFirst({
       where: {
-        id: requirementId,
-        status: { in: ['draft', 'pending', 'failed', 'cancelled', 'stopped'] },
+        subject_type: 'requirement',
+        subject_id: requirementId,
       },
-      data: { status: 'running' },
+      orderBy: { created_at: 'desc' },
     });
-    if (claimed.count === 0) {
-      res.json({ ok: true, message: '需求已在执行中', status: 'running' });
-      return;
+
+    if (!execution) {
+      return res.status(404).json({ error: '执行实例不存在' });
     }
 
-    const workflowId = requirement.workflow_id || 'requirement-decomposition';
-
-    // 创建执行实例（status='pending'，供 graphRunner.acquireLease 抢占）
-    let execution;
-    try {
-      execution = await executionStore.create({
-        subjectType: 'requirement',
-        subjectId: requirementId,
-        requirementId,
-        targetProjectId: requirement.target_project_id,
-        targetRepoPath: requirement.target_repo_path,
-        status: 'pending',
+    // 检查当前状态
+    if (execution.status === 'running') {
+      return res.status(409).json({
+        error: '需求正在执行中',
+        executionId: execution.execution_id,
       });
-    } catch (err) {
-      // 创建失败要把需求状态放回去，否则会永久卡在 running、再也触发不了
-      await requirementStore.updateStatus(requirementId, 'pending');
-      throw err;
     }
 
-    const executionId = execution.execution_id;
-
-    // 异步启动流程执行（不阻塞响应）
-    setImmediate(async () => {
-      try {
-        await graphRunner.startExecution({
-          executionId,
-          flowId: workflowId,
-          input: requirement.title,
-          requirementId,
-        });
-      } catch (err) {
-        // acquireLease 失败可能只是执行已被调度器抢先接管（它同样会捞 pending 执行），
-        // 此时执行仍在正常推进，不能当失败处理、更不能误杀
-        const cur = await executionStore.get(executionId);
-        if (cur && cur.status !== 'pending') {
-          console.warn(
-            `[requirements] 执行 ${executionId} 已被接管（status=${cur.status}），跳过失败处理`,
-          );
-          return;
-        }
-        console.error(`[requirements] 执行需求 ${requirementId} 出错:`, err);
-        await executionStore.fail(executionId, (err as Error).message);
-        await requirementStore.updateStatus(requirementId, 'failed');
-        return;
-      }
-
-      // startExecution 内部吞掉异常并落到执行状态上，所以按执行终态回写需求状态
-      const finalExec = await executionStore.get(executionId);
-      if (finalExec?.status === 'completed') {
-        await requirementStore.updateStatus(requirementId, 'completed');
-      } else if (finalExec?.status === 'failed') {
-        await requirementStore.updateStatus(requirementId, 'failed');
-      } else {
-        // waiting（等人工回答）/ paused（gate 待审）等：保持 running，由恢复流程推进
-        console.log(
-          `[requirements] 需求 ${requirementId} 执行停在 ${finalExec?.status}，等待人工介入`,
-        );
-      }
+    // 更新状态为 pending，调度器会自动拾取
+    await db.task_executions.update({
+      where: { execution_id: execution.execution_id },
+      data: {
+        status: 'pending',
+        // 清理旧租约（如果有）
+        worker_id: null,
+        lease_token: null,
+        lease_expires_at: null,
+        // 重置错误信息
+        error_message: null,
+      },
     });
 
-    res.json({ success: true, executionId, message: '执行已启动', status: 'running' });
+    // 返回成功，前端通过 SSE 监听执行进度
+    res.json({
+      success: true,
+      executionId: execution.execution_id,
+      message: '需求已加入执行队列，调度器将自动处理',
+    });
   } catch (err) {
-    res.status(500).json({ error: '触发执行失败', detail: (err as Error).message });
+    console.error('[requirements] 执行出错:', err);
+    res.status(500).json({ error: '执行失败' });
   }
 });
 
