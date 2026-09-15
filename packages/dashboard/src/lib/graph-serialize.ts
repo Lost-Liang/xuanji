@@ -70,7 +70,12 @@ export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
   }
 
   return {
-    nodes: def.nodes.map(n => ({ id: n.id, type: n.type, position: { x: 0, y: 0 }, data: { ...n } })),
+    nodes: def.nodes.map(n => ({
+      id: n.id,
+      type: n.type,
+      position: n.position ? { x: n.position.x, y: n.position.y } : { x: 0, y: 0 },
+      data: { ...n }
+    })),
     edges: def.edges.map(e => {
       const isReverse = reverseEdgeIds.has(e.id)
       return {

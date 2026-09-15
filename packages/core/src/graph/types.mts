@@ -107,6 +107,9 @@ export interface GraphNode {
 
   // 准出契约（Task 4）：AI 说通过不算数，流程跑断言才算数
   exit_contract?: ExitContract
+
+  // 画布布局位置
+  position?: { x: number; y: number }
 }
 export interface GraphEdge {
   id: string
@@ -181,6 +184,7 @@ export interface WorkflowNode {
   context?: string                    // 控制 agent 读取的 state 通道，默认 'input'
   exit_contract?: ExitContract        // 准出契约（Task 4）
   inputs?: string[]                   // prompt 组装的数据来源（Task 5）：内置源（task/input/spec）或上游节点 id
+  position?: { x: number; y: number }  // 画布布局位置（可选）
 }
 
 // 作者边：字段用 from/to（映射前绝不读 source/target），loop_max 只落在条件回环边上

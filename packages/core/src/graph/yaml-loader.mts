@@ -225,6 +225,7 @@ export function mapYamlToGraphDef(def: WorkflowDef): GraphDef {
     if (wn.context) gn.context = wn.context  // 保留 context 字段（类型安全）
     if (wn.inputs) gn.inputs = wn.inputs    // Task 5/Task 7: 数据流 inputs 必须传递到运行时，否则校验与 prompt 组装都读不到
     if (wn.exit_contract) gn.exit_contract = wn.exit_contract  // Task 4/Task 7: 准出契约传递到运行时
+    if (wn.position) gn.position = wn.position  // 保留节点位置（用于画布布局）
 
     // 合并 agent_binding_id 到 agent_binding_ids
     if (wn.agent_binding_id || wn.agent_binding_ids) {

@@ -238,7 +238,9 @@ async function loadSelectedGraph() {
         }
       }
     }
-    nodes.value = layoutDagre(vf.nodes, vf.edges)
+    // 如果节点已有位置（YAML 中定义），直接使用；否则用 dagre 布局
+    const hasPositions = vf.nodes.some(n => n.position.x !== 0 || n.position.y !== 0)
+    nodes.value = hasPositions ? vf.nodes : layoutDagre(vf.nodes, vf.edges)
     edges.value = vf.edges
     setTimeout(() => fitView({ padding: 0.08, minZoom: 0.5 }), 60)
   }
