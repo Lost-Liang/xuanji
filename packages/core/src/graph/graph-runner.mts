@@ -14,6 +14,7 @@ import { Command } from '@langchain/langgraph';
 import { buildGraphFromDef } from './builder.mjs';
 import { loadWorkflowFromYaml, loadWorkflowFromFile, mapYamlToGraphDef } from './yaml-loader.mjs';
 import { executionStore } from '../storage/execution-store.mjs';
+import type { LeaseInfo } from '../storage/execution-store.mjs';
 import { db } from '../db.mjs';
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
@@ -49,6 +50,7 @@ export interface StartExecutionOpts {
   input: string;               // 输入文本（需求文本/任务描述）
   task?: any;                  // 任务对象（任务执行时传入）
   requirementId?: string;      // 需求 ID（需求执行时传入）
+  lease: LeaseInfo;            // 租约（由调用方 acquireLease 后传入）
 }
 
 export interface ResumeExecutionOpts {
@@ -125,18 +127,11 @@ async function checkPendingQuestions(executionId: string): Promise<boolean> {
  * 6. 完成后回调
  */
 export async function startExecution(opts: StartExecutionOpts): Promise<void> {
-  const { executionId, flowId, input, task, requirementId } = opts;
+  const { executionId, flowId, input, task, requirementId, lease } = opts;
 
   console.log(`[graph-runner] 启动执行: ${executionId}, 流程: ${flowId}`);
 
-  // 0. 获取租约 —— CAS 原子操作（修复 A2: 使用真正的 acquireLease）
-  const WORKER_ID = `graph-runner-${executionId.slice(0, 8)}`;
-  const lease = await executionStore.acquireLease(executionId, WORKER_ID);
-  if (!lease) {
-    const errorMsg = `获取租约失败，可能已被其他 worker 抢占或状态不符: ${executionId}`;
-    console.warn(`[graph-runner] ${errorMsg}`);
-    throw new Error(errorMsg);  // 抛错让调用方处理
-  }
+  // lease 由调用方（worker-graph / scheduler）传入，不再自己获取
 
   // 1. 加载流程定义
   const flow = await loadFlow(flowId);
