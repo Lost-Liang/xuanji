@@ -37,19 +37,21 @@ V4 的核心决策：保留 V3 的 LangGraph 在线编排，将 Omnigent 替换�
 │  │  ┌──────────────┐  │     │                          │     │
 │  │  │  LangGraph   │  │     │  ┌────────────────────┐  │     │
 │  │  │  编排层      │──┼────►│  │  CLI 适配器         │  │     │
-│  │  └──────────────┘  │     │  │  - claude.ts       │  │     │
-│  │                    │     │  │  - codex.ts        │  │     │
-│  │  ┌──────────────┐  │     │  └────────────────────┘  │     │
-│  │  │  PostgreSQL  │  │     │                          │     │
-│  │  │  状态持久化   │  │     │  ┌────────────────────┐  │     │
-│  │  └──────────────┘  │     │  │  MCP Server        │  │     │
-│  │                    │     │  │  - inbox_ask       │  │     │
-│  │  ┌──────────────┐  │     │  │  - task_output     │  │     │
-│  │  │  Dashboard   │  │     │  └────────────────────┘  │     │
+│  │  │  - scheduler │  │     │  │  - claude.ts       │  │     │
+│  │  │  - worker    │  │     │  │  - codex.ts        │  │     │
+│  │  │  - recovery  │  │     │  └────────────────────┘  │     │
+│  │  └──────────────┘  │     │                          │     │
+│  │                    │     │  ┌────────────────────┐  │     │
+│  │  ┌──────────────┐  │     │  │  MCP Server        │  │     │
+│  │  │  PostgreSQL  │  │     │  │  - inbox_ask       │  │     │
+│  │  │  状态持久化   │  │     │  │  - task_output     │  │     │
+│  │  └──────────────┘  │     │  └────────────────────┘  │     │
+│  │                    │     │                          │     │
+│  │  ┌──────────────┐  │     │  Workspace / Lease       │     │
+│  │  │  Dashboard   │  │     │  (本地模式简化)             │     │
 │  │  │  人机交互    │◄───┼────│                          │     │
-│  │  └──────────────┘  │     │  Workspace / Lease       │     │
-│  └──────────────────┘     │  (本地模式简化)             │     │
-│                            └──────────────────────────┘     │
+│  │  └──────────────┘  │     └──────────────────────────┘     │
+│  └──────────────────┘                                        │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -59,10 +61,32 @@ V4 的核心决策：保留 V3 的 LangGraph 在线编排，将 Omnigent 替换�
 | 组件 | 来源 | 职责 |
 |------|------|------|
 | LangGraph 编排层 | V3 保留 | 工作流定义、暂停/恢复（interrupt）、条件分支 |
+| scheduler-graph | V4 新增 | 发现待执行任务，轮询并触发 worker |
+| worker-graph | V4 新增 | 获取租约、传递给 graphRunner |
+| recovery-graph | V4 新增 | 清理僵尸执行（超时/死锁） |
 | PostgreSQL | V3 保留 | LangGraph checkpoint + 任务状态 + 对话事件 |
 | Dashboard | V3 保留 | 人机交互界面、任务监控 |
 | AgentOS Runner | 引入 + 修改 | CLI 进程管理、会话恢复、MCP 工具 |
 | MCP Server | AgentOS 修改 | inbox_ask 回调到璇玑 Core |
+
+### 3.2 调度层架构（2026-09-15 修复后）
+
+**租约传递模式**：
+```
+scheduler-graph (发现任务)
+    ↓
+worker-graph (获取租约 + 传递)
+    ↓
+graphRunner (接收租约 + 执行 + 心跳)
+```
+
+**关键设计**：
+- worker 获取租约后传递给 graphRunner（不再重复获取）
+- graphRunner 负责心跳循环和租约刷新
+- 所有执行统一走调度器（requirements/epics/features/tasks）
+- 单一心跳循环（DB 查询压力减半）
+
+**参考文档**：`docs/superpowers/specs/2026-09-15-scheduler-architecture-fix.md`
 
 ## 4. AgentOS Runner 集成
 

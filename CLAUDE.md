@@ -164,6 +164,25 @@ long-running-agent-v4/
 4. ✅ 审计 store 模块 → 4 个审计表有写入代码
 5. ✅ 默认研发流程 YAML → 7 步骤流程定义完成
 
+### ✅ 调度层架构修复完成（2026-09-15）
+
+5 个 commits（88d7e81..6a7bc3d），修复双重租约死锁和需求执行绕过调度器问题。
+
+**修复内容：**
+- ✅ **双重租约死锁**：graphRunner 接收 lease 参数，不再自己获取
+- ✅ **需求执行统一调度**：requirements.mts executeRequirement 改为设置 status='pending'
+- ✅ **心跳逻辑去重**：移除 worker-graph 的心跳循环（-105 行）
+- ✅ **代码清理**：移除 worker-graph 旧执行逻辑（-209 行死代码）
+- ✅ **首次执行 404**：自动创建执行实例
+
+**参考文档：**
+- 问题诊断：`docs/superpowers/specs/2026-09-15-scheduler-architecture-fix.md`
+- 实施计划：`docs/superpowers/plans/2026-09-15-scheduler-architecture-fix.md`
+
+**延迟修复项（非阻塞）：**
+- 调度层级重构（P1，需 2-3 天）
+- 状态机一致性验证（P2，需 4 小时）
+
 **数据库状态：**
 - ✅ PostgreSQL 在 Docker 运行（端口 5433）
 - ✅ xuanji 数据库已创建

@@ -1,7 +1,44 @@
 # 璇玑 V4 架构问题分析与设计方向
 
-> 日期：2026-09-09
-> 状态：**分析完成，待设计**
+> 日期：2026-09-09  
+> 状态：**分析完成，部分已修复**  
+> 更新：2026-09-15
+
+## 零、调度层架构问题（2026-09-15 已修复） ✅
+
+**发现日期**：2026-09-15  
+**修复日期**：2026-09-15  
+**参考文档**：`docs/superpowers/specs/2026-09-15-scheduler-architecture-fix.md`
+
+### 已修复的核心问题
+
+1. **双重租约死锁** ⚠️ 最严重
+   - 问题：worker-graph 获取租约后，graphRunner 再次尝试获取，导致死锁
+   - 修复：graphRunner 接收 lease 参数，不再自己获取
+   - Commit: 88d7e81, 4c1faa6
+
+2. **需求执行绕过调度器**
+   - 问题：`POST /api/requirements/:id/execute` 直接调用 graphRunner，破坏并发控制
+   - 修复：改为设置 status='pending'，统一走调度器
+   - Commit: c5fb4fb, 6a7bc3d
+
+3. **心跳逻辑重复**
+   - 问题：worker 和 graphRunner 各有一个心跳定时器，每 5 秒查询 DB 两次
+   - 修复：移除 worker-graph 的心跳循环（-105 行）
+   - Commit: 1b4767c
+
+4. **死代码堆积**
+   - 问题：worker-graph 保留了旧的执行逻辑（209 行）
+   - 修复：移除所有死代码和无用导入
+   - Commit: 1b4767c
+
+### 延迟修复项（非阻塞）
+
+- **调度层级混乱**（P1）：scheduler/worker/graphRunner 三层职责不清，需重构（2-3天）
+- **状态机不一致**（P2）：缺少统一的状态转换验证（4小时）
+- **requirements.status 不同步**（P3）：前端不依赖，低优先级
+
+---
 
 ## 一、已修复的 Bug（2026-09-08）
 
