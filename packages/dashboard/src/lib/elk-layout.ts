@@ -82,9 +82,9 @@ export async function layoutWithElk(
     height: c.height ?? NODE_H,
   }))
 
-  const resultEdges: ElkEdgeResult[] = (layouted.edges || []).map(e => ({
+  const resultEdges: ElkEdgeResult[] = ((layouted.edges || []) as any[]).map((e: any) => ({
     id: e.id,
-    sections: (e.sections || []).map(s => ({
+    sections: (e.sections || []).map((s: any) => ({
       startPoint: s.startPoint,
       endPoint: s.endPoint,
       bendPoints: s.bendPoints,

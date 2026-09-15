@@ -10,7 +10,6 @@
     "test": "node --test \"src/lib/__tests__/**/*.test.ts\""
   },
   "dependencies": {
-    "@dagrejs/dagre": "^1.1.4",
     "@element-plus/icons-vue": "^2.3.2",
     "@types/dompurify": "^3.2.0",
     "@vue-flow/core": "^1.33.0",

@@ -9,7 +9,7 @@ import { BaseEdge, EdgeProps } from '@vue-flow/core'
 const props = defineProps<EdgeProps>()
 
 // 使用 SVG Arc 路径，让循环边从上方绕路，避开中间节点
-const edgePathParams = computed(() => {
+const edgePathParams = computed((): [string, number, number] => {
   const { sourceX, sourceY, targetX, targetY } = props
 
   const dx = Math.abs(targetX - sourceX)

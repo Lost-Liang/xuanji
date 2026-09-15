@@ -10,7 +10,8 @@ const props = defineProps<EdgeProps>()
 
 /**
  * 使用 ELK 返回的 bendPoints 构建正交 SVG 路径
- * 无 bendPoints 时 fallback 到直线
+ * 起点/终点使用 Vue Flow 的响应式坐标（拖拽时自动更新）
+ * bendPoints 做相对偏移以跟随节点移动
  */
 const edgePath = computed(() => {
   const sections = props.data?.sections as Array<{
@@ -20,20 +21,24 @@ const edgePath = computed(() => {
   }> | undefined
 
   if (!sections || sections.length === 0) {
-    // Fallback: 直线
+    // Fallback: 直线（使用响应式坐标）
     return `M ${props.sourceX} ${props.sourceY} L ${props.targetX} ${props.targetY}`
   }
 
-  // 使用 ELK 的 bendPoints 构建正交路径
+  // 计算节点偏移量（当前节点位置 - ELK 布局时的位置）
+  const dx = props.sourceX - sections[0].startPoint.x
+  const dy = props.sourceY - sections[0].startPoint.y
+
+  // 使用 ELK 的 bendPoints + 偏移量构建正交路径
   const parts: string[] = []
   for (const section of sections) {
-    parts.push(`M ${section.startPoint.x} ${section.startPoint.y}`)
+    parts.push(`M ${section.startPoint.x + dx} ${section.startPoint.y + dy}`)
     if (section.bendPoints) {
       for (const bp of section.bendPoints) {
-        parts.push(`L ${bp.x} ${bp.y}`)
+        parts.push(`L ${bp.x + dx} ${bp.y + dy}`)
       }
     }
-    parts.push(`L ${section.endPoint.x} ${section.endPoint.y}`)
+    parts.push(`L ${section.endPoint.x + dx} ${section.endPoint.y + dy}`)
   }
   return parts.join(' ')
 })

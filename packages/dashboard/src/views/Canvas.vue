@@ -143,7 +143,6 @@ import LoopEdge from '../components/canvas/edges/LoopEdge.vue'
 import ElkEdge from '../components/canvas/edges/ElkEdge.vue'
 import NodeEditModal from '../components/canvas/NodeEditModal.vue'
 import LiveEventStream from '../components/execution/LiveEventStream.vue'
-import { layoutDagre } from '../lib/dagre-layout'
 import { layoutWithElk } from '../lib/elk-layout'
 import { toGraphDef, toVueFlow } from '../lib/graph-serialize'
 import { api } from '../api/graph'
@@ -279,8 +278,9 @@ async function loadSelectedGraph() {
       return le ? { ...e, data: { ...e.data, sections: le.sections } } : e
     })
   } catch (err) {
-    console.warn('[canvas] ELK 布局失败，回退到 dagre:', err)
-    nodes.value = layoutDagre(vf.nodes, vf.edges)
+    console.error('[canvas] ELK 布局失败:', err)
+    alert('ELK 布局失败，请检查控制台错误')
+    nodes.value = vf.nodes
     edges.value = vf.edges
   } finally {
     layouting.value = false
@@ -335,8 +335,23 @@ async function connectExecution() {
             }
           }
         }
-        nodes.value = layoutDagre(vf.nodes, vf.edges)
-        edges.value = vf.edges
+        // 使用 ELK 布局
+        try {
+          const layouted = await layoutWithElk(vf.nodes, vf.edges)
+          const posMap = new Map(layouted.nodes.map(n => [n.id, n]))
+          nodes.value = vf.nodes.map(n => {
+            const pos = posMap.get(n.id)
+            return pos ? { ...n, position: { x: pos.x, y: pos.y } } : n
+          })
+          const edgeMap = new Map(layouted.edges.map(e => [e.id, e]))
+          edges.value = vf.edges.map(e => {
+            const le = edgeMap.get(e.id)
+            return le ? { ...e, data: { ...e.data, sections: le.sections } } : e
+          })
+        } catch {
+          nodes.value = vf.nodes
+          edges.value = vf.edges
+        }
       }
     }
     // 情况 2：需求类型执行（无图定义，从任务树构建画布）
@@ -568,7 +583,7 @@ function disconnect() {
 let lastApplyTime = 0
 const APPLY_THROTTLE_MS = 200 // 最小间隔 200ms
 
-// 更新染色/边动画，不动 dagre 位置（照 framework FlowEditor.vue applyState）
+// 更新染色/边动画，不改变节点位置（照 framework FlowEditor.vue applyState）
 // 优化：throttle + 只更新变化的节点/边
 function applyState() {
   const now = Date.now()
@@ -902,7 +917,6 @@ function updateEdgeLoopMax(loopMax: number) {
 }
 
 async function save() {
-  nodes.value = layoutDagre(nodes.value, edges.value)  // 保存前布局
   const name = selectedGraphId.value ? (graphDefs.value.find(g => g.id === selectedGraphId.value)?.name || '新建图') : '新建图'
   const def = toGraphDef(nodes.value, edges.value, name, 'ruoyi')
   const saved = await api.save(def)
