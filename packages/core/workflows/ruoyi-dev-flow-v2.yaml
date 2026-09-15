@@ -1,0 +1,253 @@
+# 若依研发流程 V2（真正的 TDD + 编译检查 + 安全扫描）
+#
+# 流程：write_tests → run_initial_tests → develop → compile_check → test → security_scan → code_review ↔ code_fix → final_review
+#
+# 改进：
+# 1. 真正的 TDD：run_initial_tests 确认测试失败
+# 2. 编译检查：compile_check 智能判断前后端
+# 3. 安全扫描：security_scan 独立阶段
+# 4. 修复验证：code_fix → compile_check → regression_test → code_review
+# 5. 人审不跳过：final_review gate 强制触发
+
+version: "1"
+id: ruoyi-dev-flow-v2
+name: 若依研发流程 V2
+description: 真正的 TDD + 编译检查 + 安全扫描 + 修复验证
+
+nodes:
+  # 1. 写测试（TDD Red 阶段）
+  - id: write_tests
+    type: agent
+    name: 写测试
+    agent_binding_ids: [test-engineer]
+    inputs: [task]
+    write_key: results
+    prompt: |
+      根据任务需求编写测试用例。
+      期望：测试应该失败（因为代码还没写）
+
+  # 2. 运行初始测试（确认失败）
+  - id: run_initial_tests
+    type: agent
+    name: 运行初始测试
+    agent_binding_ids: [tester]
+    inputs: [task, write_tests]
+    write_key: results
+    prompt: |
+      运行刚写好的测试。
+      期望：测试失败（ok: false, failed_count > 0）
+
+  # 3. 开发（TDD Green 阶段）
+  - id: develop
+    type: agent
+    name: 开发
+    agent_binding_ids: [ruoyi-developer]
+    inputs: [task, run_initial_tests]
+    write_key: results
+    prompt: |
+      根据失败的测试实现功能，让测试通过。
+      参考 run_initial_tests 的失败信息了解需求。
+
+  # 4. 编译检查（智能判断前后端）
+  - id: compile_check
+    type: agent
+    name: 编译检查
+    agent_binding_ids: [compiler]
+    inputs: [task, develop]
+    write_key: results
+    prompt: |
+      验证代码能否编译通过。
+      前后端分离项目，根据文件类型智能判断。
+
+  # 5. 测试验证
+  - id: test
+    type: agent
+    name: 测试验证
+    agent_binding_ids: [tester]
+    inputs: [task, develop]
+    write_key: results
+    prompt: |
+      运行完整测试套件。
+      期望：测试通过（ok: true）
+
+  # 6. 安全扫描
+  - id: security_scan
+    type: agent
+    name: 安全扫描
+    agent_binding_ids: [security-scanner]
+    inputs: [task, develop]
+    write_key: results
+    prompt: |
+      扫描代码中的安全漏洞。
+      检测：XSS、SQL 注入、敏感信息泄露
+
+  # 7. 代码审查
+  - id: code_review
+    type: agent
+    name: 代码审查
+    agent_binding_ids: [reviewer]
+    inputs: [task, develop, test, security_scan]
+    write_key: results
+    prompt: |
+      五维度代码审查（正确性、安全性、性能、可维护性、规范性）。
+      参考测试和安全扫描结果。
+
+  # 8. 代码修复
+  - id: code_fix
+    type: agent
+    name: 代码修复
+    agent_binding_ids: [code-fixer]
+    inputs: [task, code_review, code_fix_history]
+    write_key: results
+    prompt: |
+      修复 code_review 发现的问题。
+      参考 code_fix_history 避免重复修改。
+
+  # 9. 回归测试（验证修复）
+  - id: regression_test
+    type: agent
+    name: 回归测试
+    agent_binding_ids: [tester]
+    inputs: [task, code_fix]
+    write_key: results
+    prompt: |
+      验证修复是否成功，是否引入新问题。
+      运行完整测试套件。
+
+  # 10. 最终审查（人审 gate）
+  - id: final_review
+    type: gate
+    name: 最终审查
+
+edges:
+  # TDD Red: 写测试 → 运行测试
+  - from: write_tests
+    to: run_initial_tests
+
+  # 初始测试失败 → 开发（真正的 TDD）
+  - from: run_initial_tests
+    to: develop
+    condition:
+      type: function
+      config:
+        name: test_fail
+        source: run_initial_tests
+
+  # 初始测试通过 → 跳过 TDD，直接进入开发
+  - from: run_initial_tests
+    to: develop
+    condition:
+      type: function
+      config:
+        name: test_pass
+        source: run_initial_tests
+
+  # 开发 → 编译检查
+  - from: develop
+    to: compile_check
+
+  # 编译通过 → 测试
+  - from: compile_check
+    to: test
+    condition:
+      type: function
+      config:
+        name: compile_pass
+        source: compile_check
+
+  # 编译失败 → 回到开发
+  - from: compile_check
+    to: develop
+    condition:
+      type: function
+      config:
+        name: compile_fail
+        source: compile_check
+    loop_max: 2
+
+  # 测试通过 → 安全扫描
+  - from: test
+    to: security_scan
+    condition:
+      type: function
+      config:
+        name: test_pass
+        source: test
+
+  # 测试失败 → 回到开发
+  - from: test
+    to: develop
+    condition:
+      type: function
+      config:
+        name: test_fail
+        source: test
+    loop_max: 2
+
+  # 安全扫描通过 → 代码审查
+  - from: security_scan
+    to: code_review
+    condition:
+      type: function
+      config:
+        name: security_pass
+        source: security_scan
+
+  # 安全扫描发现问题 → 回到开发
+  - from: security_scan
+    to: develop
+    condition:
+      type: function
+      config:
+        name: security_issues
+        source: security_scan
+    loop_max: 2
+
+  # 代码审查通过 → 最终审查
+  - from: code_review
+    to: final_review
+    condition:
+      type: function
+      config:
+        name: code_review_pass
+        source: code_review
+
+  # 代码审查发现问题 → 代码修复
+  - from: code_review
+    to: code_fix
+    condition:
+      type: function
+      config:
+        name: code_review_issues
+        source: code_review
+    loop_max: 3
+
+  # 代码修复 → 编译检查
+  - from: code_fix
+    to: compile_check
+
+  # 回归测试通过 → 重新审查
+  - from: regression_test
+    to: code_review
+    condition:
+      type: function
+      config:
+        name: test_pass
+        source: regression_test
+
+  # 回归测试失败 → 回到修复
+  - from: regression_test
+    to: code_fix
+    condition:
+      type: function
+      config:
+        name: test_fail
+        source: regression_test
+    loop_max: 2
+
+  # 最终审查 → 结束
+  - from: final_review
+    to: __end__
+
+start:
+  - write_tests
