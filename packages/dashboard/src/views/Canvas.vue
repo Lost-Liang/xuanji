@@ -17,6 +17,7 @@
         <template #node-command="props"><CommandNode v-bind="props" /></template>
         <template #node-subgraph="props"><SubgraphNode v-bind="props" /></template>
         <template #edge-loop-edge="props"><LoopEdge v-bind="props" /></template>
+        <template #edge-elk-edge="props"><ElkEdge v-bind="props" /></template>
       </VueFlow>
       <!-- 右键菜单 -->
       <ul v-if="ctxMenu.show" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
@@ -139,9 +140,11 @@ import GateNode from '../components/canvas/nodes/GateNode.vue'
 import CommandNode from '../components/canvas/nodes/CommandNode.vue'
 import SubgraphNode from '../components/canvas/nodes/SubgraphNode.vue'
 import LoopEdge from '../components/canvas/edges/LoopEdge.vue'
+import ElkEdge from '../components/canvas/edges/ElkEdge.vue'
 import NodeEditModal from '../components/canvas/NodeEditModal.vue'
 import LiveEventStream from '../components/execution/LiveEventStream.vue'
 import { layoutDagre } from '../lib/dagre-layout'
+import { layoutWithElk } from '../lib/elk-layout'
 import { toGraphDef, toVueFlow } from '../lib/graph-serialize'
 import { api } from '../api/graph'
 import { agentApi } from '../api/agent-bindings'
@@ -151,6 +154,7 @@ const router = useRouter()
 
 const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
+const layouting = ref(false)
 const { addEdges, findNode, onInit, fitView, updateNodeData: vfUpdate } = useVueFlow()
 const selectedNode = computed(() => nodes.value.find(n => n.selected))
 const selectedEdge = computed(() => edges.value.find(e => e.selected))
@@ -226,24 +230,63 @@ async function loadGraphDefs() {
 async function loadSelectedGraph() {
   if (!selectedGraphId.value) return
   const def = await api.get(selectedGraphId.value)
-  if (def?.definition_json) {
-    const vf = toVueFlow(def.definition_json)
-    // 用 agent binding 的 agent_id 作为节点默认 label
-    const labelMap = await agentApi.getLabelMap()
-    for (const n of vf.nodes) {
-      if (!n.data.label) {
-        const bindingId = n.data.agent_binding_ids?.[0]
-        if (bindingId && labelMap.has(bindingId)) {
-          n.data.label = labelMap.get(bindingId)
-        }
+  if (!def?.definition_json) return
+
+  const vf = toVueFlow(def.definition_json)
+  // 用 agent binding 的 agent_id 作为节点默认 label
+  const labelMap = await agentApi.getLabelMap()
+  for (const n of vf.nodes) {
+    if (!n.data.label) {
+      const bindingId = n.data.agent_binding_ids?.[0]
+      if (bindingId && labelMap.has(bindingId)) {
+        n.data.label = labelMap.get(bindingId)
       }
     }
-    // 如果节点已有位置（YAML 中定义），直接使用；否则用 dagre 布局
-    const hasPositions = vf.nodes.some(n => n.position.x !== 0 || n.position.y !== 0)
-    nodes.value = hasPositions ? vf.nodes : layoutDagre(vf.nodes, vf.edges)
-    edges.value = vf.edges
-    setTimeout(() => fitView({ padding: 0.08, minZoom: 0.5 }), 60)
   }
+
+  // 如果节点已有位置（YAML 中定义），直接使用
+  const hasPositions = vf.nodes.some(n => n.position.x !== 0 || n.position.y !== 0)
+  if (hasPositions) {
+    nodes.value = vf.nodes
+    edges.value = vf.edges
+    setTimeout(() => fitView({ padding: 0.08, minZoom: 0.4 }), 60)
+    return
+  }
+
+  // 仅 static 模式使用 ELK 自动布局
+  if (mode.value !== 'static') {
+    nodes.value = vf.nodes
+    edges.value = vf.edges
+    return
+  }
+
+  // ELK 布局
+  layouting.value = true
+  try {
+    const layouted = await layoutWithElk(vf.nodes, vf.edges)
+
+    // 应用节点位置
+    const posMap = new Map(layouted.nodes.map(n => [n.id, n]))
+    nodes.value = vf.nodes.map(n => {
+      const pos = posMap.get(n.id)
+      return pos ? { ...n, position: { x: pos.x, y: pos.y } } : n
+    })
+
+    // 应用边路由（bendPoints）
+    const edgeMap = new Map(layouted.edges.map(e => [e.id, e]))
+    edges.value = vf.edges.map(e => {
+      const le = edgeMap.get(e.id)
+      return le ? { ...e, data: { ...e.data, sections: le.sections } } : e
+    })
+  } catch (err) {
+    console.warn('[canvas] ELK 布局失败，回退到 dagre:', err)
+    nodes.value = layoutDagre(vf.nodes, vf.edges)
+    edges.value = vf.edges
+  } finally {
+    layouting.value = false
+  }
+
+  setTimeout(() => fitView({ padding: 0.08, minZoom: 0.4 }), 60)
 }
 
 // —— 运行态 ——
