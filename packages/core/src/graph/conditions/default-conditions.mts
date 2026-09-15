@@ -92,8 +92,18 @@ export const codeReviewIssues: ConditionFunction = (text) => {
 // ─── 审查类：输出文本形如 { issues: false } 或 { issues: [...] } ───
 export const qualityPass: ConditionFunction = (text) => !parseIssues(text)
 export const qualityIssues: ConditionFunction = (text) => !!parseIssues(text)
-export const securityPass: ConditionFunction = (text) => !parseIssues(text)
-export const securityIssues: ConditionFunction = (text) => !!parseIssues(text)
+
+// ─── 安全类：输出文本形如 { ok: true } ─────────────────────────────────────────────
+export const securityPass: ConditionFunction = (text) => {
+  const result = parseOutput(text)
+  return result?.ok === true
+}
+
+export const securityIssues: ConditionFunction = (text) => {
+  const result = parseOutput(text)
+  // 防御性处理：没有输出或 ok=false 都视为有问题
+  return result === null || result.ok === false
+}
 
 /**
  * 注册所有默认条件函数
