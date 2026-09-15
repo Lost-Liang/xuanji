@@ -9,10 +9,11 @@ const elk = new ELK()
 // ELK 配置（所有值必须是字符串）
 const DEFAULT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'layered',
-  'elk.direction': 'DOWN',
+  'elk.direction': 'RIGHT',
   'elk.edgeRouting': 'ORTHOGONAL',
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
   'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.layered.layering.strategy': 'LONGEST_PATH',
   'elk.layered.mergeEdges': 'true',
   'elk.spacing.nodeNode': '60',
   'elk.spacing.edgeNode': '30',
