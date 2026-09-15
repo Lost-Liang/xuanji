@@ -97,8 +97,15 @@ export interface RouteMeta {
  * - 使用 sourceText(state, sourceId) 获取文本并注入
  */
 export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number = 3): string {
+  console.log(`[router] === Routing from ${meta.source} ===`)
+  console.log(`[router] loop_counters: ${JSON.stringify(state.loop_counters || {})}`)
+  console.log(`[router] node_outputs keys: ${Object.keys(state.node_outputs || {}).join(', ')}`)
+
   const nonDefault = meta.edges.filter((e) => !e.is_default && !e.loop_back)
   const loopBack = meta.edges.find((e) => e.loop_back)
+
+  console.log(`[router] nonDefault edges: ${nonDefault.map(e => e.target).join(', ')}`)
+  console.log(`[router] loopBack edge: ${loopBack?.target || 'none'}`)
 
   // 评估非回环条件边
   for (const e of nonDefault) {
@@ -110,7 +117,14 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
       // Task 3: 从 YAML 的 source 字段读取节点 ID，注入文本
       const sourceId = e.condition.config.source
       const text = sourceId ? sourceText(state, sourceId) : null
-      if (fn(text)) return e.target
+      console.log(`[router] Evaluating ${e.condition.config.name}(${sourceId})`)
+      console.log(`[router]   text preview: ${text?.slice(0, 100)}...`)
+      const result = fn(text)
+      console.log(`[router]   result: ${result}, target: ${e.target}`)
+      if (result) {
+        console.log(`[router] >>> Routed to ${e.target} via ${e.condition.config.name}`)
+        return e.target
+      }
     }
   }
 
@@ -118,12 +132,14 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
   if (loopBack) {
     const visits = state.loop_counters?.[meta.source] ?? 0
     const limit = loopBack.loop_max ?? DEFAULT_MAX
+    console.log(`[router] Loop check: visits=${visits}, limit=${limit}`)
     // V4 修正：visits <= limit（spec §5.2）
     // loop_max: 2 时，允许 visits=1,2 回环，visits=3 耗尽
     // 第 1 次完成（visits=1），1 <= 2 → 回环
     // 第 2 次完成（visits=2），2 <= 2 → 回环
     // 第 3 次完成（visits=3），3 > 2 → 耗尽
     if (visits <= limit) {
+      console.log(`[router]   visits <= limit, checking loop condition`)
       if (loopBack.condition) {
         if (loopBack.condition.type === 'keyword') {
           if (evaluateKeywordCondition(sourceText(state, meta.source), loopBack.condition.config)) return loopBack.target
@@ -132,16 +148,27 @@ export function routeFromSource(state: any, meta: RouteMeta, DEFAULT_MAX: number
           // Task 3: 从 YAML 的 source 字段读取节点 ID，注入文本
           const sourceId = loopBack.condition.config.source
           const text = sourceId ? sourceText(state, sourceId) : null
-          if (fn(text)) return loopBack.target
+          console.log(`[router]   Evaluating loop ${loopBack.condition.config.name}(${sourceId})`)
+          const result = fn(text)
+          console.log(`[router]   result: ${result}`)
+          if (fn(text)) {
+            console.log(`[router] >>> Looped back to ${loopBack.target}`)
+            return loopBack.target
+          }
         }
       } else {
+        console.log(`[router] >>> Looped back to ${loopBack.target} (no condition)`)
         return loopBack.target
       }
+    } else {
+      console.log(`[router]   Loop exhausted (visits > limit)`)
     }
   }
 
   const d = meta.edges.find((e) => e.is_default)
-  return d ? d.target : '__end__'
+  const target = d ? d.target : '__end__'
+  console.log(`[router] >>> Fallback to ${target}`)
+  return target
 }
 
 // ─── 节点包装：自动递增 loop_counters（V4 统一）──────────────────────────
