@@ -9,14 +9,14 @@ const elk = new ELK()
 // ELK 配置（所有值必须是字符串）
 const DEFAULT_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'layered',
-  'elk.direction': 'RIGHT',
+  'elk.direction': 'DOWN',
   'elk.edgeRouting': 'ORTHOGONAL',
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
   'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
   'elk.layered.mergeEdges': 'true',
-  'elk.spacing.nodeNode': '40',
-  'elk.spacing.edgeNode': '20',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+  'elk.spacing.nodeNode': '60',
+  'elk.spacing.edgeNode': '30',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '100',
   'elk.portConstraints': 'FIXED_ORDER',
 }
 
@@ -63,11 +63,13 @@ export async function layoutWithElk(
       width: NODE_W,
       height: NODE_H,
     })),
-    edges: edges.map(e => ({
-      id: e.id,
-      sources: [e.source],
-      targets: [e.target],
-    })),
+    edges: edges
+      .filter(e => e.target !== '__end__')
+      .map(e => ({
+        id: e.id,
+        sources: [e.source],
+        targets: [e.target],
+      })),
   }
 
   const layouted = await elk.layout(graph)
