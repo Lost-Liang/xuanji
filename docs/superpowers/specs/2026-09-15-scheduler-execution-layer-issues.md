@@ -9,12 +9,12 @@
 
 ## 一、问题摘要
 
-在调度层架构修复（双重租约死锁、需求执行绕过调度器）完成后，对调度-执行层进行全面代码审查，发现 **8 个问题**：
+在调度层架构修复（双重租约死锁、需求执行绕过调度器）完成后，对调度-执行层进行全面代码审查，发现 **7 个问题**（1 个经验证非问题）：
 
 | # | 问题 | 严重程度 | 影响 | 状态 |
 |---|------|---------|------|------|
 | 1 | **429 限流处理缺失** | P0 | 任务执行遇到 429 直接失败，不重试 | 待修复 |
-| 2 | **worker-graph 错误处理未释放租约** | P0 | 异常退出时租约泄漏 | 待修复 |
+| 2 | ~~worker-graph 错误处理未释放租约~~ | — | **已验证：`failWithEvent` 内部已清理租约** | 非问题 |
 | 3 | **phase_instances 利用不足** | P1 | 阶段进度不可见，恢复定位不准 | 待优化 |
 | 4 | **LangGraph Checkpoint 使用 MemorySaver** | P1 | 进程重启后无法恢复 | 待修复 |
 | 5 | **重复的 pending 查询** | P2 | DB 负载浪费，架构混乱 | 待优化 |
@@ -111,24 +111,13 @@ await executionStore.failWithEvent(executionId, errorMsg, errorDetails);
 
 ---
 
-## 三、问题 2：worker-graph 错误处理未释放租约
+## 三、问题 2：~~worker-graph 错误处理未释放租约~~ ✅ 已验证：不是问题
 
-### 现象
+### 初始分析（已验证错误）
 
-`worker-graph.mts` 的 3 个 catch 块调用 `failWithEvent` 后，没有调用 `releaseLeaseKeepStatus`。异常退出时租约字段（worker_id、lease_token）残留。
+`worker-graph.mts` 的 3 个 catch 块调用 `failWithEvent` 后，没有调用 `releaseLeaseKeepStatus`。看起来异常退出时租约字段（worker_id、lease_token）可能残留。
 
 ### 代码证据
-
-**worker-graph.mts:79-84（重试分支）：**
-```typescript
-} catch (err) {
-  const errorMsg = (err as Error).message || '工作流重新派发失败';
-  console.error(`[worker-graph] graphRunner 重新派发失败:`, err);
-  await executionStore.failWithEvent(executionId, errorMsg);
-  // ← 缺少 releaseLeaseKeepStatus
-  return { status: 'failed', error: errorMsg };
-}
-```
 
 **worker-graph.mts:112-117（任务执行分支）：**
 ```typescript
@@ -136,43 +125,35 @@ await executionStore.failWithEvent(executionId, errorMsg, errorDetails);
   const errorMsg = (err as Error).message || '工作流执行失败';
   console.error(`[worker-graph] graphRunner 执行失败:`, err);
   await executionStore.failWithEvent(executionId, errorMsg);
-  // ← 缺少 releaseLeaseKeepStatus
   return { status: 'failed', error: errorMsg };
 }
 ```
 
-**worker-graph.mts:147-152（需求执行分支）：**
+### 验证结果：failWithEvent 已处理租约清理
+
+**execution-store.mts:232-243：**
 ```typescript
-} catch (err) {
-  const errorMsg = (err as Error).message || '需求执行失败';
-  console.error(`[worker-graph] graphRunner 执行失败:`, err);
-  await executionStore.failWithEvent(executionId, errorMsg);
-  // ← 缺少 releaseLeaseKeepStatus
-  return { status: 'failed', error: errorMsg };
+async failWithEvent(executionId: string, message: string, details?: {...}) {
+  await db.$transaction([
+    db.task_executions.update({
+      where: { execution_id: executionId },
+      data: {
+        status: 'failed',
+        error_message: message,
+        completed_at: new Date(),
+        worker_id: null,        // ← 已清理
+        lease_token: null,      // ← 已清理
+        lease_expires_at: null, // ← 已清理
+      },
+    }),
+    // ... 写入失败事件
+  ]);
 }
 ```
 
-### 影响
+`failWithEvent` 内部已经清理租约字段，不需要额外调用 `releaseLeaseKeepStatus`。
 
-- 租约字段残留：`worker_id = 'worker-1'`, `lease_token` 非空
-- 僵尸检测可能漏判（`findZombies` 检查 `heartbeat_at`，但如果心跳未启动则无法检测）
-- 后续重试时 `acquireLease` 的 `worker_id: null` 条件不满足
-
-### 修复方案
-
-在 `failWithEvent` 后增加租约清理：
-
-```typescript
-} catch (err) {
-  const errorMsg = (err as Error).message || '工作流执行失败';
-  console.error(`[worker-graph] graphRunner 执行失败:`, err);
-  await executionStore.failWithEvent(executionId, errorMsg);
-  await executionStore.releaseLeaseKeepStatus(executionId, lease);  // ← 新增
-  return { status: 'failed', error: errorMsg };
-}
-```
-
-**注意**：`failWithEvent` 已设置 `status = 'failed'`，`releaseLeaseKeepStatus` 保持该状态不变。
+**结论：这不是问题，移除 P0 标签。**
 
 ---
 
@@ -440,7 +421,7 @@ await db.task_executions.update({
 | 优先级 | 问题 | 预计工作量 | 阻塞影响 |
 |--------|------|-----------|---------|
 | **P0** | 429 限流处理缺失 | 4 小时 | 任务执行遇到 429 必失败 |
-| **P0** | worker-graph 租约未释放 | 2 小时 | 异常退出后无法重试 |
+| — | ~~worker-graph 租约未释放~~ | — | **已验证：failWithEvent 已处理** |
 | **P1** | Checkpoint 未持久化 | 8 小时 | 进程重启后无法恢复 |
 | **P1** | phase_instances 利用 | 4 小时 | 阶段进度不可见 |
 | **P2** | 重复 pending 查询 | 4 小时 | DB 负载浪费 |
@@ -448,7 +429,7 @@ await db.task_executions.update({
 | **P2** | requirement-executor 死代码 | 2 小时 | 代码维护负担 |
 | **P3** | waiting 恢复上下文 | 2 小时 | 可能重复工作 |
 
-**总计 P0 修复**：6 小时
+**总计 P0 修复**：4 小时
 **总计 P1 修复**：12 小时
 
 ---
@@ -459,7 +440,7 @@ await db.task_executions.update({
 
 **Task 1: 增加 429 限流处理**
 
-1. 提取工具函数到 `rate-limit-utils.mts`：
+1. 从 `requirement-executor.mts` 提取工具函数到 `rate-limit-utils.mts`：
    - `isRateLimitError(message: string): boolean`
    - `computeRetryAt(retryCount: number): Date`
    - `getRetryCount(executionId: string): Promise<number>`
@@ -471,23 +452,24 @@ await db.task_executions.update({
      if (retryCount < 4) {
        const retryAt = computeRetryAt(retryCount);
        await executionStore.setRateLimited(executionId, retryAt, errorMsg);
+       await executionStore.releaseLeaseKeepStatus(executionId, lease);  // 必须释放租约
+       console.log(`[graph-runner] 限流，${retryAt} 后重试（第 ${retryCount + 1} 次）`);
        return;
      }
    }
    ```
 
+   **关键说明**：`setRateLimited` 只设置 `status='rate_limited'`，不会清理租约字段。必须调用 `releaseLeaseKeepStatus` 清理 `worker_id`/`lease_token`，否则 `acquireLease` 无法重新获取（条件要求 `worker_id: null`）。
+
 3. 测试验证：模拟 429 错误，确认重试机制
 
-**Task 2: worker-graph 租约释放**
-
-1. 在 3 个 catch 块增加 `releaseLeaseKeepStatus`
-2. 测试验证：模拟执行失败，确认租约字段清空
+4. 删除 `requirement-executor.mts` 死代码（或保留作为参考）
 
 ### 阶段 2：P1 修复（后续迭代）
 
-**Task 3: 实现 PrismaSaver**
+**Task 2: 实现 PrismaSaver**
 
-**Task 4: 完善 phase_instances 使用**
+**Task 3: 完善 phase_instances 使用**
 
 ### 阶段 3：P2/P3 优化（可选）
 
