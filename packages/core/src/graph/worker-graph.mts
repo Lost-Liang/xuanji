@@ -130,12 +130,20 @@ export async function workerNode(
     if (execution.status === 'pending') {
       // 重新派发给 graphRunner
       console.log(`[worker-graph] 执行有工作流 ${execution.graph_definition_id} 但仍 pending，重新派发`);
+
+      // 先获取租约
+      const lease = await executionStore.acquireLease(executionId, WORKER_ID);
+      if (!lease) {
+        return { status: 'idle' };  // 被其他 worker 抢占
+      }
+
       try {
         await graphRunner.startExecution({
           executionId,
           flowId: execution.graph_definition_id,
           input: '',
           task: taskId ? await taskStore.getById(taskId) : undefined,
+          lease,  // 传递租约
         });
         return { status: 'completed' };
       } catch (err) {
@@ -154,13 +162,20 @@ export async function workerNode(
   if (execution.subject_type === 'task' && taskId) {
     console.log(`[worker-graph] 任务执行，委托给 graphRunner (ruoyi-dev-flow)`);
 
+    // 先获取租约
+    const lease = await executionStore.acquireLease(executionId, WORKER_ID);
+    if (!lease) {
+      return { status: 'idle' };  // 被其他 worker 抢占
+    }
+
     try {
-      // 委托给 graphRunner（它会自己获取租约和管理心跳）
+      // 传递租约给 graphRunner
       await graphRunner.startExecution({
         executionId,
         flowId: 'ruoyi-dev-flow',
-        input: '', // 任务上下文由 agent-node 从 task 读取
+        input: '',
         task: await taskStore.getById(taskId),
+        lease,  // 传递租约
       });
 
       return { status: 'completed' };
@@ -176,6 +191,12 @@ export async function workerNode(
   if (execution.subject_type === 'requirement' && execution.requirement_id) {
     console.log(`[worker-graph] 需求执行，委托给 graphRunner (requirement-decomposition)`);
 
+    // 先获取租约
+    const lease = await executionStore.acquireLease(executionId, WORKER_ID);
+    if (!lease) {
+      return { status: 'idle' };  // 被其他 worker 抢占
+    }
+
     try {
       const requirement = await db.requirements.findUnique({
         where: { id: execution.requirement_id },
@@ -189,6 +210,7 @@ export async function workerNode(
         flowId: requirement.workflow_id || 'requirement-decomposition',
         input: requirement.title,
         requirementId: execution.requirement_id,
+        lease,  // 传递租约
       });
 
       return { status: 'completed' };
