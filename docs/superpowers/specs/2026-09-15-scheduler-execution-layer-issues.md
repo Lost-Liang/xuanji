@@ -2,7 +2,7 @@
 
 > **Superpower**：调度-执行层问题诊断
 > 日期：2026-09-15
-> 状态：**诊断完成，待修复**
+> 状态：**✅ 全部修复**
 > 前置：调度层架构修复（2026-09-15）
 
 ---
@@ -13,14 +13,23 @@
 
 | # | 问题 | 严重程度 | 影响 | 状态 |
 |---|------|---------|------|------|
-| 1 | **429 限流处理缺失** | P0 | 任务执行遇到 429 直接失败，不重试 | 待修复 |
-| 2 | ~~worker-graph 错误处理未释放租约~~ | — | **已验证：`failWithEvent` 内部已清理租约** | 非问题 |
-| 3 | **phase_instances 利用不足** | P1 | 阶段进度不可见，恢复定位不准 | 待优化 |
-| 4 | **LangGraph Checkpoint 使用 MemorySaver** | P1 | 进程重启后无法恢复 | 待修复 |
-| 5 | **重复的 pending 查询** | P2 | DB 负载浪费，架构混乱 | 待优化 |
-| 6 | **DB 用户工作流不支持** | P2 | 无法执行用户自定义工作流 | 待实现 |
-| 7 | **requirement-executor.mts 死代码** | P2 | 包含唯一完整的 429 逻辑，但未被使用 | 待清理 |
-| 8 | **waiting 恢复缺少 session 上下文** | P3 | 恢复后从起点重新执行，可能重复工作 | 待修复 |
+| 1 | **429 限流处理缺失** | P0 | 任务执行遇到 429 直接失败，不重试 | ✅ 已修复 |
+| 2 | ~~worker-graph 错误处理未释放租约~~ | — | **已验证：`failWithEvent` 内部已清理租约** | ✅ 非问题 |
+| 3 | **phase_instances 利用不足** | P1 | 阶段进度不可见，恢复定位不准 | ✅ Dashboard 动态读取 |
+| 4 | **LangGraph Checkpoint 使用 MemorySaver** | P1 | 进程重启后无法恢复 | ✅ PostgresSaver |
+| 5 | **重复的 pending 查询** | P2 | DB 负载浪费，架构混乱 | ✅ 已合并 |
+| 6 | **DB 用户工作流不支持** | P2 | 无法执行用户自定义工作流 | ✅ 已实现 |
+| 7 | **requirement-executor.mts 死代码** | P2 | 包含唯一完整的 429 逻辑，但未被使用 | ✅ 已删除 |
+| 8 | **waiting 恢复缺少 session 上下文** | P3 | 恢复后从起点重新执行，可能重复工作 | ✅ 已修复 |
+
+**修复提交：**
+- 286a0e2: feat(graph-runner): 添加 429 限流错误处理
+- 613b7c4: chore: 删除死代码 requirement-executor.mts
+- 5188663: perf(scheduler): 合并重复的 pending 查询
+- 9e2f06b: feat(graph-runner): 支持 DB 用户工作流加载
+- bc01527: fix(scheduler): 修复 waiting 恢复的 session 上下文
+- cf1870a: feat(dashboard): 阶段列表从工作流定义动态读取
+- 2c31387: fix(checkpointer): 升级 langgraph@1.4.15 解决版本兼容问题
 
 ---
 
