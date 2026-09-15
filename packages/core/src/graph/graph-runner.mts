@@ -910,3 +910,35 @@ export const graphRunner = {
   resumeExecution,
   loadFlow,
 };
+
+// ─── 429 限流处理辅助函数 ─────────────────────────────────────────────────────
+
+/**
+ * 检测是否为限流错误（429）
+ */
+function isRateLimitError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return ['429', 'rate_limit', 'rate limit', 'throttl', 'too many requests'].some(
+    keyword => lower.includes(keyword),
+  );
+}
+
+/**
+ * 获取当前重试次数
+ */
+async function getRetryCount(executionId: string): Promise<number> {
+  const exec = await db.task_executions.findUnique({
+    where: { execution_id: executionId },
+    select: { rate_limit_count: true },
+  });
+  return exec?.rate_limit_count ?? 0;
+}
+
+/**
+ * 计算重试时间（5m → 10m → 30m → 60m）
+ */
+function computeRetryAt(retryCount: number): Date {
+  const delays = [5 * 60_000, 10 * 60_000, 30 * 60_000, 60 * 60_000];
+  const delay = delays[Math.min(retryCount, delays.length - 1)];
+  return new Date(Date.now() + delay);
+}
