@@ -143,8 +143,15 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
     return;
   }
 
-  // 2. 设置 graph_definition_id 和 thread_id（acquireLease 已设置 status='running'）
-  const threadId = randomUUID();
+  // 2. 检查是否有现有的 session（用于 resume）
+  const existingExec = await db.task_executions.findUnique({
+    where: { execution_id: executionId },
+    select: { session_id: true, thread_id: true },
+  });
+
+  // 2b. 设置 graph_definition_id 和 thread_id
+  // 如果已有 thread_id（resume 场景），保留它
+  const threadId = existingExec?.thread_id ?? randomUUID();
   await db.task_executions.update({
     where: { execution_id: executionId },
     data: {

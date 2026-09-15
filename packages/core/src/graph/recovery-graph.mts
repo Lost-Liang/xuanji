@@ -178,7 +178,14 @@ async function recoverWaitingNode(
 
       // 3. 如果所有问题都已回答，恢复执行
       if (pendingCount === 0) {
+        // 获取完整执行信息，保留 session_id 用于 resume
+        const fullExec = await db.task_executions.findUnique({
+          where: { execution_id: exec.execution_id },
+          select: { session_id: true },
+        });
+
         // 重置状态为 pending，让调度器重新拾取
+        // 注意：session_id 保持不变，用于恢复执行
         await db.task_executions.update({
           where: { execution_id: exec.execution_id },
           data: {
@@ -187,6 +194,7 @@ async function recoverWaitingNode(
             worker_id: null,
             lease_token: null,
             lease_expires_at: null,
+            // session_id 保持不变，graphRunner 应使用 resume
           },
         });
 
