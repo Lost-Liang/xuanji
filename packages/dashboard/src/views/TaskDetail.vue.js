@@ -158,10 +158,43 @@ function formatDuration(start, end) {
     const sec = diff % 60;
     return min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
 }
-// 阶段定义（按典型执行顺序）
-// 支持两种命名体系：旧版（breakdown/planning/code/test/review/deploy/archive）
-// 和新版工作流（develop/compile_check/test_check/quality_review/security_review/final_review）
-const phaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review'];
+// 阶段定义（按典型执行顺序）—— 作为默认回退
+// 当无法从工作流定义读取节点时使用
+const defaultPhaseOrder = ['breakdown', 'planning', 'develop', 'code', 'compile_check', 'test', 'test_check', 'review', 'quality_review', 'security_review', 'deploy', 'archive', 'final_review'];
+// 从工作流定义获取节点顺序（按执行顺序）
+function getWorkflowPhaseOrder() {
+    if (workflow.value?.nodes && Array.isArray(workflow.value.nodes)) {
+        // 从工作流定义读取节点 ID 列表
+        // 按边关系排序（拓扑序）
+        const nodes = workflow.value.nodes;
+        const edges = workflow.value.edges || [];
+        // 构建 入度表
+        const inDegree = new Map();
+        nodes.forEach(n => inDegree.set(n.id, 0));
+        edges.forEach(e => {
+            if (inDegree.has(e.to)) {
+                inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
+            }
+        });
+        // 拓扑排序
+        const result = [];
+        const queue = nodes.filter(n => (inDegree.get(n.id) || 0) === 0).map(n => n.id);
+        while (queue.length > 0) {
+            const id = queue.shift();
+            result.push(id);
+            edges.filter(e => e.from === id).forEach(e => {
+                const deg = (inDegree.get(e.to) || 1) - 1;
+                inDegree.set(e.to, deg);
+                if (deg === 0 && !result.includes(e.to)) {
+                    queue.push(e.to);
+                }
+            });
+        }
+        // 若排序失败（有环），回退到原始顺序
+        return result.length === nodes.length ? result : nodes.map(n => n.id);
+    }
+    return defaultPhaseOrder;
+}
 const phaseStatuses = computed(() => {
     const d = detail.value;
     if (!d)
@@ -209,6 +242,15 @@ const phaseStatuses = computed(() => {
     });
 });
 function phaseLabel(id) {
+    // 优先从工作流定义读取节点 label
+    if (workflow.value?.nodes && Array.isArray(workflow.value.nodes)) {
+        const node = workflow.value.nodes.find((n) => n.id === id);
+        if (node?.label)
+            return node.label;
+        if (node?.name)
+            return node.name;
+    }
+    // 回退到预设映射
     const map = {
         breakdown: '拆分', planning: '规划', code: '编码',
         test: '测试', review: '审查', deploy: '部署', archive: '归档',

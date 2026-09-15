@@ -6,7 +6,8 @@
 // - pgClient → db（Prisma 客户端）
 // - loop-paths.mts 暂未迁移，buildSubGraph 中 testing/quality/security 条件边内联处理
 // - seed-graph.mts 暂未迁移，defaultSubGraph 使用空图占位
-import { Send, StateGraph, MemorySaver } from '@langchain/langgraph'
+import { Send, StateGraph } from '@langchain/langgraph'
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres'
 import type { GraphDef, WorkflowDef, GraphNode } from './types.mjs'
 import { TopState, SubState } from './state-schema.mjs'
 import { makeAgentNode, buildAgentContext } from './agent-node.mjs'
@@ -18,29 +19,20 @@ import { evaluateKeywordCondition } from './conditions/keyword-evaluator.mjs'
 import { loadWorkflowFromYaml, mapYamlToGraphDef } from './yaml-loader.mjs'
 import { sourceText } from './conditions/source-text.mjs'
 import { WorkflowValidationError } from './errors.mjs'
-import { getCheckpointer, getCheckpointerSync } from './checkpointer.mjs'
 
-// ─── Checkpointer 初始化 ─────────────────────────────────────────────────────
-// V4: 当前使用 MemorySaver（langgraph-checkpoint-postgres 版本不兼容，待升级）
-// 已知限制：进程重启后 checkpoint 状态丢失
+// ─── Checkpointer（PostgresSaver 持久化）─────────────────────────────────────
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://v2:v2@localhost:5433/xuanji'
+const checkpointer = PostgresSaver.fromConnString(DATABASE_URL)
 
 /**
- * 初始化 Checkpointer（异步）
+ * 初始化 Checkpointer
  *
- * 首次调用创建 checkpointer 实例。
- * 当前使用 MemorySaver，未来升级为 PostgresSaver。
+ * 首次调用创建 checkpoint 表。后续调用幂等。
+ * 必须在首次执行图前调用。
  */
 export async function initCheckpointer(): Promise<void> {
-  await getCheckpointer()
-}
-
-/**
- * 获取当前 checkpointer 实例（同步）
- *
- * 未初始化时创建 MemorySaver 作为降级方案。
- */
-function getCheckpointerInstance() {
-  return getCheckpointerSync()
+  await checkpointer.setup()
+  console.log('[builder] PostgresSaver 已初始化')
 }
 
 // ─── 默认子图占位（seed-graph.mts 暂未迁移） ───────────────────────────────────
@@ -418,7 +410,7 @@ export function buildTopGraph(def: GraphDef, subDef?: GraphDef): any {
   // __start__ 连到所有入口节点
   for (const entry of findEntryNodes(def)) g.addEdge('__start__' as any, entry as any)
 
-  return g.compile({ checkpointer: getCheckpointerInstance() })
+  return g.compile({ checkpointer })
 }
 
 // ─── buildSubGraph：研发流程子图 compile（spec §4.5） ───────────────────────────
@@ -477,7 +469,7 @@ export function buildSubGraph(def: GraphDef): any {
     g.addEdge('__start__' as any, entry as any)
   }
 
-  return g.compile({ checkpointer: getCheckpointerInstance() })
+  return g.compile({ checkpointer })
 }
 
 // ─── buildGraphFromDef：从 YAML 字符串构建可执行图（spec §6.2） ─────────────────
@@ -580,5 +572,5 @@ export function buildGraphFromDef(yamlContent: string): any {
     g.addEdge('__start__' as any, entry as any)
   }
 
-  return g.compile({ checkpointer: getCheckpointerInstance() })
+  return g.compile({ checkpointer })
 }

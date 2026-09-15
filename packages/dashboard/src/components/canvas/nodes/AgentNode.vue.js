@@ -21,6 +21,43 @@ const __VLS_2 = __VLS_1({
     type: "target",
     position: (__VLS_ctx.Position.Left),
 }, ...__VLS_functionalComponentArgsRest(__VLS_1));
+const __VLS_4 = {}.Handle;
+/** @type {[typeof __VLS_components.Handle, ]} */ ;
+// @ts-ignore
+const __VLS_5 = __VLS_asFunctionalComponent(__VLS_4, new __VLS_4({
+    type: "source",
+    position: (__VLS_ctx.Position.Right),
+}));
+const __VLS_6 = __VLS_5({
+    type: "source",
+    position: (__VLS_ctx.Position.Right),
+}, ...__VLS_functionalComponentArgsRest(__VLS_5));
+const __VLS_8 = {}.Handle;
+/** @type {[typeof __VLS_components.Handle, ]} */ ;
+// @ts-ignore
+const __VLS_9 = __VLS_asFunctionalComponent(__VLS_8, new __VLS_8({
+    type: "target",
+    position: (__VLS_ctx.Position.Top),
+    id: "top",
+}));
+const __VLS_10 = __VLS_9({
+    type: "target",
+    position: (__VLS_ctx.Position.Top),
+    id: "top",
+}, ...__VLS_functionalComponentArgsRest(__VLS_9));
+const __VLS_12 = {}.Handle;
+/** @type {[typeof __VLS_components.Handle, ]} */ ;
+// @ts-ignore
+const __VLS_13 = __VLS_asFunctionalComponent(__VLS_12, new __VLS_12({
+    type: "source",
+    position: (__VLS_ctx.Position.Bottom),
+    id: "bottom",
+}));
+const __VLS_14 = __VLS_13({
+    type: "source",
+    position: (__VLS_ctx.Position.Bottom),
+    id: "bottom",
+}, ...__VLS_functionalComponentArgsRest(__VLS_13));
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "vn-kind" },
 });
@@ -44,17 +81,6 @@ if (__VLS_ctx.data.badge) {
     });
     (__VLS_ctx.data.badge);
 }
-const __VLS_4 = {}.Handle;
-/** @type {[typeof __VLS_components.Handle, ]} */ ;
-// @ts-ignore
-const __VLS_5 = __VLS_asFunctionalComponent(__VLS_4, new __VLS_4({
-    type: "source",
-    position: (__VLS_ctx.Position.Right),
-}));
-const __VLS_6 = __VLS_5({
-    type: "source",
-    position: (__VLS_ctx.Position.Right),
-}, ...__VLS_functionalComponentArgsRest(__VLS_5));
 /** @type {__VLS_StyleScopedClasses['vf-node']} */ ;
 /** @type {__VLS_StyleScopedClasses['t-agent']} */ ;
 /** @type {__VLS_StyleScopedClasses['vn-kind']} */ ;

@@ -38,16 +38,12 @@ export function toVueFlow(def) {
                 id: e.id,
                 source: e.source,
                 target: e.target,
-                // 正向边和循环边都使用 smoothstep（折线）
-                type: 'smoothstep',
+                // 循环边使用 default 类型（贝塞尔曲线），正向边使用 smoothstep
+                type: isReverse ? 'default' : 'smoothstep',
                 markerEnd: 'arrowclosed',
-                // 循环边使用 Top→Top，从上方绕路
-                sourcePosition: isReverse ? 'top' : 'right',
+                // 反向边（循环）使用 Bottom→Top，与正向边 Right→Left 错开
+                sourcePosition: isReverse ? 'bottom' : 'right',
                 targetPosition: isReverse ? 'top' : 'left',
-                sourceHandle: isReverse ? 'top' : null,
-                targetHandle: isReverse ? 'top' : null,
-                // smoothstep 折线的偏移量，让循环边向上绕更远
-                pathOptions: isReverse ? { offset: 200 } : undefined,
                 className: isReverse ? 'loop-edge' : undefined,
                 data: {
                     condition: e.condition,
