@@ -18,9 +18,30 @@ import { evaluateKeywordCondition } from './conditions/keyword-evaluator.mjs'
 import { loadWorkflowFromYaml, mapYamlToGraphDef } from './yaml-loader.mjs'
 import { sourceText } from './conditions/source-text.mjs'
 import { WorkflowValidationError } from './errors.mjs'
+import { getCheckpointer, getCheckpointerSync } from './checkpointer.mjs'
 
-// ─── Checkpointer（V4 临时方案：MemorySaver；TODO 接入 Prisma checkpoint） ──────
-const checkpointer = new MemorySaver()
+// ─── Checkpointer 初始化 ─────────────────────────────────────────────────────
+// V4: 当前使用 MemorySaver（langgraph-checkpoint-postgres 版本不兼容，待升级）
+// 已知限制：进程重启后 checkpoint 状态丢失
+
+/**
+ * 初始化 Checkpointer（异步）
+ *
+ * 首次调用创建 checkpointer 实例。
+ * 当前使用 MemorySaver，未来升级为 PostgresSaver。
+ */
+export async function initCheckpointer(): Promise<void> {
+  await getCheckpointer()
+}
+
+/**
+ * 获取当前 checkpointer 实例（同步）
+ *
+ * 未初始化时创建 MemorySaver 作为降级方案。
+ */
+function getCheckpointerInstance() {
+  return getCheckpointerSync()
+}
 
 // ─── 默认子图占位（seed-graph.mts 暂未迁移） ───────────────────────────────────
 const defaultSubGraph: GraphDef = {
@@ -397,7 +418,7 @@ export function buildTopGraph(def: GraphDef, subDef?: GraphDef): any {
   // __start__ 连到所有入口节点
   for (const entry of findEntryNodes(def)) g.addEdge('__start__' as any, entry as any)
 
-  return g.compile({ checkpointer })
+  return g.compile({ checkpointer: getCheckpointerInstance() })
 }
 
 // ─── buildSubGraph：研发流程子图 compile（spec §4.5） ───────────────────────────
@@ -456,7 +477,7 @@ export function buildSubGraph(def: GraphDef): any {
     g.addEdge('__start__' as any, entry as any)
   }
 
-  return g.compile({ checkpointer })
+  return g.compile({ checkpointer: getCheckpointerInstance() })
 }
 
 // ─── buildGraphFromDef：从 YAML 字符串构建可执行图（spec §6.2） ─────────────────
@@ -559,5 +580,5 @@ export function buildGraphFromDef(yamlContent: string): any {
     g.addEdge('__start__' as any, entry as any)
   }
 
-  return g.compile({ checkpointer })
+  return g.compile({ checkpointer: getCheckpointerInstance() })
 }

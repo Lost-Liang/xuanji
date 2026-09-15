@@ -11,7 +11,7 @@
 // 这是 M1.2 的核心实现，让执行真正按节点跑
 
 import { Command } from '@langchain/langgraph';
-import { buildGraphFromDef } from './builder.mjs';
+import { buildGraphFromDef, initCheckpointer } from './builder.mjs';
 import { loadWorkflowFromYaml, loadWorkflowFromFile, mapYamlToGraphDef } from './yaml-loader.mjs';
 import { executionStore } from '../storage/execution-store.mjs';
 import type { LeaseInfo } from '../storage/execution-store.mjs';
@@ -177,6 +177,9 @@ export async function startExecution(opts: StartExecutionOpts): Promise<void> {
   }
 
   // 3. 编译成 LangGraph 图
+  // 3a. 初始化 PostgresSaver checkpointer（首次执行会创建表）
+  await initCheckpointer();
+
   let graph: ReturnType<typeof buildGraphFromDef>;
   try {
     graph = buildGraphFromDef(flow.yamlContent);
@@ -383,6 +386,7 @@ export async function resumeExecution(opts: ResumeExecutionOpts): Promise<void> 
   });
 
   // 3. 加载流程图
+  await initCheckpointer();  // 确保 checkpointer 已初始化
   const flow = await loadFlow(exec.graph_definition_id);
   if (!flow) {
     await executionStore.failWithEvent(executionId, `流程定义不存在: ${exec.graph_definition_id}`);
