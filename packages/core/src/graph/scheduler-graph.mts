@@ -72,8 +72,17 @@ export type SchedulerStateType = typeof SchedulerState.State;
  * 未找到则保持 idle，进入等待节点。
  */
 async function scheduleNode(
-  _state: SchedulerStateType,
+  state: SchedulerStateType,
 ): Promise<Partial<SchedulerStateType>> {
+  // 如果 executionId 已由 scheduler-controller 传入，直接派发
+  if (state.executionId) {
+    return {
+      executionId: state.executionId,
+      taskId: state.taskId,
+      status: 'dispatched',
+    };
+  }
+
   // 查找待执行的 execution：
   // 1. status='pending' 且 retryAt 为空或已过期（首次执行）
   // 2. status='rate_limited' 且 retryAt 已过期（限流重试到期）
