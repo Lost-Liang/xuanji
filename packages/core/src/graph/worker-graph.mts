@@ -88,9 +88,9 @@ export async function workerNode(
     return { status: 'idle' };
   }
 
-  // 任务执行：走 ruoyi-dev-flow 工作流
+  // 任务执行：走 ruoyi-dev-flow-v2 工作流（真正的 TDD + 编译检查 + 安全扫描）
   if (execution.subject_type === 'task' && taskId) {
-    console.log(`[worker-graph] 任务执行，委托给 graphRunner (ruoyi-dev-flow)`);
+    console.log(`[worker-graph] 任务执行，委托给 graphRunner (ruoyi-dev-flow-v2)`);
 
     // 先获取租约
     const lease = await executionStore.acquireLease(executionId, WORKER_ID);
@@ -102,7 +102,7 @@ export async function workerNode(
       // 传递租约给 graphRunner
       await graphRunner.startExecution({
         executionId,
-        flowId: 'ruoyi-dev-flow',
+        flowId: 'ruoyi-dev-flow-v2',
         input: '',
         task: await taskStore.getById(taskId),
         lease,  // 传递租约
