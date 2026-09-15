@@ -8,6 +8,7 @@ import { mkdir, cp } from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { requirementStore } from '../storage/requirement-store.mjs';
+import { executionStore } from '../storage/execution-store.mjs';
 import { db } from '../db.mjs';
 
 // 获取当前文件目录（ESM 兼容）
@@ -555,8 +556,8 @@ requirementsRouter.post('/:id/execute', async (req, res) => {
       return res.status(404).json({ error: '需求不存在' });
     }
 
-    // 查找最新的执行实例
-    const execution = await db.task_executions.findFirst({
+    // 查找或创建执行实例
+    let execution = await db.task_executions.findFirst({
       where: {
         subject_type: 'requirement',
         subject_id: requirementId,
@@ -565,30 +566,38 @@ requirementsRouter.post('/:id/execute', async (req, res) => {
     });
 
     if (!execution) {
-      return res.status(404).json({ error: '执行实例不存在' });
-    }
+      // 首次执行：创建执行实例，调度器会自动拾取
+      execution = await executionStore.create({
+        subjectType: 'requirement',
+        subjectId: requirementId,
+        requirementId: requirement.id,
+        targetProjectId: requirement.target_project_id,
+        targetRepoPath: requirement.target_repo_path,
+        status: 'pending',
+      });
+    } else {
+      // 检查当前状态
+      if (execution.status === 'running') {
+        return res.status(409).json({
+          error: '需求正在执行中',
+          executionId: execution.execution_id,
+        });
+      }
 
-    // 检查当前状态
-    if (execution.status === 'running') {
-      return res.status(409).json({
-        error: '需求正在执行中',
-        executionId: execution.execution_id,
+      // 更新状态为 pending，调度器会自动拾取
+      await db.task_executions.update({
+        where: { execution_id: execution.execution_id },
+        data: {
+          status: 'pending',
+          // 清理旧租约（如果有）
+          worker_id: null,
+          lease_token: null,
+          lease_expires_at: null,
+          // 重置错误信息
+          error_message: null,
+        },
       });
     }
-
-    // 更新状态为 pending，调度器会自动拾取
-    await db.task_executions.update({
-      where: { execution_id: execution.execution_id },
-      data: {
-        status: 'pending',
-        // 清理旧租约（如果有）
-        worker_id: null,
-        lease_token: null,
-        lease_expires_at: null,
-        // 重置错误信息
-        error_message: null,
-      },
-    });
 
     // 返回成功，前端通过 SSE 监听执行进度
     res.json({
