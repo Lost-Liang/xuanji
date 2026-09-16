@@ -226,6 +226,10 @@ edges:
   - from: code_fix
     to: compile_check
 
+  # 代码修复 → 回归测试
+  - from: code_fix
+    to: regression_test
+
   # 回归测试通过 → 重新审查
   - from: regression_test
     to: code_review

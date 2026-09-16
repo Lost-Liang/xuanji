@@ -76,22 +76,24 @@ export function toVueFlow(def: GraphDef): { nodes: Node[]; edges: Edge[] } {
       position: n.position ? { x: n.position.x, y: n.position.y } : { x: 0, y: 0 },
       data: { ...n }
     })),
-    edges: def.edges.map(e => {
-      const isReverse = reverseEdgeIds.has(e.id)
-      return {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: 'elk-edge',
-        markerEnd: 'arrowclosed',
-        className: isReverse ? 'loop-edge' : undefined,
-        data: {
-          condition: e.condition,
-          loop_max: e.loop_max,
-          isLoopEdge: isReverse,
-          sections: [],
-        },
-      }
-    }),
+    edges: def.edges
+      .filter(e => e.source !== '__end__' && e.target !== '__end__')
+      .map(e => {
+        const isReverse = reverseEdgeIds.has(e.id)
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'elk-edge',
+          markerEnd: 'arrowclosed',
+          className: isReverse ? 'loop-edge' : undefined,
+          data: {
+            condition: e.condition,
+            loop_max: e.loop_max,
+            isLoopEdge: isReverse,
+            sections: [],
+          },
+        }
+      }),
   }
 }

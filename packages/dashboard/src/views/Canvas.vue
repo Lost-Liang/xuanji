@@ -243,8 +243,10 @@ async function loadSelectedGraph() {
     }
   }
 
-  // 如果节点已有位置（YAML 中定义），直接使用
-  const hasPositions = vf.nodes.some(n => n.position.x !== 0 || n.position.y !== 0)
+  // 如果节点已有非零位置（YAML 中定义了 position），直接使用；否则走 ELK 自动布局
+  const hasPositions = vf.nodes.some(n =>
+    (n.position?.x ?? 0) !== 0 || (n.position?.y ?? 0) !== 0
+  )
   if (hasPositions) {
     nodes.value = vf.nodes
     edges.value = vf.edges
